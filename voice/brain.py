@@ -111,7 +111,7 @@ def speak(text):
         # radio effect processing. edit this if you want a crunchier sound.
         sox_command = (
             'sox mesh_hq.wav -b 16 mesh_final.wav '
-            'overdrive 10 sinc 60-7000 reverb 15 gain -1'
+            'overdrive 5 sinc 60-7000 reverb 5 gain -1'
         )
         subprocess.run(sox_command, shell=True, check=True, stderr=subprocess.DEVNULL)
 

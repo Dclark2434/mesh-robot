@@ -63,7 +63,7 @@ for category, variations in PHRASES.items():
         final_file = os.path.join(OUTPUT_DIR, f"{filename}.wav")
         sox_cmd = (
             f'sox {temp_file} -b 16 {final_file} '
-            'overdrive 10 sinc 60-7000 reverb 15 gain -1'
+            'overdrive 5 sinc 60-7000 reverb 5 gain -1'
         )
         subprocess.run(sox_cmd, shell=True, check=True, stderr=subprocess.DEVNULL)
 
