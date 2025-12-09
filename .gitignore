@@ -5,6 +5,7 @@ venv/
 .venv/
 env/
 input_buffer/
+sounds/
 
 mesh_hq.wav
 mesh_final.wav

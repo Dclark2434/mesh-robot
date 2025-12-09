@@ -8,8 +8,8 @@ import queue
 OUTPUT_FOLDER = r"\\wsl.localhost\Ubuntu\home\dclark\mesh-robot\input_buffer"
 
 FS = 44100 
-THRESHOLD = 0.4  # volume sensitivity (Adjust if he can't hear you or hears ghosts)
-SILENCE_LIMIT = 2 # seconds of silence to consider the sentence "done"
+THRESHOLD = 0.5  # volume sensitivity (Adjust if he can't hear you or hears ghosts)
+SILENCE_LIMIT = 1 # seconds of silence to consider the sentence "done"
 
 print(f"--- M.E.S.H. AUTO-EAR ---")
 print(f"Targeting: {OUTPUT_FOLDER}")

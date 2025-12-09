@@ -6,6 +6,7 @@ import random
 import os
 import sys
 import shutil
+import glob
 
 try:
     import torch
@@ -20,8 +21,8 @@ OLLAMA_URL = "http://localhost:11434/api/generate"
 MODEL_NAME = "mesh"  
 REFERENCE_AUDIO = "tars_ref.wav" # this is the reference for zero-shot voice
 INPUT_FOLDER = "../input_buffer"
-WAKE_WORDS = ["mesh", "tars", "computer", "hey"]
-ATTENTION_SPAN = 30  # Seconds before he stops listening
+WAKE_WORDS = ["hey mesh", "hey, mesh"]
+ATTENTION_SPAN = 60  # Seconds before he stops listening
 last_interaction = 0
 is_focused = False
 
@@ -61,6 +62,32 @@ def execute_command(action, param):
     elif action == "shutdown":
         print("\033[91m[SYSTEM] Kill signal received.\033[0m")
         exit(0)
+
+def play_sound(category):
+    """
+    Plays a RANDOM pre-baked file from a category (e.g., 'ack' -> 'ack_3.wav')
+    """
+    # Find all files matching 'sounds/ack_*.wav'
+    search_pattern = os.path.join("sounds", f"{category}_*.wav")
+    files = glob.glob(search_pattern)
+    
+    if not files:
+        print(f"[ERROR] No sound files found for category: {category}")
+        return
+
+    # Pick a random one
+    chosen_file = random.choice(files)
+    
+    # WSL Path Conversion
+    # We use os.path.abspath to ensure the path is clean before passing to wslpath
+    linux_path = os.path.abspath(chosen_file)
+    
+    command = (
+        "powershell.exe -NoProfile -ExecutionPolicy Bypass -c "
+        "\"(New-Object Media.SoundPlayer "
+        f"'$(wslpath -w {linux_path})').PlaySync()\""
+    )
+    subprocess.run(command, shell=True)
 
 def speak(text):
     if not text: return
@@ -129,7 +156,8 @@ def main():
     
     if not os.path.exists(INPUT_FOLDER): os.makedirs(INPUT_FOLDER)
 
-    speak("Audio sensors active. Standing by.")
+    play_sound("boot") 
+    print("M.E.S.H. Ready.")
 
     while True:
         try:
@@ -159,21 +187,42 @@ def main():
             clean_input = user_input.lower().strip()
 
             # 3. WAKE WORD LOGIC
+            # Check if we need to wake up
             if not is_focused:
-                if any(word in clean_input for word in WAKE_WORDS):
+                # Find which wake word was used (if any)
+                trigger_word = next((w for w in WAKE_WORDS if w in clean_input), None)
+                
+                if trigger_word:
                     is_focused = True
                     last_interaction = time.time()
-                    print("\033[92m[WAKE DETECTED] Focus Acquired.\033[0m")
+                    print(f"\033[92m[WAKE DETECTED] Trigger: '{trigger_word}'\033[0m")
                     
-                    # --- THE FIX: Immediate Acknowledgment ---
-                    # We play a sound/voice immediately so you know he heard you
-                    speak("Listening.") 
-                    # -----------------------------------------
+                    # Play random acknowledgment sound immediately
+                    play_sound("ack")
                     
+                    # STRIP THE WAKE WORD
+                    # If user said "Hey Mesh status report", we want just "status report"
+                    # We remove the trigger word and clean up whitespace/punctuation
+                    remaining_command = clean_input.replace(trigger_word, "").strip(" .,?!")
+                    
+                    # LOGIC SPLIT:
+                    if len(remaining_command) < 2:
+                        # Case A: User only said "Hey Mesh"
+                        # We have ACKed. Now we just loop back and wait for the command.
+                        print("\033[90m[WAITING] Awaiting command...\033[0m")
+                        continue 
+                    else:
+                        # Case B: User said "Hey Mesh [Command]"
+                        # We update user_input to be just the command, and let it fall through to the LLM
+                        print(f"\033[90m[FAST TRACK] Command: '{remaining_command}'\033[0m")
+                        user_input = remaining_command
+                
                 else:
+                    # No wake word found, and not focused. Ignore.
                     print(f"\033[90m[IGNORED] '{clean_input}'\033[0m")
                     continue
             else:
+                # Already focused. Refresh timer.
                 last_interaction = time.time()
 
             # 4. PROCESS
