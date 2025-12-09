@@ -1,0 +1,25 @@
+# --- Python Garbage ---
+__pycache__/
+*.py[cod]
+
+# --- The Heavy Stuff (DO NOT COMMIT) ---
+venv/
+.venv/
+env/
+
+# --- Generated Audio (Don't commit output) ---
+mesh_hq.wav
+mesh_final.wav
+mesh_voice.wav
+*.mp3
+
+# --- Large AI Models ---
+# If you downloaded ONNX files locally, ignore them.
+# You usually download these on deployment, not store in git.
+*.onnx
+*.json
+tts_models/
+
+# --- Keep the Reference! ---
+# We generally DO want the reference audio, so we explicitly allow it
+!tars_ref.wav
