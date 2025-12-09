@@ -36,10 +36,28 @@ stt_model = WhisperModel("small", device=device, compute_type="float16")
 print(f"\033[92m[SYSTEM] M.E.S.H. Online on {device.upper()}. Waiting for input...\033[0m")
 
 def execute_command(action, param):
+    # SAFETY 1: handle NoneType if LLM sends null
+    if param is None:
+        param = "unknown"
+        
+    clean_param = param.lower().strip()
+    
+    # SAFETY 2: define Valid Hardware Limits (Stop him from walking to "Mars")
+    VALID_MOVES = ["forward", "backward", "left", "right", "stop"]
+    VALID_SCANS = ["full", "sector", "forward"]
+
     if action == "walk":
-        print(f"\033[93m[HARDWARE] Servos engaging... Moving {param.upper()}\033[0m")
+        if clean_param in VALID_MOVES:
+            print(f"\033[93m[HARDWARE] Servos engaging... Moving {clean_param.upper()}\033[0m")
+        else:
+            print(f"\033[91m[HARDWARE WARNING] Invalid Move Parameter: '{param}'. Ignoring.\033[0m")
+            
     elif action == "scan":
-        print(f"\033[93m[HARDWARE] LiDAR spinning up... Scanning {param.upper()}\033[0m")
+        if clean_param in VALID_SCANS:
+            print(f"\033[93m[HARDWARE] LiDAR spinning up... Scanning {clean_param.upper()}\033[0m")
+        else:
+            print(f"\033[91m[HARDWARE WARNING] Invalid Scan Parameter: '{param}'. Ignoring.\033[0m")
+            
     elif action == "shutdown":
         print("\033[91m[SYSTEM] Kill signal received.\033[0m")
         exit(0)
@@ -111,52 +129,58 @@ def main():
     
     if not os.path.exists(INPUT_FOLDER): os.makedirs(INPUT_FOLDER)
 
-    speak("Audio sensors active. Standing by for wake word.")
+    speak("Audio sensors active. Standing by.")
 
     while True:
         try:
+            # 1. STATE CHECK (Timeout Logic)
             if is_focused and (time.time() - last_interaction > ATTENTION_SPAN):
                 is_focused = False
                 print("\033[90m[TIMEOUT] Returning to Idle Mode.\033[0m")
-                # play a cool "power down" sound here
-                # subprocess.run("powershell.exe ... play shutdown.wav ...")
+                # Optional: Play a "power down" beep here
 
+            # 2. CHECK FOR FILES
             audio_files = [f for f in os.listdir(INPUT_FOLDER) if f.endswith('.wav')]
             
             if not audio_files:
                 time.sleep(0.1)
                 continue
 
+            # Found audio!
             file_path = os.path.join(INPUT_FOLDER, audio_files[0])
-            time.sleep(0.2) # Wait for write
+            time.sleep(0.2) 
             
             user_input = listen_to_file(file_path)
-            os.remove(file_path) # Delete immediately
+            os.remove(file_path)
             
             if not user_input: continue
 
             print(f"\n\033[94mDustin (Voice):\033[0m {user_input}")
             clean_input = user_input.lower().strip()
 
-            # WAKE WORD LOGIC
+            # 3. WAKE WORD LOGIC
             if not is_focused:
-                # IDLE MODE: Ignore everything unless it contains a wake word
                 if any(word in clean_input for word in WAKE_WORDS):
                     is_focused = True
                     last_interaction = time.time()
                     print("\033[92m[WAKE DETECTED] Focus Acquired.\033[0m")
-                    # We pass the input through! "Mesh, report status" should work instantly.
+                    
+                    # --- THE FIX: Immediate Acknowledgment ---
+                    # We play a sound/voice immediately so you know he heard you
+                    speak("Listening.") 
+                    # -----------------------------------------
+                    
                 else:
-                    print(f"\033[90m[IGNORED] '{clean_input}' (Say 'Mesh' to trigger)\033[0m")
+                    print(f"\033[90m[IGNORED] '{clean_input}'\033[0m")
                     continue
             else:
-                # FOCUSED MODE: Refresh timer and process everything
                 last_interaction = time.time()
 
-            # PROCESS (Think & Speak)
+            # 4. PROCESS
             raw_response, context = think(user_input, context)
             
             try:
+                # JSON Parsing
                 if "{" in raw_response:
                     json_str = raw_response[raw_response.find('{'):raw_response.rfind('}')+1]
                     data = json.loads(json_str)
