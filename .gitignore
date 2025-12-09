@@ -6,6 +6,7 @@ __pycache__/
 venv/
 .venv/
 env/
+input_buffer/
 
 # --- Generated Audio (Don't commit output) ---
 mesh_hq.wav
