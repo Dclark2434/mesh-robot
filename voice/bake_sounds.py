@@ -12,11 +12,11 @@ OUTPUT_DIR = "sounds"
 # Value = List of phrases to record for that category
 PHRASES = {
     "ack": [
-        "Listening.",
-        "Go ahead.",
-        "I'm here.",
-        "State your inquiry.",
-        "HUH?!"
+        "Hang on a sec...",
+        "Uhh...hmm..",
+        "What do you mean by... OH!",
+        "Were you talking to me?",
+        "Wait one, I'm in the middle of something...Okay So..."
     ],
     "processing": [
         "Processing.",
@@ -25,9 +25,10 @@ PHRASES = {
         "One moment."
     ],
     "boot": [
-        "M.E.S.H. System Online.",
+        "Mesh System Online.",
         "Systems initialization complete.",
-        "Boot sequence successful."
+        "Boot sequence successful.",
+        "I'm alive! Hahaha"
     ],
     "shutdown": [
         "Powering down.",
@@ -63,7 +64,7 @@ for category, variations in PHRASES.items():
         final_file = os.path.join(OUTPUT_DIR, f"{filename}.wav")
         sox_cmd = (
             f'sox {temp_file} -b 16 {final_file} '
-            'overdrive 5 sinc 60-7000 reverb 5 gain -1'
+            'overdrive 3 sinc 60-7000 reverb 5 gain -1'
         )
         subprocess.run(sox_cmd, shell=True, check=True, stderr=subprocess.DEVNULL)
 

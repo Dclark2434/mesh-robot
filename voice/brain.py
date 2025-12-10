@@ -7,6 +7,8 @@ import os
 import sys
 import shutil
 import glob
+import threading
+import queue
 
 try:
     import torch
@@ -89,42 +91,92 @@ def play_sound(category):
     )
     subprocess.run(command, shell=True)
 
+import re # Add this to imports if not there
+
 def speak(text):
     if not text: return
     
-    # clean text
-    display_text = text
-    spoken_text = text.replace("[CUE: GREEN]", "").replace("[CUE: FLASHING]", "").replace("[CUE: ON]", "")
-    
-    print(f"\033[92mM.E.S.H.:\033[0m {display_text}") 
+    # 1. Clean Text
+    clean_text = text.replace("[CUE: GREEN]", "").replace("[CUE: FLASHING]", "").replace("[CUE: ON]", "")
+    clean_text = clean_text.replace("*", "").replace('"', '').strip()
+    print(f"\033[92mM.E.S.H.:\033[0m {clean_text}") 
 
-    try:
+    # 2. Split into sentences
+    # Regex: Split by . ? ! but keep the punctuation
+    sentences = re.split(r'(?<=[.!?]) +', clean_text)
+    sentences = [s for s in sentences if len(s.strip()) > 2] # Remove empty chunks
 
-        tts_engine.tts_to_file(
-            text=spoken_text, 
-            speaker_wav=REFERENCE_AUDIO, 
-            language="en", 
-            file_path="mesh_hq.wav",
-            speed=1.0
-        )
+    if not sentences: return
 
-        # radio effect processing. edit this if you want a crunchier sound.
-        sox_command = (
-            'sox mesh_hq.wav -b 16 mesh_final.wav '
-            'overdrive 5 sinc 60-7000 reverb 5 gain -1'
-        )
-        subprocess.run(sox_command, shell=True, check=True, stderr=subprocess.DEVNULL)
+    # 3. The Shared Queue
+    # The Generator puts WAV paths here. The Player takes them out.
+    audio_queue = queue.Queue()
 
-        play_command = (
-            "powershell.exe -NoProfile -ExecutionPolicy Bypass -c "
-            "\"(New-Object Media.SoundPlayer "
-            "'$(wslpath -w mesh_final.wav)').PlaySync()\""
-        )
-        subprocess.run(play_command, shell=True, check=True)
+    # --- THE PRODUCER (Runs in background) ---
+    def generator_worker():
+        for i, sentence in enumerate(sentences):
+            raw_file = f"mesh_raw_{i}.wav"
+            final_file = f"mesh_final_{i}.wav"
+            
+            try:
+                # A. Generate Raw Audio (Heavy GPU Task)
+                tts_engine.tts_to_file(
+                    text=sentence, 
+                    speaker_wav=REFERENCE_AUDIO, 
+                    language="en", 
+                    file_path=raw_file,
+                    speed=1.0 
+                )
+
+                # B. Apply Radio FX (CPU Task)
+                subprocess.run(
+                    f'sox {raw_file} -b 16 {final_file} overdrive 3 sinc 60-7000 reverb 5 gain -1',
+                    shell=True, check=True, stderr=subprocess.DEVNULL
+                )
+                
+                # C. Put ready file into Queue
+                audio_queue.put(final_file)
+                
+                # Cleanup raw file immediately
+                if os.path.exists(raw_file): os.remove(raw_file)
+
+            except Exception as e:
+                print(f"[Generator Error] chunk {i}: {e}")
         
-    except Exception as e:
-        print(f"Voice Error: {e}")
+        # Signal that we are done generating
+        audio_queue.put(None)
 
+    # --- START THE ENGINE ---
+    gen_thread = threading.Thread(target=generator_worker)
+    gen_thread.start()
+
+    # --- THE CONSUMER (Main Thread) ---
+    # We play audio here so the script waits for speech to finish before listening again
+    while True:
+        try:
+            # Wait for the next chunk to be ready
+            # If generation is slower than playback, we wait here.
+            # If generation is faster, this returns immediately.
+            file_path = audio_queue.get()
+            
+            if file_path is None: # Sentinel value meaning "All Done"
+                break
+            
+            # D. Play Immediately
+            subprocess.run(
+                f"powershell.exe -NoProfile -ExecutionPolicy Bypass -c \"(New-Object Media.SoundPlayer '$(wslpath -w {file_path})').PlaySync()\"",
+                shell=True, check=True
+            )
+            
+            # E. Cleanup
+            if os.path.exists(file_path): os.remove(file_path)
+            
+        except Exception as e:
+            print(f"[Player Error]: {e}")
+            break
+
+    # Ensure thread joins (cleans up)
+    gen_thread.join()
 def think(prompt, context):
     payload = {
         "model": MODEL_NAME,
