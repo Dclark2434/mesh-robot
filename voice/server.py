@@ -12,6 +12,7 @@ import os
 import re
 import uuid
 import shutil
+import random
 
 # --- CONFIGURATION ---
 app = FastAPI()
@@ -19,6 +20,10 @@ OLLAMA_URL = "http://localhost:11434/api/generate"
 MODEL_NAME = "mesh"
 REFERENCE_AUDIO = "tars_ref.wav"
 WAKE_WORDS = ["hey mesh", "hey, mesh", "mesh"]
+
+# --- MEMORY STORE (RAM) ---
+# Format: { "user_id": [123, 456, ...] } -> These numbers are the context tokens
+SESSION_MEMORY = {}
 
 # --- INITIALIZE ENGINES ---
 print("\033[93m[SYSTEM] Loading Neural Engines... (GPU)\033[0m")
@@ -60,29 +65,49 @@ def process_audio_fx(input_file):
         if os.path.exists(input_file): os.remove(input_file)
         if os.path.exists(output_file): os.remove(output_file)
 
-def think(prompt, context=[]):
-    """Query Ollama"""
+def think(prompt, user_id="dustin"):
+    """
+    Query Ollama with State Management and Debugging.
+    """
+    # 1. Retrieve History
+    context = SESSION_MEMORY.get(user_id, [])
+    
+    # DEBUG LOG: Show current memory size
+    print(f"\033[90m[MEMORY] Input Context Size: {len(context)} tokens\033[0m")
+
     payload = {
         "model": MODEL_NAME,
         "prompt": prompt,
-        "context": context,
+        "context": context, 
         "stream": False
     }
+    
     try:
         response = requests.post(OLLAMA_URL, json=payload)
-        return response.json() # Returns dict with 'response' and 'context'
+        data = response.json()
+        
+        # 2. Save New History
+        new_context = data['context']
+        SESSION_MEMORY[user_id] = new_context
+        
+        # DEBUG LOG: Show growth
+        diff = len(new_context) - len(context)
+        print(f"\033[90m[MEMORY] Updated Context Size: {len(new_context)} tokens (+{diff})\033[0m")
+        
+        return data['response']
     except Exception as e:
         print(f"[BRAIN ERROR] {e}")
-        return {"response": "Connection lost.", "context": []}
+        return "Connection lost."
 
 def get_prebaked_sound(category):
     """Fetches bytes of a pre-baked sound (ack/boot)"""
-    # Simple logic: grab the first one found or random
-    # In a real API, we might cache these in RAM
     search_dir = "sounds"
+    # Ensure directory exists to avoid crash if empty
+    if not os.path.exists(search_dir):
+        return None
+        
     files = [f for f in os.listdir(search_dir) if f.startswith(category)]
     if files:
-        import random
         selected = random.choice(files)
         with open(os.path.join(search_dir, selected), "rb") as f:
             return f.read()
@@ -97,6 +122,7 @@ def interaction_generator(user_text):
     """
     # 1. WAKE WORD SPLITTING LOGIC
     clean_input = user_text.lower().strip()
+    # Find the first wake word that appears in the input
     trigger_word = next((w for w in WAKE_WORDS if w in clean_input), None)
     
     final_prompt = user_text
@@ -121,10 +147,8 @@ def interaction_generator(user_text):
     print(f"\033[94mUser:\033[0m {final_prompt}")
 
     # 2. THINK (Ollama)
-    # Note: In a stateless API, context management is tricky. 
-    # For V1, we are stateless (Amnesia Mode). V2 can accept context in the POST request.
-    thought_data = think(final_prompt)
-    raw_response = thought_data['response']
+    # We pass the hardcoded user_id so he remembers YOU specifically
+    raw_response = think(final_prompt, user_id="dustin")
     
     # 3. PARSE JSON / COMMANDS
     spoken_text = raw_response
@@ -146,6 +170,7 @@ def interaction_generator(user_text):
     # Log the command (Server Side)
     if hardware_command != "none":
         print(f"\033[93m[COMMAND] {hardware_command} -> {hardware_param}\033[0m")
+        # Note: Hardware command handling for the client would happen here in a full implementation.
         pass
 
     # 4. SPEAK (Pipeline)
@@ -180,8 +205,8 @@ def interaction_generator(user_text):
 
 # --- API ENDPOINTS ---
 
-@app.post("/listen")
-async def listen_endpoint(audio_file: UploadFile = File(...), response: Response = None):
+@app.post("/interact")
+async def interact_endpoint(audio_file: UploadFile = File(...)):
     """
     Endpoint: Accepts WAV file -> Returns Audio Stream
     """
@@ -200,7 +225,7 @@ async def listen_endpoint(audio_file: UploadFile = File(...), response: Response
     if not user_text:
         return {"status": "no_speech"}
 
-
+    # 3. Stream Response
     return StreamingResponse(
         interaction_generator(user_text),
         media_type="audio/wav"

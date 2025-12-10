@@ -10,7 +10,7 @@ import os
 
 # --- CONFIGURATION ---
 # The IP of your WSL (or Raspberry Pi) Server
-SERVER_URL = "http://localhost:8000/listen"  
+SERVER_URL = "http://localhost:8000/interact"  
 
 # Audio Config
 FS = 44100 
