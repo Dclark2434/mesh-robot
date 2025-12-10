@@ -10,6 +10,7 @@ OUTPUT_FOLDER = r"\\wsl.localhost\Ubuntu\home\dclark\mesh-robot\input_buffer"
 FS = 44100 
 THRESHOLD = 0.5  # volume sensitivity (Adjust if he can't hear you or hears ghosts)
 SILENCE_LIMIT = 1 # seconds of silence to consider the sentence "done"
+LOCK_FILE = os.path.join(OUTPUT_FOLDER, "speaking.lock")
 
 print(f"--- M.E.S.H. AUTO-EAR ---")
 print(f"Targeting: {OUTPUT_FOLDER}")
@@ -33,6 +34,13 @@ def callback(indata, frames, time, status):
 try:
     with sd.InputStream(samplerate=FS, channels=1, callback=callback):
         while True:
+            if os.path.exists(LOCK_FILE):
+                # If the robot is talking, clear the buffer and wait
+                with q.mutex:
+                    q.queue.clear()
+                time.sleep(0.1)
+                continue
+            
             # 1. Listen for Trigger Volume
             audio_buffer = []
             silence_counter = 0

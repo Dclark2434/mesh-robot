@@ -9,25 +9,31 @@ import shutil
 import glob
 import threading
 import queue
+import re
 
 try:
     import torch
     from TTS.api import TTS
     from faster_whisper import WhisperModel
 except ImportError:
-    print("Error: You need to install TTS. Run: pip install TTS torch")
+    print("Error: You need to install TTS. Run: pip install TTS torch faster-whisper")
     sys.exit(1)
 
-# config
+# --- CONFIGURATION ---
 OLLAMA_URL = "http://localhost:11434/api/generate"
 MODEL_NAME = "mesh"  
-REFERENCE_AUDIO = "tars_ref.wav" # this is the reference for zero-shot voice
-INPUT_FOLDER = "../input_buffer"
-WAKE_WORDS = ["hey mesh", "hey, mesh"]
-ATTENTION_SPAN = 60  # Seconds before he stops listening
+REFERENCE_AUDIO = "tars_ref.wav"
+INPUT_FOLDER = "../input_buffer" # Ensure this matches your Ear Client path
+WAKE_WORDS = ["hey mesh", "hey, mesh", "mesh"]
+ATTENTION_SPAN = 60
 last_interaction = 0
 is_focused = False
 
+# --- LOCK FILE CONFIG ---
+# This file signals the Ear Client to stop recording
+LOCK_FILE_PATH = os.path.join(INPUT_FOLDER, "speaking.lock")
+
+# --- INITIALIZE ENGINES ---
 print("\033[93m[SYSTEM] Loading Neural Voice Engine (XTTS v2)... Stand by.\033[0m")
 device = "cuda" if torch.cuda.is_available() else "cpu"
 
@@ -35,17 +41,26 @@ tts_engine = TTS("tts_models/multilingual/multi-dataset/xtts_v2").to(device)
 print(f"\033[92m[SYSTEM] Voice Engine Online. Running on {device.upper()}.\033[0m")
 
 stt_model = WhisperModel("small", device=device, compute_type="float16")
-
 print(f"\033[92m[SYSTEM] M.E.S.H. Online on {device.upper()}. Waiting for input...\033[0m")
 
+# --- HELPER FUNCTIONS ---
+
+def set_speaking_lock(state):
+    """Creates or destroys the lock file to mute the ears"""
+    try:
+        if state:
+            with open(LOCK_FILE_PATH, "w") as f:
+                f.write("LOCKED")
+        else:
+            if os.path.exists(LOCK_FILE_PATH):
+                os.remove(LOCK_FILE_PATH)
+    except Exception as e:
+        print(f"[LOCK ERROR] {e}")
+
 def execute_command(action, param):
-    # SAFETY 1: handle NoneType if LLM sends null
-    if param is None:
-        param = "unknown"
-        
+    if param is None: param = "unknown"
     clean_param = param.lower().strip()
     
-    # SAFETY 2: define Valid Hardware Limits (Stop him from walking to "Mars")
     VALID_MOVES = ["forward", "backward", "left", "right", "stop"]
     VALID_SCANS = ["full", "sector", "forward"]
 
@@ -54,22 +69,17 @@ def execute_command(action, param):
             print(f"\033[93m[HARDWARE] Servos engaging... Moving {clean_param.upper()}\033[0m")
         else:
             print(f"\033[91m[HARDWARE WARNING] Invalid Move Parameter: '{param}'. Ignoring.\033[0m")
-            
     elif action == "scan":
         if clean_param in VALID_SCANS:
             print(f"\033[93m[HARDWARE] LiDAR spinning up... Scanning {clean_param.upper()}\033[0m")
         else:
             print(f"\033[91m[HARDWARE WARNING] Invalid Scan Parameter: '{param}'. Ignoring.\033[0m")
-            
     elif action == "shutdown":
         print("\033[91m[SYSTEM] Kill signal received.\033[0m")
         exit(0)
 
 def play_sound(category):
-    """
-    Plays a RANDOM pre-baked file from a category (e.g., 'ack' -> 'ack_3.wav')
-    """
-    # Find all files matching 'sounds/ack_*.wav'
+    """Plays a RANDOM pre-baked file"""
     search_pattern = os.path.join("sounds", f"{category}_*.wav")
     files = glob.glob(search_pattern)
     
@@ -77,12 +87,11 @@ def play_sound(category):
         print(f"[ERROR] No sound files found for category: {category}")
         return
 
-    # Pick a random one
     chosen_file = random.choice(files)
-    
-    # WSL Path Conversion
-    # We use os.path.abspath to ensure the path is clean before passing to wslpath
     linux_path = os.path.abspath(chosen_file)
+    
+    # LOCK ON
+    set_speaking_lock(True)
     
     command = (
         "powershell.exe -NoProfile -ExecutionPolicy Bypass -c "
@@ -90,36 +99,31 @@ def play_sound(category):
         f"'$(wslpath -w {linux_path})').PlaySync()\""
     )
     subprocess.run(command, shell=True)
-
-import re # Add this to imports if not there
+    
+    # LOCK OFF
+    set_speaking_lock(False)
 
 def speak(text):
     if not text: return
     
-    # 1. Clean Text
     clean_text = text.replace("[CUE: GREEN]", "").replace("[CUE: FLASHING]", "").replace("[CUE: ON]", "")
     clean_text = clean_text.replace("*", "").replace('"', '').strip()
     print(f"\033[92mM.E.S.H.:\033[0m {clean_text}") 
 
-    # 2. Split into sentences
-    # Regex: Split by . ? ! but keep the punctuation
     sentences = re.split(r'(?<=[.!?]) +', clean_text)
-    sentences = [s for s in sentences if len(s.strip()) > 2] # Remove empty chunks
+    sentences = [s for s in sentences if len(s.strip()) > 2]
 
     if not sentences: return
 
-    # 3. The Shared Queue
-    # The Generator puts WAV paths here. The Player takes them out.
     audio_queue = queue.Queue()
 
-    # --- THE PRODUCER (Runs in background) ---
+    # --- PRODUCER ---
     def generator_worker():
         for i, sentence in enumerate(sentences):
             raw_file = f"mesh_raw_{i}.wav"
             final_file = f"mesh_final_{i}.wav"
             
             try:
-                # A. Generate Raw Audio (Heavy GPU Task)
                 tts_engine.tts_to_file(
                     text=sentence, 
                     speaker_wav=REFERENCE_AUDIO, 
@@ -127,56 +131,46 @@ def speak(text):
                     file_path=raw_file,
                     speed=1.0 
                 )
-
-                # B. Apply Radio FX (CPU Task)
                 subprocess.run(
                     f'sox {raw_file} -b 16 {final_file} overdrive 3 sinc 60-7000 reverb 5 gain -1',
                     shell=True, check=True, stderr=subprocess.DEVNULL
                 )
-                
-                # C. Put ready file into Queue
                 audio_queue.put(final_file)
-                
-                # Cleanup raw file immediately
                 if os.path.exists(raw_file): os.remove(raw_file)
-
             except Exception as e:
                 print(f"[Generator Error] chunk {i}: {e}")
-        
-        # Signal that we are done generating
         audio_queue.put(None)
 
-    # --- START THE ENGINE ---
+    # --- START GENERATOR ---
     gen_thread = threading.Thread(target=generator_worker)
     gen_thread.start()
 
-    # --- THE CONSUMER (Main Thread) ---
-    # We play audio here so the script waits for speech to finish before listening again
+    # --- CONSUMER (PLAYER) ---
     while True:
         try:
-            # Wait for the next chunk to be ready
-            # If generation is slower than playback, we wait here.
-            # If generation is faster, this returns immediately.
             file_path = audio_queue.get()
+            if file_path is None: break
             
-            if file_path is None: # Sentinel value meaning "All Done"
-                break
+            # LOCK ON
+            set_speaking_lock(True)
             
-            # D. Play Immediately
             subprocess.run(
                 f"powershell.exe -NoProfile -ExecutionPolicy Bypass -c \"(New-Object Media.SoundPlayer '$(wslpath -w {file_path})').PlaySync()\"",
                 shell=True, check=True
             )
             
-            # E. Cleanup
+            # LOCK OFF
+            set_speaking_lock(False)
+            
             if os.path.exists(file_path): os.remove(file_path)
             
         except Exception as e:
             print(f"[Player Error]: {e}")
+            set_speaking_lock(False) # Safety unlock
             break
 
-    # Ensure thread joins (cleans up)
     gen_thread.join()
+
 def think(prompt, context):
     payload = {
         "model": MODEL_NAME,
@@ -202,22 +196,26 @@ def listen_to_file(filepath):
         print(f"Hearing Error: {e}")
         return ""
 
+# --- MAIN LOOP ---
 def main():
     global is_focused, last_interaction
     context = []
     
     if not os.path.exists(INPUT_FOLDER): os.makedirs(INPUT_FOLDER)
+    
+    # Ensure lock is cleared on startup
+    set_speaking_lock(False)
 
     play_sound("boot") 
     print("M.E.S.H. Ready.")
 
     while True:
         try:
-            # 1. STATE CHECK (Timeout Logic)
+            # 1. STATE CHECK
             if is_focused and (time.time() - last_interaction > ATTENTION_SPAN):
                 is_focused = False
                 print("\033[90m[TIMEOUT] Returning to Idle Mode.\033[0m")
-                # Optional: Play a "power down" beep here
+                # Optional: play_sound("shutdown")
 
             # 2. CHECK FOR FILES
             audio_files = [f for f in os.listdir(INPUT_FOLDER) if f.endswith('.wav')]
@@ -226,9 +224,8 @@ def main():
                 time.sleep(0.1)
                 continue
 
-            # Found audio!
             file_path = os.path.join(INPUT_FOLDER, audio_files[0])
-            time.sleep(0.2) 
+            time.sleep(0.2)
             
             user_input = listen_to_file(file_path)
             os.remove(file_path)
@@ -238,10 +235,8 @@ def main():
             print(f"\n\033[94mDustin (Voice):\033[0m {user_input}")
             clean_input = user_input.lower().strip()
 
-            # 3. WAKE WORD LOGIC
-            # Check if we need to wake up
+            # 3. WAKE WORD LOGIC (Fixed Split Logic)
             if not is_focused:
-                # Find which wake word was used (if any)
                 trigger_word = next((w for w in WAKE_WORDS if w in clean_input), None)
                 
                 if trigger_word:
@@ -249,39 +244,34 @@ def main():
                     last_interaction = time.time()
                     print(f"\033[92m[WAKE DETECTED] Trigger: '{trigger_word}'\033[0m")
                     
-                    # Play random acknowledgment sound immediately
                     play_sound("ack")
                     
-                    # STRIP THE WAKE WORD
-                    # If user said "Hey Mesh status report", we want just "status report"
-                    # We remove the trigger word and clean up whitespace/punctuation
-                    remaining_command = clean_input.replace(trigger_word, "").strip(" .,?!")
+                    # Split logic: "Hey Mesh [Command]" vs "Hey Mesh"
+                    parts = clean_input.partition(trigger_word)
+                    remaining_command = parts[2].strip(" .,?!")
                     
-                    # LOGIC SPLIT:
                     if len(remaining_command) < 2:
-                        # Case A: User only said "Hey Mesh"
-                        # We have ACKed. Now we just loop back and wait for the command.
                         print("\033[90m[WAITING] Awaiting command...\033[0m")
                         continue 
                     else:
-                        # Case B: User said "Hey Mesh [Command]"
-                        # We update user_input to be just the command, and let it fall through to the LLM
                         print(f"\033[90m[FAST TRACK] Command: '{remaining_command}'\033[0m")
                         user_input = remaining_command
-                
                 else:
-                    # No wake word found, and not focused. Ignore.
                     print(f"\033[90m[IGNORED] '{clean_input}'\033[0m")
                     continue
             else:
-                # Already focused. Refresh timer.
                 last_interaction = time.time()
 
             # 4. PROCESS
+            # Check for hardware killswitch first
+            if "shut down" in user_input.lower() or "power off" in user_input.lower():
+                 play_sound("shutdown")
+                 print("\033[91m[SYSTEM] Kill signal received.\033[0m")
+                 exit(0)
+
             raw_response, context = think(user_input, context)
             
             try:
-                # JSON Parsing
                 if "{" in raw_response:
                     json_str = raw_response[raw_response.find('{'):raw_response.rfind('}')+1]
                     data = json.loads(json_str)

@@ -1,7 +1,7 @@
 import torch
 from TTS.api import TTS
 from faster_whisper import WhisperModel
-from fastapi import FastAPI, UploadFile, File
+from fastapi import FastAPI, UploadFile, File, Response
 from fastapi.responses import StreamingResponse
 import uvicorn
 import io
@@ -10,66 +10,158 @@ import json
 import subprocess
 import os
 import re
-import threading
-import queue
+import uuid
+import shutil
 
-# --- CONFIG ---
+# --- CONFIGURATION ---
 app = FastAPI()
 OLLAMA_URL = "http://localhost:11434/api/generate"
 MODEL_NAME = "mesh"
 REFERENCE_AUDIO = "tars_ref.wav"
-SPEAKER_ID = 613 
+WAKE_WORDS = ["hey mesh", "hey, mesh", "mesh"]
 
-# --- LOAD ENGINES (Global) ---
-print("[SYSTEM] Loading Neural Engines...")
+# --- INITIALIZE ENGINES ---
+print("\033[93m[SYSTEM] Loading Neural Engines... (GPU)\033[0m")
 device = "cuda" if torch.cuda.is_available() else "cpu"
 
-# 1. Hearing
+# 1. Hearing (Whisper)
 stt_model = WhisperModel("small", device=device, compute_type="float16")
 
-# 2. Speaking
+# 2. Speaking (XTTS)
 tts_engine = TTS("tts_models/multilingual/multi-dataset/xtts_v2").to(device)
 
-print(f"[SYSTEM] M.E.S.H. Server Online on {device.upper()}")
+print(f"\033[92m[SYSTEM] M.E.S.H. API Online on {device.upper()}\033[0m")
 
-# --- LOGIC ---
+# --- HELPER FUNCTIONS ---
 
-def think(prompt):
-    """Simple blocking call to Ollama"""
+def process_audio_fx(input_file):
+    """
+    Applies the 'Interstellar Radio' effects using SoX.
+    Returns the binary data of the processed WAV.
+    """
+    output_file = input_file.replace(".wav", "_fx.wav")
+    
+    # The Classic TARS Filter Chain
+    cmd = (
+        f'sox {input_file} -b 16 {output_file} '
+        'overdrive 5 sinc 60-7000 reverb 10 50 20 gain -2'
+    )
+    
+    try:
+        subprocess.run(cmd, shell=True, check=True, stderr=subprocess.DEVNULL)
+        with open(output_file, "rb") as f:
+            audio_data = f.read()
+        return audio_data
+    except Exception as e:
+        print(f"[FX ERROR] {e}")
+        return None
+    finally:
+        # Cleanup temp files immediately
+        if os.path.exists(input_file): os.remove(input_file)
+        if os.path.exists(output_file): os.remove(output_file)
+
+def think(prompt, context=[]):
+    """Query Ollama"""
     payload = {
-        "model": MODEL_NAME, 
-        "prompt": prompt, 
+        "model": MODEL_NAME,
+        "prompt": prompt,
+        "context": context,
         "stream": False
     }
     try:
         response = requests.post(OLLAMA_URL, json=payload)
-        return response.json()['response']
-    except:
-        return "Error connecting to Brain."
+        return response.json() # Returns dict with 'response' and 'context'
+    except Exception as e:
+        print(f"[BRAIN ERROR] {e}")
+        return {"response": "Connection lost.", "context": []}
 
-def generate_audio_stream(text):
+def get_prebaked_sound(category):
+    """Fetches bytes of a pre-baked sound (ack/boot)"""
+    # Simple logic: grab the first one found or random
+    # In a real API, we might cache these in RAM
+    search_dir = "sounds"
+    files = [f for f in os.listdir(search_dir) if f.startswith(category)]
+    if files:
+        import random
+        selected = random.choice(files)
+        with open(os.path.join(search_dir, selected), "rb") as f:
+            return f.read()
+    return None
+
+# --- STREAM GENERATOR ---
+
+def interaction_generator(user_text):
     """
-    Generator function that yields WAV bytes.
-    This allows the client to play 'chunk 1' while we generate 'chunk 2'.
+    This is the core logic loop converted into a Generator.
+    It yields chunks of audio bytes as they are created.
     """
-    # Clean text
-    clean_text = text.replace("[CUE: GREEN]", "").replace("*", "").strip()
+    # 1. WAKE WORD SPLITTING LOGIC
+    clean_input = user_text.lower().strip()
+    trigger_word = next((w for w in WAKE_WORDS if w in clean_input), None)
+    
+    final_prompt = user_text
+    
+    if trigger_word:
+        print(f"\033[92m[TRIGGER] {trigger_word}\033[0m")
+        # Split: "Hey Mesh status report" -> ["hey ", "mesh", " status report"]
+        parts = clean_input.partition(trigger_word)
+        remaining_command = parts[2].strip(" .,?!")
+        
+        # Immediate ACK (Yield pre-baked sound bytes)
+        ack_bytes = get_prebaked_sound("ack")
+        if ack_bytes: yield ack_bytes
+        
+        if len(remaining_command) < 2:
+            # User only said "Hey Mesh". We are done.
+            return 
+        else:
+            # User sent a command immediately. Pass it to LLM.
+            final_prompt = remaining_command
+
+    print(f"\033[94mUser:\033[0m {final_prompt}")
+
+    # 2. THINK (Ollama)
+    # Note: In a stateless API, context management is tricky. 
+    # For V1, we are stateless (Amnesia Mode). V2 can accept context in the POST request.
+    thought_data = think(final_prompt)
+    raw_response = thought_data['response']
+    
+    # 3. PARSE JSON / COMMANDS
+    spoken_text = raw_response
+    hardware_command = "none"
+    hardware_param = "null"
+
+    if "{" in raw_response:
+        try:
+            # Regex extraction to find the JSON object
+            json_match = re.search(r"(\{.*\})", raw_response, re.DOTALL)
+            if json_match:
+                data = json.loads(json_match.group(1))
+                spoken_text = data.get("response", "Error.")
+                hardware_command = data.get("action", "none")
+                hardware_param = data.get("param", "null")
+        except:
+            print(f"[PARSE ERROR] {raw_response}")
+
+    # Log the command (Server Side)
+    if hardware_command != "none":
+        print(f"\033[93m[COMMAND] {hardware_command} -> {hardware_param}\033[0m")
+        pass
+
+    # 4. SPEAK (Pipeline)
+    clean_text = spoken_text.replace("[CUE: GREEN]", "").replace("*", "").strip()
     print(f"\033[92mM.E.S.H.:\033[0m {clean_text}")
-
-    # Split sentences
+    
     sentences = re.split(r'(?<=[.!?]) +', clean_text)
     
     for i, sentence in enumerate(sentences):
         if len(sentence) < 2: continue
         
-        # We process in RAM (BytesIO) instead of Disk
-        # NOTE: Coqui XTTS creates temp files internally, so we still use a temp path
-        # but we handle the cleanup instantly.
-        temp_wav = f"temp_stream_{i}.wav"
-        processed_wav = f"proc_stream_{i}.wav"
+        # Unique temp file for this request chunk
+        req_id = str(uuid.uuid4())[:8]
+        temp_wav = f"temp_{req_id}.wav"
         
         try:
-            # 1. Generate
             tts_engine.tts_to_file(
                 text=sentence, 
                 speaker_wav=REFERENCE_AUDIO, 
@@ -78,69 +170,42 @@ def generate_audio_stream(text):
                 speed=1.0
             )
             
-            # 2. FX (SoX)
-            subprocess.run(
-                f'sox {temp_wav} -b 16 {processed_wav} overdrive 5 sinc 60-7000 reverb 10 50 20 gain -2',
-                shell=True, check=True, stderr=subprocess.DEVNULL
-            )
-            
-            # 3. Read bytes and yield to network
-            with open(processed_wav, "rb") as f:
-                yield f.read()
+            # Process & Yield
+            processed_bytes = process_audio_fx(temp_wav)
+            if processed_bytes:
+                yield processed_bytes
                 
-        finally:
-            # Cleanup
-            if os.path.exists(temp_wav): os.remove(temp_wav)
-            if os.path.exists(processed_wav): os.remove(processed_wav)
+        except Exception as e:
+            print(f"[TTS Error] {e}")
 
 # --- API ENDPOINTS ---
 
-@app.post("/interact")
-async def interact(audio: UploadFile = File(...)):
+@app.post("/listen")
+async def listen_endpoint(audio_file: UploadFile = File(...), response: Response = None):
     """
-    1. Receive Audio
-    2. Transcribe (Whisper)
-    3. Think (Ollama)
-    4. Stream Audio Back (XTTS)
+    Endpoint: Accepts WAV file -> Returns Audio Stream
     """
-    # 1. Read Audio into RAM
-    audio_bytes = await audio.read()
-    
-    # Whisper expects a file path or file-like object. 
-    # We wrap bytes in BytesIO.
-    audio_file = io.BytesIO(audio_bytes)
+    # 1. Load Audio to RAM
+    audio_bytes = await audio_file.read()
+    audio_buffer = io.BytesIO(audio_bytes)
     
     # 2. Transcribe
-    print("\n[HEARING] Processing...")
-    segments, _ = stt_model.transcribe(audio_file, beam_size=5)
-    user_text = " ".join([segment.text for segment in segments]).strip()
-    
+    try:
+        segments, _ = stt_model.transcribe(audio_buffer, beam_size=5)
+        user_text = " ".join([segment.text for segment in segments]).strip()
+    except Exception as e:
+        print(f"[STT Error] {e}")
+        return {"error": "Transcription failed"}
+
     if not user_text:
         return {"status": "no_speech"}
-        
-    print(f"\033[94mUser:\033[0m {user_text}")
-    
-    # 3. Think
-    # (Optional: Wake Word logic would go here if you send raw audio stream)
-    raw_response = think(user_text)
-    
-    # Extract JSON/Text logic (Simplified for brevity)
-    if "{" in raw_response:
-        try:
-            json_str = raw_response[raw_response.find('{'):raw_response.rfind('}')+1]
-            data = json.loads(json_str)
-            spoken_text = data.get("response", "Error.")
-        except:
-            spoken_text = raw_response
-    else:
-        spoken_text = raw_response
 
-    # 4. Stream Audio Return
+
     return StreamingResponse(
-        generate_audio_stream(spoken_text), 
+        interaction_generator(user_text),
         media_type="audio/wav"
     )
 
 if __name__ == "__main__":
-    # Run the server on 0.0.0.0 so external devices (Pi) can hit it
+    # Host 0.0.0.0 allows the Raspberry Pi to connect via LAN IP
     uvicorn.run(app, host="0.0.0.0", port=8000)
