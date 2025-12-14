@@ -1,17 +1,35 @@
 # MESH
 
-**Mobile Engineering Support Hexapod**
+**Mobile Engineering Support Hexapod (The Brain)**
 
-A voice-controlled AI assistant for a hexapod robot. Inspired by TARS from Interstellar. Features real-time speech-to-speech interaction, voice cloning, and hardware command integration.
+> ⚠️ **Status: Active Development**
+> This project is providing the "Brain" and "Senses" for a physical hexapod robot. It is not just a desktop assistant. Features are missing, and the architecture is evolving.
+
+Verified "Brain" for a hexapod robot, inspired by TARS from Interstellar. Features real-time speech-to-speech interaction, voice cloning, and hardware command integration.
+
+---
+
+## Roadmap
+
+- [x] **Core Brain**: LLM Integration (Gemini/Ollama)
+- [x] **Voice**: Speech-to-Speech pipeline (Whisper -> LLM -> F5-TTS)
+- [x] **Vision**: Static image analysis (`/see`)
+- [ ] **Hardware Integration**:
+    - [ ] Connect Physical Servos (Hexapod movement)
+    - [ ] Real-time Camera Feed integration
+- [ ] **Architecture Migration**:
+    - [x] Windows Client (Debug/Testing)
+    - [ ] Raspberry Pi Client (Target Payload on Robot)
+- [ ] **Telemetry**: Battery monitoring and sensor fusion
 
 ---
 
 ## Features
 
 - **Dual Brain Core**: Toggle between Local LLM (Ollama) or Cloud LLM (Gemini Flash).
-- **Voice Cloning**: Toggle between XTTS v2 (Local) or F5-TTS (Local/GPU).
+- **Voice Cloning**: F5-TTS (Default/SOTA) or XTTS v2 (Legacy).
 - **Real-time Audio Streaming**: Low latency response.
-- **Customizable Personality**: TARS-inspired (Cynical, Dry, Competent).
+- **Customizable Personality**: TARS-inspired (Cynical, Dry, Military Jargon).
 - **Hardware Command Stubs**: walk, scan, shutdown.
 - **Vision Analysis**: "See" the world via camera input (`/see` endpoint).
 - **Persistent Memory**: Rolling summaries (Local) or Full History (Cloud).
@@ -20,28 +38,22 @@ A voice-controlled AI assistant for a hexapod robot. Inspired by TARS from Inter
 
 ## Architecture
 
+**Current State (Debug):**
+The "ears" and "mouth" are currently running on a Windows PC for easy debugging, sending audio to the local Server.
+
+**Target State (Deploy):**
+The Client will run on a **Raspberry Pi** mounted on the robot, handling Audio I/O and Hardware Control, while communicating with the powerful Server (Brain) over the network.
+
 ```
-Windows Client (client.py)
-    |
-    | HTTP POST (audio/wav)
-    v
-    +-----------------------+
-    | MESH SERVER (Voice)   |
-    | (Docker / WSL / Pi)   |
-    +-----------------------+
-            |
-            +-- Whisper (STT)
-            |
-            +-- BRAIN SELECTION (Env: USE_GEMINI):
-            |     |-- TRUE:  Gemini 2.5 Flash (Cloud, Smart, Fast)
-            |     +-- FALSE: Ollama + Llama 3.2 (Local, Offline)
-            |
-            +-- VOICE ENGINE (Env: USE_F5_TTS):
-            |     |-- TRUE:  F5-TTS (Better Quality, Needs GPU)
-            |     +-- FALSE: XTTS v2 (Faster, Legacy)
-            |
-            v
-    Streaming WAV response
+[ PHYSICAL ROBOT ]                   [ LOCAL SERVER (The Brain) ]
+(Raspberry Pi / Windows Client)      (High-End PC / GPU)
+       |                                      |
+       |-- Microphone (Input)  -------------> | --+ Whisper (STT)
+       |                                      |
+       |-- Speaker (Output)    <------------- | --+ VOICE ENGINE (F5-TTS)
+       |                                      |
+       +-- Hardware Commands   <------------- | --+ BRAIN (Gemini / Ollama)
+           (Servos/Sensors)                   |
 ```
 
 ---
@@ -63,45 +75,23 @@ Control the brain and voice engines via Environment Variables (or `server.py` co
 
 ## Requirements
 
-### Docker (Recommended)
-- Docker Desktop / Engine
-- NVIDIA Container Toolkit (for GPU support)
-- Gemini API Key (optional, for Cloud Brain)
-
-### Local Python
-- Python 3.11 (Strict requirement; 3.12+ breaks TTS)
+### Local Python (Recommended)
+- Python 3.11 (Strict requirement; 3.12+ features break TTS)
 - CUDA 12.1 (for PyTorch/GPU)
 - `ffmpeg`, `sox`, `libsox-fmt-all` (System dependencies)
 - 8GB+ VRAM recommended for local inference.
 
----
+### Docker (Experimental)
+> ⚠️ **Warning**: The Docker build is currently unstable/experimental. It is recommended to use the manual setup below for now.
 
-## Quick Start (Docker)
-
-1. **Set your API Key** (if using Gemini):
-   Create a `.env` file or export the variable:
-   ```bash
-   export GEMINI_API_KEY="your_key_here"
-   ```
-
-2. **Run with Compose**:
-   ```bash
-   docker-compose up --build
-   ```
-   *Note: This mounts the `voice/` directory, so code changes apply immediately.*
-
-3. **Client (Windows)**:
-   ```powershell
-   cd client
-   # (Setup venv if needed)
-   python client.py
-   ```
+- Docker Desktop / Engine
+- NVIDIA Container Toolkit
 
 ---
 
-## Manual Setup (WSL/Linux)
+## Setup: Manual (WSL/Linux)
 
-If running without Docker:
+**Primary Method.** Run the server directly on your machine.
 
 ```bash
 # 1. Install System Dependencies (Ubuntu/WSL)
@@ -122,9 +112,30 @@ pip install -r requirements.txt
 python bake_sounds.py
 
 # 6. Start
-export GEMINI_API_KEY="xyz"
+export GEMINI_API_KEY="your_key_here"
 python server.py
 ```
+
+### Setup: Client (Windows Debug)
+
+```powershell
+python -m venv win_env
+.\win_env\Scripts\Activate.ps1
+pip install sounddevice numpy scipy requests
+python client.py
+```
+
+---
+
+## Setup: Docker (Experimental)
+
+1. **Set your API Key**:
+   Create a `.env` file just in case.
+
+2. **Run with Compose**:
+   ```bash
+   docker-compose up --build
+   ```
 
 ---
 
@@ -139,7 +150,7 @@ The robot's personality is defined in `voice/server.py` (System Prompt).
 - **Honesty**: 90% (Blunt)
 - **Humor**: 75% (Dry, Sarcastic)
 - **Skepticism**: 20%
-- **Voice**: Professional, tired, competent. NOT a cheerful assistant.
+- **Voice**: Professional, tired, competent. Uses military jargon ("Copy", "Roger").
 
 ---
 
