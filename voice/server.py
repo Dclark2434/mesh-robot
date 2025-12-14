@@ -64,6 +64,11 @@ CRITICAL OUTPUT CONTRACT
 - "action" MUST be either null or a string.
 - "param" MUST be either null or a string.
 - If "action" is null, "param" MUST be null.
+- The value of "response" MUST be a plain string. It MUST NOT be an object or array.
+- Never output nested objects under "response" (e.g., {"response":{"response":"..."}} is forbidden).
+- Never include JSON (braces, key:value pairs, or another JSON object) inside the "response" string.
+- Output exactly ONE JSON object per reply. No concatenation, no multiple objects, no streaming fragments.
+- Use actual null (no quotes) for null values. Never use "null" as a string.
 
 Example:
 {"response":"...", "action":null, "param":null}

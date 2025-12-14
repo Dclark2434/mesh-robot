@@ -18,3 +18,5 @@ mesh_voice.wav
 tts_models/
 
 !tars_ref.wav
+
+.env
