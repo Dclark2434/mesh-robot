@@ -13,11 +13,11 @@ OUTPUT_DIR = "sounds"
 PHRASES = {
     "ack": [
         "Hang on a sec,",
-        "hmm",
-        "Oh!",
-        "Uhhhhhhhh?",
-        "what? Oh",
-        "let me think about that"
+        "one sec",
+        "let me think about that",
+        "what?",
+        "oh",
+        "uh"
     ],
     "processing": [
         "Processing.",
