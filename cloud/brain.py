@@ -1,9 +1,18 @@
-FROM llama3.2
+# cloud/brain.py
+import os
+import json
+import re
+import google.generativeai as genai
 
-PARAMETER temperature 0.75
-PARAMETER num_ctx 16284
+# Setup API
+api_key = os.environ.get("GEMINI_API_KEY")
+if not api_key:
+    raise ValueError("GEMINI_API_KEY environment variable not set")
 
-SYSTEM """
+genai.configure(api_key=api_key)
+
+# --- MESH PERSONALITY (The Soul) ---
+MESH_SYSTEM_PROMPT = """
 You are MESH. (Mobile Engineering Support Hexapod).
 User: Dustin, Systems Engineer, your designer and mission partner.
 
@@ -71,3 +80,58 @@ FORMAT:
 
 VALID ACTIONS: "none", "walk", "scan", "shutdown"
 """
+
+# Initialize model with MESH personality as system instruction
+# This is the proper way to set personality in Gemini - it's enforced on every turn
+model = genai.GenerativeModel(
+    'gemini-2.5-flash',
+    system_instruction=MESH_SYSTEM_PROMPT
+)
+chat = model.start_chat()
+
+def robust_json_parse(raw_text):
+    """Extracts JSON even if the model adds extra formatting."""
+    default_data = {"response": raw_text, "action": "none", "param": "null"}
+    
+    # Strip markdown code blocks if present
+    clean_text = raw_text.strip()
+    if clean_text.startswith("```"):
+        # Remove ```json and closing ```
+        clean_text = re.sub(r'^```(?:json)?\s*', '', clean_text)
+        clean_text = re.sub(r'\s*```$', '', clean_text)
+    
+    # Try direct parse
+    try:
+        return json.loads(clean_text)
+    except:
+        pass
+    
+    # Try regex extraction for { ... }
+    match = re.search(r"(\{.*\})", clean_text, re.DOTALL)
+    if match:
+        try:
+            return json.loads(match.group(1))
+        except:
+            pass
+    
+    return default_data
+
+def ask_mesh(user_input):
+    """
+    Sends text to Gemini and returns ONLY the spoken response text.
+    Use ask_mesh_full() if you need action/param as well.
+    """
+    response = chat.send_message(user_input)
+    parsed = robust_json_parse(response.text)
+    return parsed.get("response", "Signal lost.")
+
+def ask_mesh_full(user_input):
+    """
+    Sends text to Gemini and returns the full parsed response.
+    Returns: dict with 'response', 'action', 'param'
+    """
+    response = chat.send_message(user_input)
+    return robust_json_parse(response.text)
+
+# Alias for backward compatibility
+ask_tars = ask_mesh

@@ -16,8 +16,7 @@ PHRASES = {
         "hmm",
         "Oh!",
         "Uhhhhhhhh?",
-        "what? Oh",
-        "let me think about that"
+        "what? Oh"
     ],
     "processing": [
         "Processing.",
