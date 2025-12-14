@@ -125,7 +125,11 @@ if USE_GEMINI:
     )
 
 # --- MEMORY STORE ---
-MEMORY_FILE = "mesh_memory.json"
+DATA_DIR = "data"
+if not os.path.exists(DATA_DIR):
+    os.makedirs(DATA_DIR)
+
+MEMORY_FILE = os.path.join(DATA_DIR, "mesh_memory.json")
 SESSION_MEMORY = {}  # { user_id: { context, summary, turn_count, last_updated } }
 USER_STATES = {}
 CONTEXT_THRESHOLD = 12000  # Trigger summarization at this context size

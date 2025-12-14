@@ -16,10 +16,8 @@ services:
               count: 1
               capabilities: [gpu]
     volumes:
-      # Persist the baked sounds so we don't regenerate them every boot
-      - sounds_data:/app/sounds
       # Persist the memory/brain
-      - memory_data:/app/memory
+      - memory_data:/app/data
       # Mount the reference audio if you want to swap it easily
       - ./voice/tars_ref.wav:/app/tars_ref.wav
     environment:
