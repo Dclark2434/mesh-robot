@@ -1,0 +1,32 @@
+services:
+  mesh-server:
+    build: 
+      context: .
+      dockerfile: Dockerfile
+    image: mesh-server:latest
+    container_name: mesh-brain
+    restart: unless-stopped
+    ports:
+      - "8000:8000"
+    deploy:
+      resources:
+        reservations:
+          devices:
+            - driver: nvidia
+              count: 1
+              capabilities: [gpu]
+    volumes:
+      # Persist the baked sounds so we don't regenerate them every boot
+      - sounds_data:/app/sounds
+      # Persist the memory/brain
+      - memory_data:/app/memory
+      # Mount the reference audio if you want to swap it easily
+      - ./voice/tars_ref.wav:/app/tars_ref.wav
+    environment:
+      - GEMINI_API_KEY=${GEMINI_API_KEY}
+      - USE_GEMINI=true
+      - USE_F5_TTS=true
+
+volumes:
+  sounds_data:
+  memory_data:

@@ -14,6 +14,7 @@ A voice-controlled AI assistant for a hexapod robot. Inspired by TARS from Inter
 - Wake word activation ("Hey Mesh")
 - Hardware command stubs (walk, scan, shutdown)
 - Vision analysis endpoint
+- Persistent memory with rolling summaries
 
 ---
 
@@ -40,7 +41,7 @@ Streaming WAV response
 
 | Dependency | Notes |
 |------------|-------|
-| Python 3.10+ | |
+| Python 3.11 | Required (3.12 has TTS compatibility issues) |
 | CUDA 12.1 | GPU acceleration |
 | Ollama | Local LLM runtime |
 | SoX | Audio effects (`apt install sox libsox-fmt-all`) |
@@ -54,8 +55,13 @@ Streaming WAV response
 
 ```bash
 cd voice
-python -m venv venv
+python3.11 -m venv venv
 source venv/bin/activate
+
+# Install PyTorch with CUDA support first
+pip install torch torchaudio torchvision --index-url https://download.pytorch.org/whl/cu121
+
+# Then install remaining dependencies
 pip install -r requirements.txt
 
 # Create the Ollama model
@@ -131,6 +137,17 @@ Defined in `Modelfile` and `server.py`:
 | Humor | 75% | Cynical, dry |
 | Honesty | 90% | Blunt |
 | Skepticism | 20% | Doubts human logic |
+
+---
+
+## Memory
+
+Conversation history persists across restarts via `mesh_memory.json`. When context exceeds 12k tokens, older history is summarized via LLM and prepended to the system prompt.
+
+| Config | Default | Description |
+|--------|---------|-------------|
+| `CONTEXT_THRESHOLD` | 12000 | Trigger summarization at this size |
+| `SUMMARY_MAX_LENGTH` | 500 | Max chars for rolling summary |
 
 ---
 

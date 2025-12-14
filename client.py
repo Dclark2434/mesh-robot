@@ -31,6 +31,9 @@ def play_stream(response):
     for chunk in response.iter_content(chunk_size=None): 
         if not chunk: break
         
+        # DEBUG: Show what we're receiving
+        print(f"\n[DEBUG] Chunk {chunk_count}: {len(chunk)} bytes, header: {chunk[:20]}")
+        
         # Create a temp file in the current working directory
         temp_filename = f"temp_recv_{chunk_count}.wav"
         
