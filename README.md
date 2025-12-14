@@ -8,13 +8,14 @@ A voice-controlled AI assistant for a hexapod robot. Inspired by TARS from Inter
 
 ## Features
 
-- Voice cloning via XTTS v2 with reference audio
-- Real-time audio streaming (low latency)
-- Customizable personality (humor, honesty, skepticism sliders)
-- Wake word activation ("Hey Mesh")
-- Hardware command stubs (walk, scan, shutdown)
-- Vision analysis endpoint
-- Persistent memory with rolling summaries
+- **Dual Brain Core**: Toggle between local LLM (Ollama) or Cloud LLM (Gemini Flash).
+- **Voice Cloning**: XTTS v2 / F5-TTS with reference audio.
+- **Real-time Audio Streaming**: Low latency response.
+- **Customizable Personality**: Humor, honesty, skepticism sliders.
+- **Wake Word Activation**: "Hey Mesh".
+- **Hardware Command Stubs**: walk, scan, shutdown.
+- **Vision Analysis Endpoint**: "See" the world via camera input.
+- **Persistent Memory**: Rolling summaries with context preservation.
 
 ---
 
@@ -152,12 +153,15 @@ Defined in `Modelfile` and `server.py`:
 
 ## Memory
 
-Conversation history persists across restarts via `mesh_memory.json`. When context exceeds 12k tokens, older history is summarized via LLM and prepended to the system prompt.
+Conversation history persists across restarts via `mesh_memory.json`.
+
+- **Cloud Brain (Gemini)**: Stores full conversation history (leveraging Gemini's 1M+ token context window).
+- **Local Brain (Ollama)**: Uses a rolling context window. When history exceeds 12k tokens, older exchanges are summarized and injected into the system prompt to maintain long-term memory without blowing up the context window.
 
 | Config | Default | Description |
 |--------|---------|-------------|
-| `CONTEXT_THRESHOLD` | 12000 | Trigger summarization at this size |
-| `SUMMARY_MAX_LENGTH` | 500 | Max chars for rolling summary |
+| `CONTEXT_THRESHOLD` | 12000 | Trigger summarization at this size (Local Brain only) |
+| `SUMMARY_MAX_LENGTH` | 500 | Max chars for rolling summary (Local Brain only) |
 
 ---
 
