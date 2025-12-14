@@ -3,7 +3,7 @@ set -e
 
 # Ensure output directories exist
 mkdir -p sounds
-mkdir -p memory
+mkdir -p data
 
 # Check if sounds exist (~check for one known category like 'ack')
 if ! ls sounds/ack* >/dev/null 2>&1; then
