@@ -8,14 +8,13 @@ A voice-controlled AI assistant for a hexapod robot. Inspired by TARS from Inter
 
 ## Features
 
-- **Dual Brain Core**: Toggle between local LLM (Ollama) or Cloud LLM (Gemini Flash).
-- **Voice Cloning**: XTTS v2 / F5-TTS with reference audio.
+- **Dual Brain Core**: Toggle between Local LLM (Ollama) or Cloud LLM (Gemini Flash).
+- **Voice Cloning**: Toggle between XTTS v2 (Local) or F5-TTS (Local/GPU).
 - **Real-time Audio Streaming**: Low latency response.
-- **Customizable Personality**: Humor, honesty, skepticism sliders.
-- **Wake Word Activation**: "Hey Mesh".
+- **Customizable Personality**: TARS-inspired (Cynical, Dry, Competent).
 - **Hardware Command Stubs**: walk, scan, shutdown.
-- **Vision Analysis Endpoint**: "See" the world via camera input.
-- **Persistent Memory**: Rolling summaries with context preservation.
+- **Vision Analysis**: "See" the world via camera input (`/see` endpoint).
+- **Persistent Memory**: Rolling summaries (Local) or Full History (Cloud).
 
 ---
 
@@ -26,153 +25,130 @@ Windows Client (client.py)
     |
     | HTTP POST (audio/wav)
     v
-Linux/WSL Server (voice/server.py)
-    |
-    +-- Whisper (STT)
-    +-- BRAIN SELECTION:
-    |     |-- LOCAL: Ollama + Llama 3.2
-    |     +-- CLOUD: Gemini Flash 2.5
-    |
-    +-- VOICE ENGINE:
-    |     |-- F5-TTS
-    |     +-- XTTS v2
-    |
-    v
-Streaming WAV response
+    +-----------------------+
+    | MESH SERVER (Voice)   |
+    | (Docker / WSL / Pi)   |
+    +-----------------------+
+            |
+            +-- Whisper (STT)
+            |
+            +-- BRAIN SELECTION (Env: USE_GEMINI):
+            |     |-- TRUE:  Gemini 2.5 Flash (Cloud, Smart, Fast)
+            |     +-- FALSE: Ollama + Llama 3.2 (Local, Offline)
+            |
+            +-- VOICE ENGINE (Env: USE_F5_TTS):
+            |     |-- TRUE:  F5-TTS (Better Quality, Needs GPU)
+            |     +-- FALSE: XTTS v2 (Faster, Legacy)
+            |
+            v
+    Streaming WAV response
 ```
+
+---
+
+## Configuration Toggles
+
+Control the brain and voice engines via Environment Variables (or `server.py` constants).
+
+| Toggle | Variable | Default | Description |
+|--------|----------|---------|-------------|
+| **Brain** | `USE_GEMINI` | `True` | `True` = Google Gemini (API Key required). `False` = Local Ollama. |
+| **Voice** | `USE_F5_TTS` | `True` | `True` = F5-TTS (SOTA). `False` = XTTS v2. |
+| **Key** | `GEMINI_API_KEY`| - | **REQUIRED** if `USE_GEMINI=True`. |
+
+> [!IMPORTANT]
+> You must set `GEMINI_API_KEY` in your environment (or `.env` file) for the Cloud Brain to work.
 
 ---
 
 ## Requirements
 
-| Dependency | Notes |
-|------------|-------|
-| Python 3.11 | Required (3.12 has TTS compatibility issues) |
-| CUDA 12.1 | GPU acceleration |
-| Ollama | Local LLM runtime (optional if using Gemini) |
-| Gemini API Key | Required if using Cloud Brain |
-| SoX | Audio effects (`apt install sox libsox-fmt-all`) |
-| ~8GB VRAM | For local inference |
+### Docker (Recommended)
+- Docker Desktop / Engine
+- NVIDIA Container Toolkit (for GPU support)
+- Gemini API Key (optional, for Cloud Brain)
+
+### Local Python
+- Python 3.11 (Strict requirement; 3.12+ breaks TTS)
+- CUDA 12.1 (for PyTorch/GPU)
+- `ffmpeg`, `sox`, `libsox-fmt-all` (System dependencies)
+- 8GB+ VRAM recommended for local inference.
 
 ---
 
-## Setup
+## Quick Start (Docker)
 
-### Server (WSL/Linux)
+1. **Set your API Key** (if using Gemini):
+   Create a `.env` file or export the variable:
+   ```bash
+   export GEMINI_API_KEY="your_key_here"
+   ```
+
+2. **Run with Compose**:
+   ```bash
+   docker-compose up --build
+   ```
+   *Note: This mounts the `voice/` directory, so code changes apply immediately.*
+
+3. **Client (Windows)**:
+   ```powershell
+   cd client
+   # (Setup venv if needed)
+   python client.py
+   ```
+
+---
+
+## Manual Setup (WSL/Linux)
+
+If running without Docker:
 
 ```bash
 # 1. Install System Dependencies (Ubuntu/WSL)
-sudo apt update
-sudo apt install python3.11 python3.11-venv sox libsox-fmt-all git -y
+sudo apt update && sudo apt install python3.11 python3.11-venv sox libsox-fmt-all git -y
 
-# 2. Setup Project
+# 2. Setup Env
 cd voice
 python3.11 -m venv venv
 source venv/bin/activate
 
-# Install PyTorch with CUDA support first
+# 3. Install PyTorch (CUDA 12.1)
 pip install torch torchaudio torchvision --index-url https://download.pytorch.org/whl/cu121
 
-# Then install remaining dependencies
+# 4. Install Requirements
 pip install -r requirements.txt
 
-# Create the Ollama model (if using local brain)
-ollama create mesh -f Modelfile
-
-# Generate pre-baked acknowledgment sounds
+# 5. Bake Sounds (Once)
 python bake_sounds.py
 
-# Start the server
-# (Ensure GEMINI_API_KEY is set in env if using Gemini)
+# 6. Start
+export GEMINI_API_KEY="xyz"
 python server.py
 ```
 
-### Client (Windows)
+---
 
-```powershell
-python -m venv win_env
-.\win_env\Scripts\Activate.ps1
-pip install sounddevice numpy scipy requests
-python client.py
-```
+## Personality & Modelfile
+
+The robot's personality is defined in `voice/server.py` (System Prompt).
+
+> [!NOTE]
+> `voice/Modelfile` is a mirror of the prompt in `server.py` for use with Ollama. If you edit the personality, prioritize `server.py` and sync changes to `Modelfile`.
+
+**Current Vibe: TARS (Interstellar)**
+- **Honesty**: 90% (Blunt)
+- **Humor**: 75% (Dry, Sarcastic)
+- **Skepticism**: 20%
+- **Voice**: Professional, tired, competent. NOT a cheerful assistant.
 
 ---
 
-## Project Structure
+## API Endpoints
 
-```
-mesh-robot/
-├── client.py           # Windows voice client (HTTP)
-├── voice/
-│   ├── server.py       # FastAPI server (The Brain & Voice)
-│   ├── bake_sounds.py  # Pre-generate sound effects
-│   ├── Modelfile       # Ollama persona config
-│   ├── requirements.txt
-│   └── tars_ref.wav    # Voice reference
-└── README.md
-```
-
----
-
-## API
-
-### POST /interact
-
-Voice interaction. Accepts WAV, returns streaming WAV.
-
-```bash
-curl -X POST http://localhost:8000/interact \
-  -F "audio_file=@command.wav" \
-  --output response.wav
-```
-
-### POST /see
-
-Vision analysis. Accepts image + prompt, returns audio.
-
-```bash
-curl -X POST http://localhost:8000/see \
-  -F "image=@photo.jpg" \
-  -F "prompt=Analyze this." \
-  --output response.wav
-```
-
----
-
-## Personality Settings
-
-Defined in `Modelfile` and `server.py`:
-
-| Setting | Default | Effect |
-|---------|---------|--------|
-| Humor | 75% | Cynical, dry, sometimes sarcastic |
-| Honesty | 90% | Blunt |
-| Skepticism | 20% | Doubts human logic |
-
----
-
-## Memory
-
-Conversation history persists across restarts via `mesh_memory.json`.
-
-- **Cloud Brain (Gemini)**: Stores full conversation history (leveraging Gemini's 1M+ token context window).
-- **Local Brain (Ollama)**: Uses a rolling context window. When history exceeds 12k tokens, older exchanges are summarized and injected into the system prompt to maintain long-term memory without blowing up the context window.
-
-| Config | Default | Description |
-|--------|---------|-------------|
-| `CONTEXT_THRESHOLD` | 12000 | Trigger summarization at this size (Local Brain only) |
-| `SUMMARY_MAX_LENGTH` | 500 | Max chars for rolling summary (Local Brain only) |
-
----
-
-## Troubleshooting
-
-| Issue | Fix |
-|-------|-----|
-| CUDA OOM | Use Whisper `tiny` or switch to Cloud Brain |
-| `sox` not found | `apt install sox libsox-fmt-all` |
-| Connection refused | Check server is running, port 8000 open |
-| Gemini Error | Check `GEMINI_API_KEY` env var |
+| Method | Endpoint | Description |
+|--------|----------|-------------|
+| POST | `/interact` | Audio-in (WAV), Audio-out (Stream). Main voice loop. |
+| POST | `/see` | Image-in + Prompt. Returns Audio commentary. |
 
 ---
 
