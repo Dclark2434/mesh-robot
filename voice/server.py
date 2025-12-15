@@ -687,11 +687,16 @@ def text_interaction_stream(user_text):
         print(f"\033[92m[TRIGGER] {trigger_word}\033[0m")
         USER_STATES[user_id] = time.time()
         
-        ack_bytes = get_prebaked_sound("ack")
-        if ack_bytes: yield ack_bytes
-        
         parts = clean_input.partition(trigger_word)
         remaining_command = parts[2].strip(" .,?!")
+        
+        # Determine sound based on whether there's an immediate command
+        if len(remaining_command) > 2:
+           ack_bytes = get_prebaked_sound("processing")
+        else:
+           ack_bytes = get_prebaked_sound("ack")
+           
+        if ack_bytes: yield ack_bytes
         
         if len(remaining_command) < 2: return 
         else: final_prompt = remaining_command

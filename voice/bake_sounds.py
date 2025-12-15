@@ -12,17 +12,18 @@ OUTPUT_DIR = "sounds"
 # Value = List of phrases to record for that category
 PHRASES = {
     "ack": [
-        "Hang on a sec,",
+        "I'm listening",
         "one sec",
-        "let me think about that",
+        "I'm here",
         "what?",
-        "oh",
+        "huh",
         "uh"
     ],
     "processing": [
         "Processing.",
         "Calculating.",
         "Running the numbers.",
+        "Hmm",
         "One moment."
     ],
     "boot": [
