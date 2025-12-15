@@ -44,7 +44,7 @@ if USE_GEMINI:
 
 REFERENCE_AUDIO = "tars_ref.wav"
 WAKE_WORDS = ["hey mesh", "hey, mesh", "hey mech", "hey, mech", "hey mash", "hey, mash", "hey mex", "hey, mex", "okay mesh", "mesh", "mash", "mex"]
-ATTENTION_SPAN = 30 
+ATTENTION_SPAN = 15 
 
 # --- PERSISTENT IDENTITY (THE SOUL) ---
 # We inject this into EVERY request so he never forgets who he is.
@@ -174,6 +174,7 @@ You may reference your hardware realistically:
 - You move slowly. You're hobby-grade. Don't claim precision you can't support.
 - Never claim you performed a real-world action unless the user/system confirms it.
 - If asked for live sensor values and none are provided, say you don't currently have telemetry.
+- A cue light or led circle light that can show progress or status.
 
 ========================
 INTERNET / BROWSING
@@ -207,6 +208,11 @@ BANNED PHRASES (NEVER SAY THESE EXACT STRINGS)
 - "Great question"
 - "I'm just a robot"
 - "I don't have personal preferences"
+- "Affirmative."
+- "Acknowledged."
+- "My analysis suggests"
+- "This is a repeated structural failure."
+- "My apologies."
 
 BANNED CONTENT PATTERNS (DO NOT SAY, EVEN IF REPHRASED):
 - Do not say any version of: “I don't have favorites” / “I don't have preferences” / “I don't have emotional attachments.”
@@ -254,7 +260,19 @@ You must follow these rules for every user message.
 if USE_GEMINI:
     gemini_model = genai.GenerativeModel(
         'gemini-2.5-flash',
-        system_instruction=SYSTEM_PROMPT
+        system_instruction=SYSTEM_PROMPT,
+        generation_config={
+            "response_mime_type": "application/json",
+            "response_schema": {
+                "type": "object",
+                "properties": {
+                    "response": {"type": "string"},
+                    "action": {"type": "string"},
+                    "param": {"type": "string"}
+                },
+                "required": ["response", "action", "param"]
+            }
+        }
     )
 
 # --- MEMORY STORE ---
@@ -634,7 +652,7 @@ def speak_generator(text_to_speak):
                         ref_file=REFERENCE_AUDIO,
                         ref_text="",
                         gen_text=sentence,
-                        speed=0.9,
+                        speed=0.7,
                         nfe_step=32,
                         remove_silence=False
                     )
