@@ -17,6 +17,8 @@ import random
 import base64
 from PIL import Image
 import time
+import sys
+import contextlib
 
 # --- CONFIG ---
 app = FastAPI()
@@ -38,8 +40,6 @@ if USE_GEMINI:
     GEMINI_API_KEY = os.environ.get("GEMINI_API_KEY")
     if not GEMINI_API_KEY:
         raise ValueError("GEMINI_API_KEY environment variable not set. Set USE_GEMINI=False to use Ollama instead.")
-    genai.configure(api_key=GEMINI_API_KEY)
-    
     genai.configure(api_key=GEMINI_API_KEY)
 
 REFERENCE_AUDIO = "tars_ref.wav"
@@ -287,6 +287,20 @@ else:
 print(f"\033[92m[SYSTEM] M.E.S.H. API Online on {device.upper()}\033[0m")
 
 # --- HELPER FUNCTIONS ---
+
+@contextlib.contextmanager
+def suppress_output():
+    """Redirects stdout and stderr to devnull to suppress library noise."""
+    with open(os.devnull, "w") as devnull:
+        old_stdout = sys.stdout
+        old_stderr = sys.stderr
+        try:
+            sys.stdout = devnull
+            sys.stderr = devnull
+            yield
+        finally:
+            sys.stdout = old_stdout
+            sys.stderr = old_stderr
 
 def get_default_user_memory():
     """Returns a fresh memory structure for a new user."""
@@ -612,24 +626,26 @@ def speak_generator(text_to_speak):
         try:
             if USE_F5_TTS:
                 # F5-TTS Logic
-                wav, sample_rate, spect = tts_engine.infer(
-                    ref_file=REFERENCE_AUDIO,
-                    ref_text="",
-                    gen_text=sentence,
-                    speed=0.9,
-                    nfe_step=32,
-                    remove_silence=False
-                )
+                with suppress_output():
+                    wav, sample_rate, spect = tts_engine.infer(
+                        ref_file=REFERENCE_AUDIO,
+                        ref_text="",
+                        gen_text=sentence,
+                        speed=0.9,
+                        nfe_step=32,
+                        remove_silence=False
+                    )
                 sf.write(temp_wav, wav, sample_rate)
             else:
                 # XTTS v2 Logic
-                tts_engine.tts_to_file(
-                    text=sentence, 
-                    speaker_wav=REFERENCE_AUDIO, 
-                    language="en", 
-                    file_path=temp_wav,
-                    speed=1.0
-                )
+                with suppress_output():
+                    tts_engine.tts_to_file(
+                        text=sentence, 
+                        speaker_wav=REFERENCE_AUDIO, 
+                        language="en", 
+                        file_path=temp_wav,
+                        speed=1.0
+                    )
             processed_bytes = process_audio_fx(temp_wav)
             if processed_bytes:
                 yield processed_bytes
@@ -749,4 +765,4 @@ async def see_endpoint(
     )
 
 if __name__ == "__main__":
-    uvicorn.run(app, host="0.0.0.0", port=8000)
+    uvicorn.run(app, host="0.0.0.0", port=8000, log_level="warning")
