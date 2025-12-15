@@ -493,7 +493,21 @@ def think_gemini(prompt, user_id="dustin"):
         return response.text
         
     except Exception as e:
-        print(f"[GEMINI THINK ERROR] {e}")
+        print(f"\n\033[91m[GEMINI API ERROR] An error occurred while calling the Gemini API:\033[0m")
+        print(f"\033[91mType:\033[0m {type(e).__name__}")
+        print(f"\033[91mMessage:\033[0m {str(e)}")
+        
+        # Introspect for more details common in Google API clients
+        if hasattr(e, 'metadata'):
+            print(f"\033[93mMetadata:\033[0m {e.metadata}")
+        if hasattr(e, 'details'):
+            print(f"\033[93mDetails:\033[0m {e.details() if callable(e.details) else e.details}")
+        if hasattr(e, 'reason'):
+            print(f"\033[93mReason:\033[0m {e.reason}")
+        if hasattr(e, 'headers'):
+            print(f"\033[93mHeaders:\033[0m {e.headers}")
+            
+        print("-" * 40) # Visual separator
         return json.dumps({"response": "Signal interference. Repeat.", "action": "none"})
 
 def think(prompt, user_id="dustin"):
