@@ -1,4 +1,4 @@
-# M.E.S.H.
+# MESH
 
 **Mobile Engineering Support Hexapod**
 
@@ -8,12 +8,14 @@ A voice-controlled AI assistant for a hexapod robot. Inspired by TARS from Inter
 
 ## Features
 
-- Voice cloning via XTTS v2 with reference audio
-- Real-time audio streaming (low latency)
-- Customizable personality (humor, honesty, skepticism sliders)
-- Wake word activation ("Hey Mesh")
-- Hardware command stubs (walk, scan, shutdown)
-- Vision analysis endpoint
+- **Dual Brain Core**: Toggle between local LLM (Ollama) or Cloud LLM (Gemini Flash).
+- **Voice Cloning**: XTTS v2 / F5-TTS with reference audio.
+- **Real-time Audio Streaming**: Low latency response.
+- **Customizable Personality**: Humor, honesty, skepticism sliders.
+- **Wake Word Activation**: "Hey Mesh".
+- **Hardware Command Stubs**: walk, scan, shutdown.
+- **Vision Analysis Endpoint**: "See" the world via camera input.
+- **Persistent Memory**: Rolling summaries with context preservation.
 
 ---
 
@@ -24,11 +26,16 @@ Windows Client (client.py)
     |
     | HTTP POST (audio/wav)
     v
-Linux/WSL Server (server.py)
+Linux/WSL Server (voice/server.py)
     |
     +-- Whisper (STT)
-    +-- Ollama + Llama 3.2 (LLM)
-    +-- XTTS v2 (TTS)
+    +-- BRAIN SELECTION:
+    |     |-- LOCAL: Ollama + Llama 3.2
+    |     +-- CLOUD: Gemini Flash 2.5
+    |
+    +-- VOICE ENGINE:
+    |     |-- F5-TTS
+    |     +-- XTTS v2
     |
     v
 Streaming WAV response
@@ -40,11 +47,12 @@ Streaming WAV response
 
 | Dependency | Notes |
 |------------|-------|
-| Python 3.10+ | |
+| Python 3.11 | Required (3.12 has TTS compatibility issues) |
 | CUDA 12.1 | GPU acceleration |
-| Ollama | Local LLM runtime |
+| Ollama | Local LLM runtime (optional if using Gemini) |
+| Gemini API Key | Required if using Cloud Brain |
 | SoX | Audio effects (`apt install sox libsox-fmt-all`) |
-| ~8GB VRAM | Whisper + XTTS v2 |
+| ~8GB VRAM | For local inference |
 
 ---
 
@@ -53,18 +61,29 @@ Streaming WAV response
 ### Server (WSL/Linux)
 
 ```bash
+# 1. Install System Dependencies (Ubuntu/WSL)
+sudo apt update
+sudo apt install python3.11 python3.11-venv sox libsox-fmt-all git -y
+
+# 2. Setup Project
 cd voice
-python -m venv venv
+python3.11 -m venv venv
 source venv/bin/activate
+
+# Install PyTorch with CUDA support first
+pip install torch torchaudio torchvision --index-url https://download.pytorch.org/whl/cu121
+
+# Then install remaining dependencies
 pip install -r requirements.txt
 
-# Create the Ollama model
+# Create the Ollama model (if using local brain)
 ollama create mesh -f Modelfile
 
 # Generate pre-baked acknowledgment sounds
 python bake_sounds.py
 
 # Start the server
+# (Ensure GEMINI_API_KEY is set in env if using Gemini)
 python server.py
 ```
 
@@ -84,10 +103,8 @@ python client.py
 ```
 mesh-robot/
 ├── client.py           # Windows voice client (HTTP)
-├── ear_client.py       # Windows voice client (file-based)
 ├── voice/
-│   ├── server.py       # FastAPI server
-│   ├── brain.py        # Standalone processor (file-based)
+│   ├── server.py       # FastAPI server (The Brain & Voice)
 │   ├── bake_sounds.py  # Pre-generate sound effects
 │   ├── Modelfile       # Ollama persona config
 │   ├── requirements.txt
@@ -128,9 +145,23 @@ Defined in `Modelfile` and `server.py`:
 
 | Setting | Default | Effect |
 |---------|---------|--------|
-| Humor | 75% | Cynical, dry |
+| Humor | 75% | Cynical, dry, sometimes sarcastic |
 | Honesty | 90% | Blunt |
 | Skepticism | 20% | Doubts human logic |
+
+---
+
+## Memory
+
+Conversation history persists across restarts via `mesh_memory.json`.
+
+- **Cloud Brain (Gemini)**: Stores full conversation history (leveraging Gemini's 1M+ token context window).
+- **Local Brain (Ollama)**: Uses a rolling context window. When history exceeds 12k tokens, older exchanges are summarized and injected into the system prompt to maintain long-term memory without blowing up the context window.
+
+| Config | Default | Description |
+|--------|---------|-------------|
+| `CONTEXT_THRESHOLD` | 12000 | Trigger summarization at this size (Local Brain only) |
+| `SUMMARY_MAX_LENGTH` | 500 | Max chars for rolling summary (Local Brain only) |
 
 ---
 
@@ -138,9 +169,10 @@ Defined in `Modelfile` and `server.py`:
 
 | Issue | Fix |
 |-------|-----|
-| CUDA OOM | Use Whisper `tiny` model |
+| CUDA OOM | Use Whisper `tiny` or switch to Cloud Brain |
 | `sox` not found | `apt install sox libsox-fmt-all` |
 | Connection refused | Check server is running, port 8000 open |
+| Gemini Error | Check `GEMINI_API_KEY` env var |
 
 ---
 
