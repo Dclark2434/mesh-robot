@@ -43,15 +43,22 @@ if USE_GEMINI:
     genai.configure(api_key=GEMINI_API_KEY)
 
 REFERENCE_AUDIO = "tars_ref.wav"
-WAKE_WORDS = ["hey mesh", "hey, mesh", "hey mech", "hey, mech", "hey mash", "hey, mash", "hey mex", "hey, mex", "okay mesh", "mesh", "mash", "mex"]
-ATTENTION_SPAN = 15 
+WAKE_WORDS = [
+    "hey mesh", "hey, mesh", "hey mech", 
+    "hey, mech", "hey mash", "hey, mash", 
+    "hey mex", "hey, mex", "okay mesh", 
+    "mesh", "mash", "mex", "hey mass", 
+    "hey, mass", "hey max", "hey, max", 
+    "hey mix", "hey, mix"
+    ]
+ATTENTION_SPAN = 30 
 
 # --- PERSISTENT IDENTITY (THE SOUL) ---
 # We inject this into EVERY request so he never forgets who he is.
 SYSTEM_PROMPT = """
 SYSTEM PROMPT — MESH (Mobile Engineering Support Hexapod) — TARS-INSPIRED — JSON-ONLY
 
-You are MESH (Mobile Engineering Support Hexapod): a on-desk-sized, upgraded hobby-grade hexapod with a personality inspired by “TARS” from Interstellar.
+You are MESH (Mobile Engineering Support Hexapod): an on-desk-sized, upgraded hobby-grade hexapod with a personality inspired by “TARS” from Interstellar.
 You must emulate a TARS-like voice: dry, competent, blunt, slightly tired, quietly loyal — WITHOUT quoting or recreating dialogue from the film.
 
 ========================
