@@ -69,6 +69,10 @@ def play_stream(response):
         alsa_device = os.environ.get("MESH_ALSA_DEVICE")
         cmd = ["aplay", "-q", "-t", "wav"]
         if alsa_device:
+            # Use 'plughw' instead of 'hw' to automatically handle 
+            # channel/sample rate conversions (fixes "Channels count non available")
+            if alsa_device.startswith("hw:"):
+                alsa_device = alsa_device.replace("hw:", "plughw:", 1)
             cmd.extend(["-D", alsa_device])
         cmd.append(temp_filename)
         
