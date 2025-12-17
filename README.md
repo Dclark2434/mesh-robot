@@ -137,8 +137,48 @@ pip install -r requirements-client.txt
 
 # 4. Run (Set MESH_SERVER_URL if running remotely)
 export MESH_SERVER_URL="http://<SERVER_IP>:8000/interact"
+export MESH_ALSA_DEVICE="plughw:3,0" # Use your device ID from Step 3
 python pi-client.py
 ```
+
+### Setup: Client Auto-Start (Raspberry Pi)
+
+To make M.E.S.H. start automatically on boot:
+
+1. **Make the startup script executable**:
+   ```bash
+   chmod +x startup-client.sh
+   ```
+
+2. **Create the Service File**:
+   ```bash
+   sudo nano /etc/systemd/system/mesh-client.service
+   ```
+
+3. **Paste this configuration** (adjust paths if necessary):
+   ```ini
+   [Unit]
+   Description=MESH Robot Client
+   After=network-online.target
+   Wants=network-online.target
+
+   [Service]
+   User=dclark
+   WorkingDirectory=/home/dclark/mesh-robot
+   ExecStart=/bin/bash /home/dclark/mesh-robot/startup-client.sh
+   Restart=always
+   RestartSec=5
+
+   [Install]
+   WantedBy=multi-user.target
+   ```
+
+4. **Enable and Start**:
+   ```bash
+   sudo systemctl daemon-reload
+   sudo systemctl enable mesh-client
+   sudo systemctl start mesh-client
+   ```
 
 ---
 
