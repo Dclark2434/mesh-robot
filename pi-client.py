@@ -63,8 +63,15 @@ def play_stream(response):
         # Play using aplay (standard Linux audio player)
         # -q: quiet mode
         # -t wav: force wav format
+        # -D: specific device (e.g. 'hw:1,0' for USB speakers)
         print(f" {Fore.YELLOW}Playing...", end="", flush=True)
-        cmd = ["aplay", "-q", "-t", "wav", temp_filename]
+        
+        alsa_device = os.environ.get("MESH_ALSA_DEVICE")
+        cmd = ["aplay", "-q", "-t", "wav"]
+        if alsa_device:
+            cmd.extend(["-D", alsa_device])
+        cmd.append(temp_filename)
+        
         subprocess.call(cmd)
         print(f" {Fore.GREEN}[DONE]")
     except FileNotFoundError:
