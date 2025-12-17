@@ -19,7 +19,7 @@ SERVER_URL = os.environ.get("MESH_SERVER_URL", "http://localhost:8000/interact")
 
 # Audio Config
 FS = 44100 
-THRESHOLD = 0.1
+THRESHOLD = 0.5
 SILENCE_LIMIT = 1.0
 
 def print_banner():
