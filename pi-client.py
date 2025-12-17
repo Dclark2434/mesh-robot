@@ -38,41 +38,44 @@ def print_banner():
 
 def play_stream(response):
     """
-    Reads the incoming audio stream from the server and plays it using 'aplay'.
+    Reads the entire audio stream from the server and plays it using 'aplay'.
+    Buffering the whole stream prevents ALSA 'Device Busy' or 'Unknown error 524'.
     """
-    print(f"\n{Fore.MAGENTA}[INCOMING]{Fore.RESET} Playing stream ", end="", flush=True)
+    print(f"\n{Fore.MAGENTA}[INCOMING]{Fore.RESET} Receiving ", end="", flush=True)
     
-    chunk_count = 0
-    # Use a temporary file for playback to avoid streaming complications with aplay
-    temp_filename = "temp_recv.wav"
-    
-    for chunk in response.iter_content(chunk_size=None): 
+    full_audio = b""
+    for chunk in response.iter_content(chunk_size=4096): 
         if not chunk: break
-        
-        # Write chunk to temp file
+        full_audio += chunk
+        print(f"{Fore.CYAN}•", end="", flush=True)
+    
+    if not full_audio:
+        print(f" {Fore.RED}[EMPTY]")
+        return
+
+    # Create a unique temp file using timestamp to avoid collisions
+    temp_filename = f"temp_recv_{int(time.time())}.wav"
+    
+    try:
         with open(temp_filename, "wb") as f:
-            f.write(chunk)
+            f.write(full_audio)
             
         # Play using aplay (standard Linux audio player)
         # -q: quiet mode
         # -t wav: force wav format
+        print(f" {Fore.YELLOW}Playing...", end="", flush=True)
         cmd = ["aplay", "-q", "-t", "wav", temp_filename]
-        
-        try:
-            subprocess.call(cmd)
-        except FileNotFoundError:
-            print(f"\n{Fore.RED}[ERROR]{Fore.RESET} 'aplay' not found. Please install alsa-utils.")
-            break
-        
-        print(f"{Fore.CYAN}•", end="", flush=True)
-        chunk_count += 1
-    
-    # Cleanup
-    if os.path.exists(temp_filename):
-        try: os.remove(temp_filename)
-        except: pass
-        
-    print(f" {Fore.GREEN}[DONE]")
+        subprocess.call(cmd)
+        print(f" {Fore.GREEN}[DONE]")
+    except FileNotFoundError:
+        print(f"\n{Fore.RED}[ERROR]{Fore.RESET} 'aplay' not found. Please install alsa-utils.")
+    except Exception as e:
+        print(f"\n{Fore.RED}[ERROR]{Fore.RESET} Playback failed: {e}")
+    finally:
+        # Cleanup
+        if os.path.exists(temp_filename):
+            try: os.remove(temp_filename)
+            except: pass
 
 # --- RECORDING ENGINE ---
 q = queue.Queue()
