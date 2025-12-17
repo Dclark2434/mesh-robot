@@ -18,7 +18,7 @@ if config.USE_GEMINI:
          raise ValueError("GEMINI_API_KEY environment variable not set. Set USE_GEMINI=False to use Ollama instead.")
     genai.configure(api_key=config.GEMINI_API_KEY)
     gemini_model = genai.GenerativeModel(
-        'gemini-3-flash-preview',
+        'gemini-1.5-flash',
         system_instruction=config.SYSTEM_PROMPT,
         generation_config={
             "response_mime_type": "application/json",

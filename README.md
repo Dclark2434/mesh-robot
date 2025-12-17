@@ -19,7 +19,7 @@ Verified "Brain" for a hexapod robot, inspired by TARS from Interstellar. Featur
     - [ ] Real-time Camera Feed integration
 - [ ] **Architecture Migration**:
     - [x] Windows Client (Debug/Testing)
-    - [ ] Raspberry Pi Client (Target Payload on Robot)
+    - [x] Raspberry Pi Client (Target Payload on Robot)
 - [ ] **Telemetry**: Battery monitoring and sensor fusion
 
 ---
@@ -38,11 +38,8 @@ Verified "Brain" for a hexapod robot, inspired by TARS from Interstellar. Featur
 
 ## Architecture
 
-**Current State (Debug):**
-The "ears" and "mouth" are currently running on a Windows PC for easy debugging, sending audio to the local Server.
-
-**Target State (Deploy):**
-The Client will run on a **Raspberry Pi** mounted on the robot, handling Audio I/O and Hardware Control, while communicating with the powerful Server (Brain) over the network.
+**Current State:**
+The client can run on either a **Windows PC** (for debugging) or a **Raspberry Pi** (for robot deployment). Both clients handle Audio I/O and communicate with the powerful Server (Brain) over the network.
 
 ```
 [ PHYSICAL ROBOT ]                   [ LOCAL SERVER (The Brain) ]
@@ -121,8 +118,26 @@ python server.py
 ```powershell
 python -m venv win_env
 .\win_env\Scripts\Activate.ps1
-pip install sounddevice numpy scipy requests
+pip install sounddevice numpy scipy requests colorama
 python client.py
+```
+
+### Setup: Client (Raspberry Pi)
+
+```bash
+# 1. Install System Dependencies
+sudo apt update && sudo apt install -y alsa-utils libportaudio2 libasound2-dev
+
+# 2. Setup Env
+python3 -m venv venv-client
+source venv-client/bin/activate
+
+# 3. Install Requirements
+pip install -r requirements-client.txt
+
+# 4. Run (Set MESH_SERVER_URL if running remotely)
+export MESH_SERVER_URL="http://<SERVER_IP>:8000/interact"
+python pi-client.py
 ```
 
 ---

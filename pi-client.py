@@ -19,7 +19,7 @@ SERVER_URL = os.environ.get("MESH_SERVER_URL", "http://localhost:8000/interact")
 
 # Audio Config
 FS = 44100 
-THRESHOLD = 0.5
+THRESHOLD = 0.1
 SILENCE_LIMIT = 1.0
 
 def print_banner():
@@ -91,7 +91,7 @@ def main():
     try:
         rec = sd.rec(int(2*FS), samplerate=FS, channels=1)
         sd.wait()
-        noise_floor = np.max(np.abs(rec)) * 1.5
+        noise_floor = np.max(np.abs(rec)) * 2.0
         THRESHOLD = max(THRESHOLD, noise_floor)
         print(f"{Fore.GREEN}Ready!{Fore.RESET} (Threshold: {THRESHOLD:.4f})")
     except Exception as e:
@@ -113,16 +113,19 @@ def main():
                     except queue.Empty:
                         continue
 
-                    volume = np.linalg.norm(chunk) * 10
+                    volume = np.max(np.abs(chunk))
                     
                     if not started:
                         if volume > THRESHOLD:
-                            print(f"\n{Fore.GREEN}[LISTENING]{Fore.RESET} ", end="", flush=True)
+                            print(f"\n{Fore.GREEN}[HEARD IT]{Fore.RESET} ", end="", flush=True)
                             started = True
                             audio_buffer.append(chunk)
                     else:
                         audio_buffer.append(chunk)
-                        print(f"{Fore.CYAN}▂", end="", flush=True)
+                        # Print a small bar for every few chunks to avoid console flooding
+                        if len(audio_buffer) % 5 == 0:
+                            print(f"{Fore.CYAN}▂", end="", flush=True)
+                        
                         if volume < THRESHOLD:
                             silence_counter += 1
                         else:
