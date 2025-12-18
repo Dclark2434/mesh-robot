@@ -1,4 +1,5 @@
 import torch
+import time
 from faster_whisper import WhisperModel
 import soundfile as sf
 import subprocess
@@ -81,15 +82,16 @@ def speak_generator(text_to_speak):
     
     print(f"\033[92mM.E.S.H.:\033[0m {clean_text}")
     
-    # F5-TTS works better with longer context (flow/prosody)
-    # XTTS v2 needs short chunks for low latency
-    if config.USE_F5_TTS:
-        sentences = [clean_text] # Send it all at once!
-    else:
-        sentences = re.split(r'(?<=[.!?]) +', clean_text)
+    # Split into sentences for better latency
+    sentences = re.split(r'(?<=[.!?]) +', clean_text)
+    # Filter out empty or very short strings
+    sentences = [s.strip() for s in sentences if len(s.strip()) > 1]
     
+    print(f"\033[93m[TTS] Split into {len(sentences)} sentences.\033[0m")
+    
+    first_chunk_timer = time.time()
     for i, sentence in enumerate(sentences):
-        if len(sentence) < 2: continue
+        print(f"\033[93m[TTS] ({i+1}/{len(sentences)}) Synthesizing: {sentence}\033[0m")
         
         req_id = str(uuid.uuid4())[:8]
         temp_wav = f"temp_{req_id}.wav"
@@ -119,6 +121,10 @@ def speak_generator(text_to_speak):
                     )
             processed_bytes = process_audio_fx(temp_wav)
             if processed_bytes:
+                if first_chunk_timer:
+                    ttfb = time.time() - first_chunk_timer
+                    print(f"\033[96m[LATENCY] TTS (Time to First Byte): {ttfb:.2f}s\033[0m")
+                    first_chunk_timer = None # Only log once
                 yield processed_bytes
         except Exception as e:
             print(f"[TTS Error] {e}")
@@ -126,8 +132,11 @@ def speak_generator(text_to_speak):
 def transcribe(audio_buffer):
     """Wrapper for STT transcription"""
     try:
+        start_time = time.time()
         segments, _ = stt_model.transcribe(audio_buffer, beam_size=5)
         text = " ".join([segment.text for segment in segments]).strip()
+        duration = time.time() - start_time
+        print(f"\033[96m[LATENCY] STT (Whisper): {duration:.2f}s\033[0m")
         return text
     except Exception as e:
         print(f"[STT Error] {e}")

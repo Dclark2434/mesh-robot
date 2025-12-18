@@ -18,7 +18,7 @@ if config.USE_GEMINI:
          raise ValueError("GEMINI_API_KEY environment variable not set. Set USE_GEMINI=False to use Ollama instead.")
     genai.configure(api_key=config.GEMINI_API_KEY)
     gemini_model = genai.GenerativeModel(
-        'gemini-2.5-flash',
+        'gemini-3-flash-preview',
         system_instruction=config.SYSTEM_PROMPT,
         generation_config={
             "response_mime_type": "application/json",
@@ -142,7 +142,10 @@ def think_gemini(prompt, user_id="dustin"):
         chat = gemini_model.start_chat(history=history)
         
         # Send message
+        start_time = time.time()
         response = chat.send_message(prompt)
+        duration = time.time() - start_time
+        print(f"\033[96m[LATENCY] LLM (Gemini): {duration:.2f}s\033[0m")
         
         # Update memory with new history
         # We need to serialize the history to standard dicts for JSON storage
@@ -248,7 +251,10 @@ def think(prompt, user_id="dustin"):
     }
     
     try:
+        start_time = time.time()
         response = requests.post(config.OLLAMA_URL, json=payload)
+        duration = time.time() - start_time
+        print(f"\033[96m[LATENCY] LLM (Ollama): {duration:.2f}s\033[0m")
         data = response.json()
         
         # Update memory
@@ -280,7 +286,10 @@ def look(prompt, image_bytes):
             # Create a simple image object (PIL)
             image = Image.open(io.BytesIO(image_bytes))
             
+            start_time = time.time()
             response = gemini_model.generate_content([prompt, image])
+            duration = time.time() - start_time
+            print(f"\033[96m[LATENCY] Vision (Gemini): {duration:.2f}s\033[0m")
             return response.text
         except Exception as e:
             print(f"[GEMINI VISION ERROR] {e}")
