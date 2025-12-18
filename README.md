@@ -12,7 +12,7 @@ M.E.S.H. is a professional-grade "Brain" for hexapod robots, inspired by the TAR
 
 ---
 
-## 🚀 Quick Start (Server)
+## Quick Start (Server)
 
 ```bash
 # Clone and enter
@@ -34,20 +34,20 @@ python -m mesh_server.server
 
 ---
 
-## ✨ Key Features
+## Key Features
 
-- **🧠 Dual Brain Core**: Seamlessly toggle between Google Gemini (Cloud) and Ollama (Local).
-- **🗣️ Advanced TTS**: State-of-the-art voice cloning via F5-TTS or legacy XTTS v2.
-- **👂 Real-time Senses**: Whisper-powered STT for hands-free interaction.
-- **👁️ Vision System**: Image analysis and commentary via the `/see` endpoint.
-- **🎭 TARS Personality**: Customizable cynical, dry, and military-aware persona.
-- **🛠️ Command Engine**: Integrated stubs for hardware control (walking, scanning, etc.).
+- **Dual Brain Core**: Seamlessly toggle between Google Gemini (Cloud) and Ollama (Local).
+- **Advanced TTS**: State-of-the-art voice cloning via F5-TTS or legacy XTTS v2.
+- **Real-time Senses**: Whisper-powered STT for hands-free interaction.
+- **Vision System**: Image analysis and commentary via the `/see` endpoint.
+- **TARS Personality**: Customizable cynical, dry, and military-aware persona.
+- **Command Engine**: Integrated stubs for hardware control (walking, scanning, etc.).
 
 ---
 
-## 📂 Project Structure
+## Project Structure
 
-The repository follows a professional `src` layout for better package management and testing.
+The repository follows a `src` layout for better package management and testing.
 
 ```text
 mesh-robot/
@@ -63,7 +63,7 @@ mesh-robot/
 
 ---
 
-## 🛠️ Configuration
+## Configuration
 
 Control M.E.S.H. via environment variables.
 
@@ -78,7 +78,7 @@ Control M.E.S.H. via environment variables.
 
 ---
 
-## 💻 Setup & Installation
+## Setup & Installation
 
 ### System Requirements
 - **OS**: Linux (WSL2 recommended for Windows users).
@@ -121,7 +121,7 @@ python -m mesh_client.main
 
 ---
 
-## 🧪 Testing
+## Testing
 
 We use `pytest` for quality assurance.
 
@@ -132,6 +132,6 @@ pytest
 
 ---
 
-## 📜 License
+## License
 
 Distributed under the MIT License. See `LICENSE` for more information.
