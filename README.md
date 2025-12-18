@@ -121,17 +121,6 @@ python -m mesh_client.main
 
 ---
 
-## Testing
-
-We use `pytest` for quality assurance.
-
-```bash
-# Run all tests
-pytest
-```
-
----
-
 ## License
 
 Distributed under the MIT License. See `LICENSE` for more information.
