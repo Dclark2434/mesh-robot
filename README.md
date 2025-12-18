@@ -107,30 +107,33 @@ python src/mesh_server/bake_sounds.py
 Runs on the robot (Pi) or a debug machine (Windows).
 
 ```bash
-# Setup environment
-python -m venv venv-win
-# Windows: .\venv-win\Scripts\Activate.ps1 | Linux: source venv-client/bin/activate
+# 1. Setup environment
+python -m venv venv-client
+# Windows (PowerShell): .\venv-client\Scripts\Activate.ps1
+# Linux/Pi (Bash): source venv-client/bin/activate
 
-# Install
-pip install -e .[client]
+# 2. Install only client-side dependencies
+pip install -e ".[client]"
 
-# Start client
-$env:MESH_SERVER_URL="http://<SERVER_IP>:8000/interact"
+# 3. Start client
+# Windows: $env:MESH_SERVER_URL="http://<SERVER_IP>:8000/interact"
+# Linux/Pi: export MESH_SERVER_URL="http://127.0.0.1:8000/interact"
 python -m mesh_client.main
 ```
 
 ### 3. Autostart on Boot (Raspberry Pi)
-To have M.E.S.H. start automatically when the Pi boots up:
+To have M.E.S.H. start automatically when the Pi boots:
 
 ```bash
 # Make the setup script executable
 chmod +x scripts/setup-autostart.sh
 
-# Run the installer
+# Run the installer (it handles systemd for you)
 bash scripts/setup-autostart.sh
 ```
 
-*This installs a `systemd` service that will keep the client running in the background and restart it if it crashes.*
+> [!TIP]
+> Use `sudo systemctl status mesh-client.service` to verify it's running.
 
 ---
 
