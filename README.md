@@ -119,6 +119,19 @@ $env:MESH_SERVER_URL="http://<SERVER_IP>:8000/interact"
 python -m mesh_client.main
 ```
 
+### 3. Autostart on Boot (Raspberry Pi)
+To have M.E.S.H. start automatically when the Pi boots up:
+
+```bash
+# Make the setup script executable
+chmod +x scripts/setup-autostart.sh
+
+# Run the installer
+bash scripts/setup-autostart.sh
+```
+
+*This installs a `systemd` service that will keep the client running in the background and restart it if it crashes.*
+
 ---
 
 ## License
