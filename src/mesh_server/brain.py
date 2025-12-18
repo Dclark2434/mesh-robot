@@ -4,33 +4,40 @@ import time
 import requests
 import base64
 import io
+import re
+from typing import Dict, Any, List, Optional
 from PIL import Image
-import google.generativeai as genai
-import config
+from google import genai
+from google.genai import types
+
+from mesh_common.logging import get_logger
+from mesh_server import config
+
+logger = get_logger("mesh_brain")
 
 # --- MEMORY STATE ---
 SESSION_MEMORY = {}  # { user_id: { context, summary, turn_count, last_updated } }
 
-# Initialize Gemini Model if enabled
-gemini_model = None
+# Initialize Gemini Client if enabled
+client = None
 if config.USE_GEMINI:
     if not config.GEMINI_API_KEY:
          raise ValueError("GEMINI_API_KEY environment variable not set. Set USE_GEMINI=False to use Ollama instead.")
-    genai.configure(api_key=config.GEMINI_API_KEY)
-    gemini_model = genai.GenerativeModel(
-        'gemini-3-flash-preview',
+    client = genai.Client(api_key=config.GEMINI_API_KEY)
+
+def get_gemini_config():
+    """Returns the standard configuration for Gemini model calls."""
+    return types.GenerateContentConfig(
         system_instruction=config.SYSTEM_PROMPT,
-        generation_config={
-            "response_mime_type": "application/json",
-            "response_schema": {
-                "type": "object",
-                "properties": {
-                    "response": {"type": "string"},
-                    "action": {"type": "string"},
-                    "param": {"type": "string"}
-                },
-                "required": ["response", "action", "param"]
-            }
+        response_mime_type="application/json",
+        response_schema={
+            "type": "OBJECT",
+            "properties": {
+                "response": {"type": "STRING"},
+                "action": {"type": "STRING"},
+                "param": {"type": "STRING"}
+            },
+            "required": ["response", "action", "param"]
         }
     )
 
@@ -49,7 +56,7 @@ def load_memory_from_disk():
     if os.path.exists(config.MEMORY_FILE):
         try:
             with open(config.MEMORY_FILE, "r") as f:
-                print(f"\033[93m[SYSTEM] Restoring Memory from Disk...\033[0m")
+                logger.info("Restoring Memory from Disk...")
                 data = json.load(f)
                 
                 # Migration: Old format was { user_id: [context_tokens] }
@@ -58,7 +65,7 @@ def load_memory_from_disk():
                 for user_id, value in data.items():
                     if isinstance(value, list):
                         # Old format detected, migrate
-                        print(f"\033[93m[MEMORY] Migrating old format for {user_id}\033[0m")
+                        logger.warning(f"Migrating old memory format for {user_id}")
                         migrated[user_id] = {
                             "context": value,
                             "summary": "",
@@ -70,7 +77,7 @@ def load_memory_from_disk():
                 SESSION_MEMORY = migrated
                 return migrated
         except Exception as e:
-            print(f"[MEMORY ERROR] Failed to load: {e}")
+            logger.error(f"Failed to load memory: {e}")
     return {}
 
 def save_memory_to_disk():
@@ -81,7 +88,7 @@ def save_memory_to_disk():
         with open(config.MEMORY_FILE, "w") as f:
             json.dump(SESSION_MEMORY, f, indent=2)
     except Exception as e:
-        print(f"[MEMORY ERROR] Failed to save: {e}")
+        logger.error(f"Failed to save memory: {e}")
 
 def summarize_context(context_tokens, user_id):
     """
@@ -119,7 +126,7 @@ def summarize_context(context_tokens, user_id):
         
         return summary[:config.SUMMARY_MAX_LENGTH]  # Truncate if too long
     except Exception as e:
-        print(f"[SUMMARIZE ERROR] {e}")
+        logger.error(f"Summarization error: {e}")
         return ""
 
 def think_gemini(prompt, user_id="dustin"):
@@ -134,28 +141,34 @@ def think_gemini(prompt, user_id="dustin"):
     user_memory = SESSION_MEMORY[user_id]
     
     # Load history (list of dicts)
-    # Gemini format: [{'role': 'user', 'parts': ['...']}, ...]
+    # New Format: [{'role': 'user', 'parts': ['...']}, ...]
     history = user_memory.get("gemini_history", [])
     
     try:
-        # Start chat with history
-        chat = gemini_model.start_chat(history=history)
+        # Build contents from history + current prompt
+        contents = []
+        for turn in history:
+            # New SDK expect Parts
+            p_list = [types.Part(text=p) for p in turn['parts']]
+            contents.append(types.Content(role=turn['role'], parts=p_list))
         
-        # Send message
+        # Add current user prompt
+        contents.append(types.Content(role='user', parts=[types.Part(text=prompt)]))
+        
         start_time = time.time()
-        response = chat.send_message(prompt)
+        response = client.models.generate_content(
+            model='gemini-3-flash-preview',
+            contents=contents,
+            config=get_gemini_config()
+        )
         duration = time.time() - start_time
-        print(f"\033[96m[LATENCY] LLM (Gemini): {duration:.2f}s\033[0m")
+        logger.info(f"[LATENCY] LLM (Gemini): {duration:.2f}s")
         
         # Update memory with new history
-        # We need to serialize the history to standard dicts for JSON storage
-        # chat.history is a list of Content objects
-        serialized_history = []
-        for content in chat.history:
-            parts = [p.text for p in content.parts]
-            serialized_history.append({"role": content.role, "parts": parts})
+        history.append({"role": "user", "parts": [prompt]})
+        history.append({"role": "model", "parts": [response.text]})
             
-        user_memory["gemini_history"] = serialized_history
+        user_memory["gemini_history"] = history
         user_memory["last_updated"] = time.time()
         
         SESSION_MEMORY[user_id] = user_memory
@@ -164,22 +177,8 @@ def think_gemini(prompt, user_id="dustin"):
         return response.text
         
     except Exception as e:
-        print(f"\n\033[91m[GEMINI API ERROR] An error occurred while calling the Gemini API:\033[0m")
-        print(f"\033[91mType:\033[0m {type(e).__name__}")
-        print(f"\033[91mMessage:\033[0m {str(e)}")
-        
-        # Introspect for more details common in Google API clients
-        if hasattr(e, 'metadata'):
-            print(f"\033[93mMetadata:\033[0m {e.metadata}")
-        if hasattr(e, 'details'):
-            print(f"\033[93mDetails:\033[0m {e.details() if callable(e.details) else e.details}")
-        if hasattr(e, 'reason'):
-            print(f"\033[93mReason:\033[0m {e.reason}")
-        if hasattr(e, 'headers'):
-            print(f"\033[93mHeaders:\033[0m {e.headers}")
-            
-        print("-" * 40) # Visual separator
-        return json.dumps({"response": "Signal interference. Repeat.", "action": "none"})
+        logger.error(f"Gemini API Error: {type(e).__name__} - {str(e)}")
+        return json.dumps({"response": "Signal interference. Repeat.", "action": "none", "param": "null"})
 
 def think(prompt, user_id="dustin"):
     """Query Text Model with Persistent Identity and Rolling Memory"""
@@ -201,7 +200,7 @@ def think(prompt, user_id="dustin"):
     # 1. Smart Pruning with Summarization
     # Instead of discarding old context, we summarize it first
     if len(context) > config.CONTEXT_THRESHOLD:
-        print(f"\033[93m[MEMORY] Context large ({len(context)}), summarizing...\033[0m")
+        logger.info(f"Context large ({len(context)}), summarizing...")
         
         # Summarize the oldest half of the context
         half = len(context) // 2
@@ -218,7 +217,7 @@ def think(prompt, user_id="dustin"):
                 existing_summary = new_summary
             
             user_memory["summary"] = existing_summary
-            print(f"\033[92m[MEMORY] Summary updated: {existing_summary[:80]}...\033[0m")
+            logger.info(f"Summary updated: {existing_summary[:80]}...")
         
         # Keep only the recent half of context
         context = context[half:]
@@ -254,7 +253,7 @@ def think(prompt, user_id="dustin"):
         start_time = time.time()
         response = requests.post(config.OLLAMA_URL, json=payload)
         duration = time.time() - start_time
-        print(f"\033[96m[LATENCY] LLM (Ollama): {duration:.2f}s\033[0m")
+        logger.info(f"[LATENCY] LLM (Ollama): {duration:.2f}s")
         data = response.json()
         
         # Update memory
@@ -266,7 +265,7 @@ def think(prompt, user_id="dustin"):
         
         return data['response']
     except Exception as e:
-        print(f"[BRAIN ERROR] {e}")
+        logger.error(f"Brain Error: {e}")
         return "Connection lost."
 
 def look(prompt, image_bytes):
@@ -275,24 +274,22 @@ def look(prompt, image_bytes):
     # --- GEMINI PATH ---
     if config.USE_GEMINI:
         try:
-            # We need to construct a specific prompt for Vision that includes the persona
-            # because system_instruction might not apply as strongly to single-turn vision calls 
-            # or we want to be safe.
-            vision_prompt = [
-                "SYSTEM: You are MESH. Tactical Robot. Analyze this image. Be cynical, dry, brief.",
-                prompt
-            ]
-            
-            # Create a simple image object (PIL)
-            image = Image.open(io.BytesIO(image_bytes))
+            # Construct parts: prompt + image
+            image_part = types.Part.from_bytes(data=image_bytes, mime_type='image/jpeg')
             
             start_time = time.time()
-            response = gemini_model.generate_content([prompt, image])
+            response = client.models.generate_content(
+                model='gemini-3-flash-preview',
+                contents=[prompt, image_part],
+                config=types.GenerateContentConfig(
+                    system_instruction="SYSTEM: You are MESH. Tactical Robot. Analyze this image. Be cynical, dry, brief."
+                )
+            )
             duration = time.time() - start_time
-            print(f"\033[96m[LATENCY] Vision (Gemini): {duration:.2f}s\033[0m")
+            logger.info(f"[LATENCY] Vision (Gemini): {duration:.2f}s")
             return response.text
         except Exception as e:
-            print(f"[GEMINI VISION ERROR] {e}")
+            logger.error(f"Gemini Vision Error: {e}")
             return "Visual sensors malfunction."
 
     # --- OLLAMA PATH ---
@@ -321,7 +318,7 @@ def look(prompt, image_bytes):
         data = response.json()
         return data['message']['content']
     except Exception as e:
-        print(f"[VISION ERROR] {e}")
+        logger.error(f"Vision Error: {e}")
         return "Visual sensors offline."
 
 def robust_json_parse(raw_text):

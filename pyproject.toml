@@ -1,0 +1,44 @@
+[build-system]
+requires = ["setuptools>=61.0"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "mesh-robot"
+version = "0.1.0"
+description = "Mobile Engineering Support Hexapod (The Brain)"
+readme = "README.md"
+requires-python = ">=3.11"
+license = {text = "MIT"}
+dependencies = [
+    "colorama",
+    "requests",
+    "numpy",
+    "scipy",
+    "Pillow",
+    "pytest"
+]
+
+[project.optional-dependencies]
+server = [
+    "fastapi",
+    "uvicorn",
+    "python-multipart",
+    "soundfile",
+    "faster-whisper",
+    "google-genai",
+    "f5-tts",
+    "TTS",
+    "torch",
+    "torchaudio",
+    "torchvision"
+]
+client = [
+    "sounddevice"
+]
+
+[tool.setuptools.packages.find]
+where = ["src"]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+pythonpath = ["src"]
