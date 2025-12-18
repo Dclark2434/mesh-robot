@@ -6,9 +6,9 @@
 
 > [!WARNING]
 > **Status: Active Development**
-> This project provides the "Brain" and "Senses" for a physical hexapod robot. It is an evolving architecture, not a finished consumer product.
+> This project provides the "Brain" and "Senses" for a physical hexapod robot. It is an evolving architecture, not a finished product.
 
-M.E.S.H. is a professional-grade "Brain" for hexapod robots, inspired by the TARS unit from *Interstellar*. It features a low-latency speech-to-speech pipeline, real-time voice cloning, and a modular architecture designed for high-performance inference.
+M.E.S.H. is a "Brain" for hexapod robots, inspired by the TARS unit from *Interstellar*. It features a custom speech-to-speech pipeline, on-the-fly voice cloning, and a modular architecture designed for high-performance inference.
 
 ---
 
