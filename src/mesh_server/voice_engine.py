@@ -11,7 +11,7 @@ import uuid
 import re
 
 from mesh_common.logging import get_logger
-import config
+from mesh_server import config
 
 logger = get_logger("mesh_voice")
 

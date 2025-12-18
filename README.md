@@ -1,212 +1,137 @@
-# MESH
-
+# MESH 🤖
 **Mobile Engineering Support Hexapod (The Brain)**
 
-> ⚠️ **Status: Active Development**
-> This project is providing the "Brain" and "Senses" for a physical hexapod robot. It is not just a desktop assistant. Features are missing, and the architecture is evolving.
+[![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](https://opensource.org/licenses/MIT)
+[![Python 3.11](https://img.shields.io/badge/python-3.11-blue.svg)](https://www.python.org/downloads/release/python-3110/)
 
-Verified "Brain" for a hexapod robot, inspired by TARS from Interstellar. Features real-time speech-to-speech interaction, voice cloning, and hardware command integration.
+> [!WARNING]
+> **Status: Active Development**
+> This project provides the "Brain" and "Senses" for a physical hexapod robot. It is an evolving architecture, not a finished consumer product.
 
----
-
-## Roadmap
-
-- [x] **Core Brain**: LLM Integration (Gemini/Ollama)
-- [x] **Voice**: Speech-to-Speech pipeline (Whisper -> LLM -> F5-TTS)
-- [x] **Vision**: Static image analysis (`/see`)
-- [ ] **Hardware Integration**:
-    - [ ] Connect Physical Servos (Hexapod movement)
-    - [ ] Real-time Camera Feed integration
-- [ ] **Architecture Migration**:
-    - [x] Windows Client (Debug/Testing)
-    - [x] Raspberry Pi Client (Target Payload on Robot)
-- [ ] **Telemetry**: Battery monitoring and sensor fusion
+M.E.S.H. is a professional-grade "Brain" for hexapod robots, inspired by the TARS unit from *Interstellar*. It features a low-latency speech-to-speech pipeline, real-time voice cloning, and a modular architecture designed for high-performance inference.
 
 ---
 
-## Features
+## 🚀 Quick Start (Server)
 
-- **Dual Brain Core**: Toggle between Local LLM (Ollama) or Cloud LLM (Gemini Flash).
-- **Voice Cloning**: F5-TTS (Default/SOTA) or XTTS v2 (Legacy).
-- **Real-time Audio Streaming**: Low latency response.
-- **Customizable Personality**: TARS-inspired (Cynical, Dry, Military Jargon).
-- **Hardware Command Stubs**: walk, scan, shutdown.
-- **Vision Analysis**: "See" the world via camera input (`/see` endpoint).
-- **Persistent Memory**: Rolling summaries (Local) or Full History (Cloud).
+```bash
+# Clone and enter
+git clone https://github.com/Dclark2434/mesh-robot.git
+cd mesh-robot
+
+# Setup environment (Python 3.11 Required)
+python3.11 -m venv venv
+source venv/bin/activate
+
+# Install package and dependencies
+pip install torch torchaudio torchvision --index-url https://download.pytorch.org/whl/cu121
+pip install -e .[server]
+
+# Start the brain
+export GEMINI_API_KEY="your_api_key_here"
+python -m mesh_server.server
+```
 
 ---
 
-## Project Structure
+## ✨ Key Features
+
+- **🧠 Dual Brain Core**: Seamlessly toggle between Google Gemini (Cloud) and Ollama (Local).
+- **🗣️ Advanced TTS**: State-of-the-art voice cloning via F5-TTS or legacy XTTS v2.
+- **👂 Real-time Senses**: Whisper-powered STT for hands-free interaction.
+- **👁️ Vision System**: Image analysis and commentary via the `/see` endpoint.
+- **🎭 TARS Personality**: Customizable cynical, dry, and military-aware persona.
+- **🛠️ Command Engine**: Integrated stubs for hardware control (walking, scanning, etc.).
+
+---
+
+## 📂 Project Structure
+
+The repository follows a professional `src` layout for better package management and testing.
 
 ```text
 mesh-robot/
 ├── src/
-│   ├── mesh_common/    # Shared logic, logging, and configuration
-│   ├── mesh_client/    # Unified platform-agnostic client
-│   └── mesh_server/    # Server, Brain, and Voice engines
-├── scripts/            # Deployment and startup scripts
-├── tests/              # Unit tests
-├── LICENSE             # MIT License
-└── README.md           # This file
+│   ├── mesh_common/    # Shared utilities, logging, and constants
+│   ├── mesh_client/    # Platform-agnostic client (Windows/Linux/Pi)
+│   └── mesh_server/    # Core inference engine and voice pipeline
+├── scripts/            # Deployment and automation scripts
+├── tests/              # Comprehensive unit and integration tests
+├── pyproject.toml      # Project configuration and metadata
+└── README.md           # You are here
 ```
 
 ---
 
-## Architecture
+## 🛠️ Configuration
 
-**Current State:**
-The client can run on either a **Windows PC** (for debugging) or a **Raspberry Pi** (for robot deployment). Both clients handle Audio I/O and communicate with the powerful Server (Brain) over the network.
+Control M.E.S.H. via environment variables.
 
-```
-[ PHYSICAL ROBOT ]                   [ LOCAL SERVER (The Brain) ]
-(Raspberry Pi / Windows Client)      (High-End PC / GPU)
-       |                                      |
-       |-- Microphone (Input)  -------------> | --+ Whisper (STT)
-       |                                      |
-       |-- Speaker (Output)    <------------- | --+ VOICE ENGINE (F5-TTS)
-       |                                      |
-       +-- Hardware Commands   <------------- | --+ BRAIN (Gemini / Ollama)
-           (Servos/Sensors)                   |
-```
-
----
-
-## Configuration Toggles
-
-Control the brain and voice engines via Environment Variables (or `server.py` constants).
-
-| Toggle | Variable | Default | Description |
-|--------|----------|---------|-------------|
-| **Brain** | `USE_GEMINI` | `True` | `True` = Google Gemini (API Key required). `False` = Local Ollama. |
-| **Voice** | `USE_F5_TTS` | `True` | `True` = F5-TTS (SOTA). `False` = XTTS v2. |
-| **Key** | `GEMINI_API_KEY`| - | **REQUIRED** if `USE_GEMINI=True`. |
+| Variable | Default | Description |
+|----------|---------|-------------|
+| `USE_GEMINI` | `True` | Use Google Gemini Flash (Cloud). `False` for local Ollama. |
+| `USE_F5_TTS` | `True` | Use F5-TTS (SOTA). `False` for XTTS v2. |
+| `GEMINI_API_KEY`| - | **Required** for Cloud Brain. |
 
 > [!IMPORTANT]
-> You must set `GEMINI_API_KEY` in your environment (or `.env` file) for the Cloud Brain to work.
+> Ensure `GEMINI_API_KEY` is set in your environment if `USE_GEMINI` is enabled.
 
 ---
 
-## Requirements
+## 💻 Setup & Installation
 
-### Local Python (Recommended)
-- Python 3.11 (Strict requirement; 3.12+ features break TTS)
-- CUDA 12.1 (for PyTorch/GPU)
-- `ffmpeg`, `sox`, `libsox-fmt-all` (System dependencies)
-- 8GB+ VRAM recommended for local inference.
+### System Requirements
+- **OS**: Linux (WSL2 recommended for Windows users).
+- **Python**: 3.11 (3.12+ currently incompatible with TTS libraries).
+- **GPU**: NVIDIA GPU with CUDA 12.1 (8GB+ VRAM recommended).
+- **Dependencies**: `ffmpeg`, `sox`, `libsox-fmt-all`.
 
----
-
-## Setup: Server (The Brain)
-
-Runs the high-end inference engine (WSL2 or Linux with GPU).
+### 1. Server Installation (The Brain)
+Runs on your high-end workstation or server.
 
 ```bash
-# 1. Install System Dependencies
-sudo apt update && sudo apt install python3.11 python3.11-venv sox libsox-fmt-all git ffmpeg -y
+# Install system deps
+sudo apt update && sudo apt install python3.11-venv sox libsox-fmt-all ffmpeg -y
 
-# 2. Setup Env
+# Setup and install
 python3.11 -m venv venv
 source venv/bin/activate
-
-# 3. Install PyTorch (CUDA 12.1)
 pip install torch torchaudio torchvision --index-url https://download.pytorch.org/whl/cu121
+pip install -e .[server]
 
-# 4. Install Requirements
-pip install -r src/mesh_server/requirements.txt
-
-# 5. Bake Sounds (Once)
+# Generate soundboard
 python src/mesh_server/bake_sounds.py
-
-# 6. Start
-export GEMINI_API_KEY="your_key_here"
-python -m mesh_server.server
 ```
 
-## Setup: Unified Client
-
-The client is platform-agnostic and runs on both **Windows** and **Raspberry Pi**.
+### 2. Client Installation (The Interface)
+Runs on the robot (Pi) or a debug machine (Windows).
 
 ```bash
-# 1. Setup Env
-python -m venv venv-client
-# Windows: .\venv-client\Scripts\Activate.ps1
-# Linux: source venv-client/bin/activate
+# Setup environment
+python -m venv venv-win
+# Windows: .\venv-win\Scripts\Activate.ps1 | Linux: source venv-client/bin/activate
 
-# 2. Install Requirements
-pip install -r src/mesh_client/requirements.txt
+# Install
+pip install -e .[client]
 
-# 3. Start
-# Set MESH_SERVER_URL if running remotely
-export MESH_SERVER_URL="http://<SERVER_IP>:8000/interact"
+# Start client
+$env:MESH_SERVER_URL="http://<SERVER_IP>:8000/interact"
 python -m mesh_client.main
 ```
 
-### Setup: Client Auto-Start (Raspberry Pi)
+---
 
-To make M.E.S.H. start automatically on boot:
+## 🧪 Testing
 
-1. **Make the startup script executable**:
-   ```bash
-   chmod +x scripts/startup-client.sh
-   ```
+We use `pytest` for quality assurance.
 
-2. **Create the Service File**:
-   ```bash
-   sudo nano /etc/systemd/system/mesh-client.service
-   ```
-
-3. **Paste this configuration** (adjust paths if necessary):
-   ```ini
-   [Unit]
-   Description=MESH Robot Client
-   After=network-online.target
-   Wants=network-online.target
-
-   [Service]
-   User=dclark
-   WorkingDirectory=/home/dclark/mesh-robot
-   ExecStart=/bin/bash /home/dclark/mesh-robot/scripts/startup-client.sh
-   Restart=always
-   RestartSec=5
-
-   [Install]
-   WantedBy=multi-user.target
-   ```
-
-4. **Enable and Start**:
-   ```bash
-   sudo systemctl daemon-reload
-   sudo systemctl enable mesh-client
-   sudo systemctl start mesh-client
-   ```
+```bash
+# Run all tests
+pytest
+```
 
 ---
 
+## 📜 License
 
-## Personality & Modelfile
-
-The robot's personality is defined in `src/mesh_server/config.py` (System Prompt).
-
-> [!NOTE]
-> `src/mesh_server/Modelfile` is a mirror of the prompt in `config.py` for use with Ollama.
-
-**Current Vibe: TARS (Interstellar)**
-- **Honesty**: 90% (Blunt)
-- **Humor**: 75% (Dry, Sarcastic)
-- **Skepticism**: 20%
-- **Voice**: Professional, tired, competent. Uses military jargon ("Copy", "Roger").
-
----
-
-## API Endpoints
-
-| Method | Endpoint | Description |
-|--------|----------|-------------|
-| POST | `/interact` | Audio-in (WAV), Audio-out (Stream). Main voice loop. |
-| POST | `/see` | Image-in + Prompt. Returns Audio commentary. |
-
----
-
-## License
-
-MIT
+Distributed under the MIT License. See `LICENSE` for more information.

@@ -7,14 +7,22 @@ USE_GEMINI = True  # <-- Brain Toggle
 USE_F5_TTS = True  # <-- Voice Toggle (True for F5, False for XTTSv2)
 
 # Ollama Config (used when USE_GEMINI = False)
-OLLAMA_URL = "http://localhost:11434/api/generate"
-OLLAMA_CHAT_URL = "http://localhost:11434/api/chat"
+OLLAMA_URL = "http://127.0.0.1:11434/api/generate"
+OLLAMA_CHAT_URL = "http://127.0.0.1:11434/api/chat"
 OLLAMA_MODEL_NAME = "mesh"
+
+# --- SYSTEM PATHS ---
+# Get the absolute path of the directory where this file (config.py) is located
+BASE_DIR = os.path.dirname(os.path.abspath(__file__))
+
+# Make paths absolute relative to BASE_DIR
+REFERENCE_AUDIO = os.path.join(BASE_DIR, "tars_ref.wav")
+DATA_DIR = os.path.join(BASE_DIR, "data")
+MEMORY_FILE = os.path.join(DATA_DIR, "mesh_memory.json")
 
 # Gemini Config
 GEMINI_API_KEY = os.environ.get("GEMINI_API_KEY")
 
-REFERENCE_AUDIO = "tars_ref.wav"
 WAKE_WORDS = [
     "hey mesh", "hey, mesh", "hey mech", 
     "hey, mech", "hey mash", "hey, mash", 
@@ -247,7 +255,5 @@ You must follow these rules for every user message.
 """
 
 # --- MEMORY STORE ---
-DATA_DIR = "data"
-MEMORY_FILE = os.path.join(DATA_DIR, "mesh_memory.json")
 CONTEXT_THRESHOLD = 12000  # Trigger summarization at this context size
 SUMMARY_MAX_LENGTH = 500   # Max chars for rolling summary

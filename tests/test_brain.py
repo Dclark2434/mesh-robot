@@ -2,8 +2,7 @@ import sys
 import os
 import pytest
 
-# Add src to path
-sys.path.append(os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file__))), "src"))
+# Test imports
 
 from mesh_server import brain
 

@@ -2,9 +2,8 @@ import torch
 import subprocess
 import os
 import soundfile as sf
-import sys
 import contextlib
-import config
+from mesh_server import config
 
 # --- HELPER FUNCTIONS ---
 
@@ -23,7 +22,9 @@ def suppress_output():
             sys.stderr = old_stderr
 
 # --- CONFIG ---
-OUTPUT_DIR = "sounds"
+# Get the absolute path of the directory where this script is located
+SCRIPT_DIR = os.path.dirname(os.path.abspath(__file__))
+OUTPUT_DIR = os.path.join(SCRIPT_DIR, "sounds")
 
 # The Variation Matrix
 # Key = The category
@@ -82,7 +83,7 @@ for category, variations in PHRASES.items():
         print(f"Baking: {filename} -> '{text}'")
         
         # 1. Generate Raw
-        temp_file = "temp_bake.wav"
+        temp_file = os.path.join(SCRIPT_DIR, "temp_bake.wav")
         
         try:
             if USE_F5:
@@ -118,5 +119,6 @@ for category, variations in PHRASES.items():
             print(f"[ERROR] Failed to bake {filename}: {e}")
 
 # Cleanup
-if os.path.exists("temp_bake.wav"): os.remove("temp_bake.wav")
+temp_bake_path = os.path.join(SCRIPT_DIR, "temp_bake.wav")
+if os.path.exists(temp_bake_path): os.remove(temp_bake_path)
 print("\n[SUCCESS] Soundboard generated.")

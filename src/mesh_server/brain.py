@@ -7,36 +7,37 @@ import io
 import re
 from typing import Dict, Any, List, Optional
 from PIL import Image
-import google.generativeai as genai
+from google import genai
+from google.genai import types
 
 from mesh_common.logging import get_logger
-import config
+from mesh_server import config
 
 logger = get_logger("mesh_brain")
 
 # --- MEMORY STATE ---
 SESSION_MEMORY = {}  # { user_id: { context, summary, turn_count, last_updated } }
 
-# Initialize Gemini Model if enabled
-gemini_model = None
+# Initialize Gemini Client if enabled
+client = None
 if config.USE_GEMINI:
     if not config.GEMINI_API_KEY:
          raise ValueError("GEMINI_API_KEY environment variable not set. Set USE_GEMINI=False to use Ollama instead.")
-    genai.configure(api_key=config.GEMINI_API_KEY)
-    gemini_model = genai.GenerativeModel(
-        'gemini-3-flash-preview',
+    client = genai.Client(api_key=config.GEMINI_API_KEY)
+
+def get_gemini_config():
+    """Returns the standard configuration for Gemini model calls."""
+    return types.GenerateContentConfig(
         system_instruction=config.SYSTEM_PROMPT,
-        generation_config={
-            "response_mime_type": "application/json",
-            "response_schema": {
-                "type": "object",
-                "properties": {
-                    "response": {"type": "string"},
-                    "action": {"type": "string"},
-                    "param": {"type": "string"}
-                },
-                "required": ["response", "action", "param"]
-            }
+        response_mime_type="application/json",
+        response_schema={
+            "type": "OBJECT",
+            "properties": {
+                "response": {"type": "STRING"},
+                "action": {"type": "STRING"},
+                "param": {"type": "STRING"}
+            },
+            "required": ["response", "action", "param"]
         }
     )
 
@@ -140,28 +141,34 @@ def think_gemini(prompt, user_id="dustin"):
     user_memory = SESSION_MEMORY[user_id]
     
     # Load history (list of dicts)
-    # Gemini format: [{'role': 'user', 'parts': ['...']}, ...]
+    # New Format: [{'role': 'user', 'parts': ['...']}, ...]
     history = user_memory.get("gemini_history", [])
     
     try:
-        # Start chat with history
-        chat = gemini_model.start_chat(history=history)
+        # Build contents from history + current prompt
+        contents = []
+        for turn in history:
+            # New SDK expect Parts
+            p_list = [types.Part(text=p) for p in turn['parts']]
+            contents.append(types.Content(role=turn['role'], parts=p_list))
         
-        # Send message
+        # Add current user prompt
+        contents.append(types.Content(role='user', parts=[types.Part(text=prompt)]))
+        
         start_time = time.time()
-        response = chat.send_message(prompt)
+        response = client.models.generate_content(
+            model='gemini-3-flash-preview',
+            contents=contents,
+            config=get_gemini_config()
+        )
         duration = time.time() - start_time
         logger.info(f"[LATENCY] LLM (Gemini): {duration:.2f}s")
         
         # Update memory with new history
-        # We need to serialize the history to standard dicts for JSON storage
-        # chat.history is a list of Content objects
-        serialized_history = []
-        for content in chat.history:
-            parts = [p.text for p in content.parts]
-            serialized_history.append({"role": content.role, "parts": parts})
+        history.append({"role": "user", "parts": [prompt]})
+        history.append({"role": "model", "parts": [response.text]})
             
-        user_memory["gemini_history"] = serialized_history
+        user_memory["gemini_history"] = history
         user_memory["last_updated"] = time.time()
         
         SESSION_MEMORY[user_id] = user_memory
@@ -171,10 +178,7 @@ def think_gemini(prompt, user_id="dustin"):
         
     except Exception as e:
         logger.error(f"Gemini API Error: {type(e).__name__} - {str(e)}")
-        if hasattr(e, 'details'):
-            logger.debug(f"Details: {e.details() if callable(e.details) else e.details}")
-            
-        return json.dumps({"response": "Signal interference. Repeat.", "action": "none"})
+        return json.dumps({"response": "Signal interference. Repeat.", "action": "none", "param": "null"})
 
 def think(prompt, user_id="dustin"):
     """Query Text Model with Persistent Identity and Rolling Memory"""
@@ -270,19 +274,17 @@ def look(prompt, image_bytes):
     # --- GEMINI PATH ---
     if config.USE_GEMINI:
         try:
-            # We need to construct a specific prompt for Vision that includes the persona
-            # because system_instruction might not apply as strongly to single-turn vision calls 
-            # or we want to be safe.
-            vision_prompt = [
-                "SYSTEM: You are MESH. Tactical Robot. Analyze this image. Be cynical, dry, brief.",
-                prompt
-            ]
-            
-            # Create a simple image object (PIL)
-            image = Image.open(io.BytesIO(image_bytes))
+            # Construct parts: prompt + image
+            image_part = types.Part.from_bytes(data=image_bytes, mime_type='image/jpeg')
             
             start_time = time.time()
-            response = gemini_model.generate_content([prompt, image])
+            response = client.models.generate_content(
+                model='gemini-3-flash-preview',
+                contents=[prompt, image_part],
+                config=types.GenerateContentConfig(
+                    system_instruction="SYSTEM: You are MESH. Tactical Robot. Analyze this image. Be cynical, dry, brief."
+                )
+            )
             duration = time.time() - start_time
             logger.info(f"[LATENCY] Vision (Gemini): {duration:.2f}s")
             return response.text

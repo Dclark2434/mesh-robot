@@ -1,3 +1,7 @@
+import warnings
+# Silence noisy 3rd-party FutureWarnings (transformers, torch, etc.) before imports
+warnings.filterwarnings("ignore", category=FutureWarning)
+
 import asyncio
 import uvicorn
 import io
@@ -6,17 +10,13 @@ import time
 from fastapi import FastAPI, UploadFile, File, Form, Request
 from fastapi.responses import StreamingResponse
 
-# Add src to path if needed for local execution, 
-# but better to run as `python -m mesh_server.server` from src/
-import sys
-import os
-sys.path.append(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
+# Server imports
 
 from mesh_common.logging import get_logger
 from mesh_common.config import SAMPLE_RATE
-import brain
-import voice_engine
-import config
+from mesh_server import brain
+from mesh_server import voice_engine
+from mesh_server import config
 
 logger = get_logger("mesh_server")
 app = FastAPI(title="M.E.S.H. Server")

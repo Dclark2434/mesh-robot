@@ -12,8 +12,7 @@ import struct
 from scipy.io.wavfile import write
 from typing import Optional, Generator
 
-# Add src to path for internal imports
-sys.path.append(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
+# Client imports
 
 from mesh_common.logging import get_logger
 from mesh_common.config import SAMPLE_RATE, CHANNELS, DEFAULT_SERVER_PORT
@@ -21,7 +20,7 @@ from mesh_common.config import SAMPLE_RATE, CHANNELS, DEFAULT_SERVER_PORT
 logger = get_logger("mesh_client")
 
 # --- CONFIGURATION ---
-SERVER_URL = os.environ.get("MESH_SERVER_URL", f"http://localhost:{DEFAULT_SERVER_PORT}/interact")
+SERVER_URL = os.environ.get("MESH_SERVER_URL", f"http://127.0.0.1:{DEFAULT_SERVER_PORT}/interact")
 THRESHOLD = float(os.environ.get("MESH_THRESHOLD", 0.05))
 SILENCE_LIMIT = float(os.environ.get("MESH_SILENCE_LIMIT", 1.0))
 ALSA_DEVICE = os.environ.get("MESH_ALSA_DEVICE")
