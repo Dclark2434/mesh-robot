@@ -1,7 +1,9 @@
-from fastapi import FastAPI, UploadFile, File, Form
+from fastapi import FastAPI, UploadFile, File, Form, Request
 from fastapi.responses import StreamingResponse
+import asyncio
 import uvicorn
 import io
+import json
 import time
 import brain
 import voice_engine
@@ -9,20 +11,33 @@ import config
 
 app = FastAPI()
 
+@app.middleware("http")
+async def add_process_time_header(request, call_next):
+    request.state.start_time = time.time()
+    response = await call_next(request)
+    return response
+
 # --- STATE ---
 USER_STATES = {}
 
 # --- STREAM LOGIC ---
 
-def text_interaction_stream(user_text):
+async def interact_generator(audio_bytes):
+    start_total = time.time()
+    audio_buffer = io.BytesIO(audio_bytes)
+    
+    # 1. Transcribe (In background thread!)
+    user_text = await asyncio.to_thread(voice_engine.transcribe, audio_buffer)
+    
+    if not user_text:
+        yield json.dumps({"status": "no_speech"}).encode()
+        return
+
+    # 2. Logic (Wake words, attention, etc.)
     user_id = "dustin"
     clean_input = user_text.lower().strip()
-    
-    # 1. CHECK STATE
     last_seen = USER_STATES.get(user_id, 0)
     is_focused = (time.time() - last_seen) < config.ATTENTION_SPAN
-    
-    # 2. CHECK WAKE WORD
     trigger_word = next((w for w in config.WAKE_WORDS if w in clean_input), None)
     
     final_prompt = user_text
@@ -34,37 +49,33 @@ def text_interaction_stream(user_text):
         parts = clean_input.partition(trigger_word)
         remaining_command = parts[2].strip(" .,?!")
         
-        # Determine sound based on whether there's an immediate command
-        if len(remaining_command) > 2:
-           ack_bytes = voice_engine.get_prebaked_sound("processing")
-        else:
-           ack_bytes = voice_engine.get_prebaked_sound("ack")
-           
+        # Immediate ACK feedback
+        ack_bytes = voice_engine.get_prebaked_sound("ack" if len(remaining_command) < 2 else "processing")
         if ack_bytes: yield ack_bytes
         
         if len(remaining_command) < 2: return 
-        else: final_prompt = remaining_command
-
+        final_prompt = remaining_command
     elif is_focused:
+        # STILL YIELD ACK in focused mode so the user knows we heard them!
         USER_STATES[user_id] = time.time()
-        
+        ack_bytes = voice_engine.get_prebaked_sound("ack")
+        if ack_bytes: yield ack_bytes
     else:
         print(f"\033[90m[IGNORED] {clean_input}\033[0m")
+        yield json.dumps({"status": "ignored"}).encode()
         return
 
     print(f"\033[94mUser:\033[0m {final_prompt}")
 
-    # 3. THINK
-    # Hardware Intercept for "Shutdown"
+    # 3. Think (In background thread!)
     if "shut down" in final_prompt.lower() or "power off" in final_prompt.lower():
-        yield from voice_engine.speak_generator("Powering down. Goodnight.")
-        # We can yield a special header/byte here for the client to exit, 
-        # but for now just saying it is enough.
+        # Wrapping the generator exhaustion in to_thread is safer for blocking TTS
+        def get_all_chunks(text): return list(voice_engine.speak_generator(text))
+        chunks = await asyncio.to_thread(get_all_chunks, "Powering down. Goodnight.")
+        for chunk in chunks: yield chunk
         return
 
-    raw_response = brain.think(final_prompt, user_id)
-    
-    # 4. PARSE
+    raw_response = await asyncio.to_thread(brain.think, final_prompt, user_id)
     parsed = brain.robust_json_parse(raw_response)
     spoken_text = parsed.get("response", "Data error.")
     hardware_command = parsed.get("action", "none")
@@ -73,8 +84,13 @@ def text_interaction_stream(user_text):
     if hardware_command != "none":
         print(f"\033[93m[COMMAND] {hardware_command} -> {hardware_param}\033[0m")
 
-    # 5. SPEAK
-    yield from voice_engine.speak_generator(spoken_text)
+    # 4. Speak
+    # We yield parts as they are generated. 
+    # Since speak_generator themselves block per-sentence, we loop.
+    for chunk in voice_engine.speak_generator(spoken_text):
+        yield chunk
+        
+    print(f"\033[96m[LATENCY] Total Interaction Time: {time.time() - start_total:.2f}s\033[0m")
 
 def vision_interaction_stream(image_bytes, prompt):
     print(f"\033[94mUser (Vision):\033[0m {prompt}")
@@ -84,17 +100,20 @@ def vision_interaction_stream(image_bytes, prompt):
 # --- API ENDPOINTS ---
 
 @app.post("/interact")
-async def interact_endpoint(audio_file: UploadFile = File(...)):
+async def interact_endpoint(request: Request, audio_file: UploadFile = File(...)):
+    # 0. Measure Request Overhead
+    start_time = getattr(request.state, "start_time", time.time())
+    overhead = time.time() - start_time
+    print(f"\033[96m[LATENCY] Request Overhead (Network/Buffering): {overhead:.2f}s\033[0m")
+
+    # 1. Read Bytes First (FastAPI needs to read the body before we can stream back)
+    # This is the last bottleneck before the generator takes over.
+    read_start = time.time()
     audio_bytes = await audio_file.read()
-    audio_buffer = io.BytesIO(audio_bytes)
+    print(f"\033[96m[LATENCY] Server File Read: {time.time() - read_start:.2f}s\033[0m")
     
-    user_text = voice_engine.transcribe(audio_buffer)
-
-    if not user_text:
-        return {"status": "no_speech"}
-
     return StreamingResponse(
-        text_interaction_stream(user_text),
+        interact_generator(audio_bytes),
         media_type="audio/wav"
     )
 

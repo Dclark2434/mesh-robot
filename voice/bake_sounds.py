@@ -30,20 +30,17 @@ OUTPUT_DIR = "sounds"
 # Value = List of phrases to record for that category
 PHRASES = {
     "ack": [
-        "I'm listening",
-        "You should, uhh, go ahead.",
-        "I'm here",
-        "What?",
-        "Yeah?",
-        "What do you need?"
+        "Yeah?", "I'm here.", "Go ahead.", "Listening.", "What's on your mind?",
+        "Hearing you.", "Go for it.", "I'm all ears.", "Shoot.", "Speak up.",
+        "Yep?", "Go.", "Waiting.", "Present.", "You have my attention.",
+        "Hmh?", "What?", "Ready when you are.", "Start talking.", "Status?"
     ],
     "processing": [
-        "Let me, uhh, think about that. Hmmmm.",
-        "One moment.",
-        "Just a sec.",
-        "Thinking...",
-        "How should I, uhh, put this. Hmmmm.",
-        "Nope! Just kidding, hang on."
+        "Looking that up.", "One second.", "Checking the files.", "Let's see...",
+        "Checking...", "Hang on.", "Working on it.", "Searching.", "Stand by.",
+        "Processing that.", "Give me a beat.", "Thinking...", "One moment.",
+        "Looking into it.", "Checking data.", "Accessing records.", "Just a sec.",
+        "Pulling that up.", "Digestive pause. Hang on.", "Doing the work. Wait."
     ],
     "boot": [
         "Mesh System Online.",

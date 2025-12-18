@@ -1,4 +1,5 @@
 import sounddevice as sd
+import json
 import numpy as np
 import requests
 import io
@@ -18,8 +19,8 @@ init(autoreset=True)
 SERVER_URL = os.environ.get("MESH_SERVER_URL", "http://localhost:8000/interact")
 
 # Audio Config
-FS = 44100 
-THRESHOLD = 0.5
+FS = 16000 
+THRESHOLD = 0.05
 SILENCE_LIMIT = 1.0
 
 def print_banner():
@@ -36,57 +37,88 @@ def print_banner():
     """
     print(banner)
 
-def play_stream(response):
-    """
-    Reads the entire audio stream from the server and plays it using 'aplay'.
-    Buffering the whole stream prevents ALSA 'Device Busy' or 'Unknown error 524'.
-    """
-    print(f"\n{Fore.MAGENTA}[INCOMING]{Fore.RESET} Receiving ", end="", flush=True)
-    
-    full_audio = b""
-    for chunk in response.iter_content(chunk_size=4096): 
-        if not chunk: break
-        full_audio += chunk
-        print(f"{Fore.CYAN}•", end="", flush=True)
-    
-    if not full_audio:
-        print(f" {Fore.RED}[EMPTY]")
-        return
+import struct
 
-    # Create a unique temp file using timestamp to avoid collisions
-    temp_filename = f"temp_recv_{int(time.time())}.wav"
-    
+def play_wav(wav_data, alsa_device):
+    """Utility to play a single WAV buffer."""
+    if not wav_data.startswith(b"RIFF"): return
+    temp_filename = f"temp_recv_{int(time.time() * 1000)}.wav"
     try:
         with open(temp_filename, "wb") as f:
-            f.write(full_audio)
-            
-        # Play using aplay (standard Linux audio player)
-        # -q: quiet mode
-        # -t wav: force wav format
-        # -D: specific device (e.g. 'hw:1,0' for USB speakers)
-        print(f" {Fore.YELLOW}Playing...", end="", flush=True)
-        
-        alsa_device = os.environ.get("MESH_ALSA_DEVICE")
+            f.write(wav_data)
         cmd = ["aplay", "-q", "-t", "wav"]
         if alsa_device:
-            # Use 'plughw' instead of 'hw' to automatically handle 
-            # channel/sample rate conversions (fixes "Channels count non available")
-            if alsa_device.startswith("hw:"):
-                alsa_device = alsa_device.replace("hw:", "plughw:", 1)
-            cmd.extend(["-D", alsa_device])
+            dev = alsa_device.replace("hw:", "plughw:", 1) if alsa_device.startswith("hw:") else alsa_device
+            cmd.extend(["-D", dev])
         cmd.append(temp_filename)
-        
         subprocess.call(cmd)
-        print(f" {Fore.GREEN}[DONE]")
-    except FileNotFoundError:
-        print(f"\n{Fore.RED}[ERROR]{Fore.RESET} 'aplay' not found. Please install alsa-utils.")
-    except Exception as e:
-        print(f"\n{Fore.RED}[ERROR]{Fore.RESET} Playback failed: {e}")
     finally:
-        # Cleanup
         if os.path.exists(temp_filename):
             try: os.remove(temp_filename)
             except: pass
+
+def play_stream(response):
+    """
+    Streams audio segments and plays them as soon as each WAV is complete.
+    """
+    print(f"\n{Fore.MAGENTA}[INCOMING]{Fore.RESET} Streaming ", end="", flush=True)
+    
+    current_part = b""
+    expected_size = 0
+    is_json = False
+    alsa_device = os.environ.get("MESH_ALSA_DEVICE")
+
+    for chunk in response.iter_content(chunk_size=1024): 
+        if not chunk: continue
+        
+        # Check for JSON status
+        if not current_part and chunk.lstrip().startswith(b"{"):
+            is_json = True
+        
+        current_part += chunk
+        
+        if is_json:
+            continue
+            
+        print(f"{Fore.CYAN}•", end="", flush=True)
+
+        # 1. Parse header for size (Seek RIFF in case of leading stream junk)
+        if expected_size == 0 and len(current_part) >= 8:
+            riff_idx = current_part.find(b"RIFF")
+            if riff_idx != -1:
+                if riff_idx > 0:
+                    current_part = current_part[riff_idx:] # Strip junk
+                
+                if len(current_part) >= 8:
+                    expected_size = struct.unpack("<I", current_part[4:8])[0] + 8
+        
+        # 2. If we have the full file, play it!
+        if expected_size > 0 and len(current_part) >= expected_size:
+            wav_to_play = current_part[:expected_size]
+            remaining = current_part[expected_size:]
+            
+            # Start playback (sequential block is fine because server is slow anyway)
+            play_wav(wav_to_play, alsa_device)
+            
+            # Reset for next part in stream
+            current_part = remaining
+            expected_size = 0
+            if current_part and current_part.startswith(b"RIFF"):
+                if len(current_part) >= 8:
+                    expected_size = struct.unpack("<I", current_part[4:8])[0] + 8
+    
+    # Final cleanup
+    if is_json:
+        try:
+            status_data = json.loads(current_part)
+            status = status_data.get("status", "unknown")
+            if status == "no_speech": print(f" {Fore.WHITE}{Style.DIM}[SILENCE]")
+            else: print(f" {Fore.YELLOW}[STATUS: {status}]")
+        except: print(f" {Fore.RED}[DATA ERROR]")
+    else:
+        if current_part:
+            play_wav(current_part, alsa_device)
+        print(f" {Fore.GREEN}[DONE]")
 
 # --- RECORDING ENGINE ---
 q = queue.Queue()
@@ -150,8 +182,10 @@ def main():
                 
                 # Send to Server
                 if audio_buffer:
-                    print(f" {Fore.YELLOW}[SENDING]{Fore.RESET}", end="", flush=True)
                     recording = np.concatenate(audio_buffer, axis=0)
+                    recorded_secs = len(recording) / FS
+                    print(f" {Fore.YELLOW}[RECORDING DONE]{Fore.RESET} Duration: {recorded_secs:.2f}s", end="", flush=True)
+                    start_proc = time.time()
                     
                     if len(recording) > FS * 0.5:
                         # Convert numpy array to WAV bytes in memory
@@ -159,13 +193,40 @@ def main():
                         write(wav_io, FS, recording)
                         wav_io.seek(0)
                         
+                        proc_duration = time.time() - start_proc
+                        print(f" {Fore.CYAN}(Encoded in {proc_duration:.2f}s){Fore.RESET} {Fore.YELLOW}[SENDING]{Fore.RESET}", end="", flush=True)
+                        
                         try:
                             # POST Request
                             files = {'audio_file': ('cmd.wav', wav_io, 'audio/wav')}
                             
+                            start_send = time.time()
                             with requests.post(SERVER_URL, files=files, stream=True) as r:
+                                upload_duration = time.time() - start_send
+                                print(f" {Fore.CYAN}(Server Wait: {upload_duration:.2f}s){Fore.RESET}", end="", flush=True)
+                                
                                 if r.status_code == 200:
-                                    play_stream(r)
+                                    first_byte_time = None
+                                    
+                                    # We wrap response.iter_content to catch the first byte time
+                                    def timed_iter(resp):
+                                        nonlocal first_byte_time
+                                        for c in resp.iter_content(chunk_size=4096):
+                                            if first_byte_time is None:
+                                                first_byte_time = time.time()
+                                            yield c
+                                    
+                                    # Create a wrapper for play_stream to use our timed iterator
+                                    class TimedResponse:
+                                        def __init__(self, r): self.r = r
+                                        def iter_content(self, **kwargs): return timed_iter(self.r)
+                                    
+                                    play_stream(TimedResponse(r))
+                                    
+                                    # Report Latency
+                                    total_turnaround = time.time() - start_send
+                                    ttfb = (first_byte_time - start_send) if first_byte_time else 0
+                                    print(f" {Fore.CYAN}[LATENCY] Round-trip: {total_turnaround:.2f}s (TTFB: {ttfb:.2f}s)")
                                 else:
                                     print(f"\n{Fore.RED}[ERROR]{Fore.RESET} Server returned {r.status_code}")
                                     
