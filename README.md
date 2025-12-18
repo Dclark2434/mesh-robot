@@ -78,12 +78,6 @@ Control the brain and voice engines via Environment Variables (or `server.py` co
 - `ffmpeg`, `sox`, `libsox-fmt-all` (System dependencies)
 - 8GB+ VRAM recommended for local inference.
 
-### Docker (Experimental)
-> ⚠️ **Warning**: The Docker build is currently unstable/experimental. It is recommended to use the manual setup below for now.
-
-- Docker Desktop / Engine
-- NVIDIA Container Toolkit
-
 ---
 
 ## Setup: Manual (WSL/Linux)
@@ -137,7 +131,7 @@ pip install -r requirements-client.txt
 
 # 4. Run (Set MESH_SERVER_URL if running remotely)
 export MESH_SERVER_URL="http://<SERVER_IP>:8000/interact"
-export MESH_ALSA_DEVICE="plughw:3,0" # Use your device ID from Step 3
+export MESH_ALSA_DEVICE="plughw:3,0"
 python pi-client.py
 ```
 
@@ -182,17 +176,6 @@ To make M.E.S.H. start automatically on boot:
 
 ---
 
-## Setup: Docker (Experimental)
-
-1. **Set your API Key**:
-   Create a `.env` file just in case.
-
-2. **Run with Compose**:
-   ```bash
-   docker-compose up --build
-   ```
-
----
 
 ## Personality & Modelfile
 
