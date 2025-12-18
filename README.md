@@ -36,6 +36,22 @@ Verified "Brain" for a hexapod robot, inspired by TARS from Interstellar. Featur
 
 ---
 
+## Project Structure
+
+```text
+mesh-robot/
+├── src/
+│   ├── mesh_common/    # Shared logic, logging, and configuration
+│   ├── mesh_client/    # Unified platform-agnostic client
+│   └── mesh_server/    # Server, Brain, and Voice engines
+├── scripts/            # Deployment and startup scripts
+├── tests/              # Unit tests
+├── LICENSE             # MIT License
+└── README.md           # This file
+```
+
+---
+
 ## Architecture
 
 **Current State:**
@@ -80,16 +96,15 @@ Control the brain and voice engines via Environment Variables (or `server.py` co
 
 ---
 
-## Setup: Manual (WSL/Linux)
+## Setup: Server (The Brain)
 
-**Primary Method.** Run the server directly on your machine.
+Runs the high-end inference engine (WSL2 or Linux with GPU).
 
 ```bash
-# 1. Install System Dependencies (Ubuntu/WSL)
-sudo apt update && sudo apt install python3.11 python3.11-venv sox libsox-fmt-all git -y
+# 1. Install System Dependencies
+sudo apt update && sudo apt install python3.11 python3.11-venv sox libsox-fmt-all git ffmpeg -y
 
 # 2. Setup Env
-cd voice
 python3.11 -m venv venv
 source venv/bin/activate
 
@@ -97,42 +112,33 @@ source venv/bin/activate
 pip install torch torchaudio torchvision --index-url https://download.pytorch.org/whl/cu121
 
 # 4. Install Requirements
-pip install -r requirements.txt
+pip install -r src/mesh_server/requirements.txt
 
 # 5. Bake Sounds (Once)
-python bake_sounds.py
+python src/mesh_server/bake_sounds.py
 
 # 6. Start
 export GEMINI_API_KEY="your_key_here"
-python server.py
+python -m mesh_server.server
 ```
 
-### Setup: Client (Windows Debug)
+## Setup: Unified Client
 
-```powershell
-python -m venv win_env
-.\win_env\Scripts\Activate.ps1
-pip install sounddevice numpy scipy requests colorama
-python client.py
-```
-
-### Setup: Client (Raspberry Pi)
+The client is platform-agnostic and runs on both **Windows** and **Raspberry Pi**.
 
 ```bash
-# 1. Install System Dependencies
-sudo apt update && sudo apt install -y alsa-utils libportaudio2 libasound2-dev
+# 1. Setup Env
+python -m venv venv-client
+# Windows: .\venv-client\Scripts\Activate.ps1
+# Linux: source venv-client/bin/activate
 
-# 2. Setup Env
-python3 -m venv venv-client
-source venv-client/bin/activate
+# 2. Install Requirements
+pip install -r src/mesh_client/requirements.txt
 
-# 3. Install Requirements
-pip install -r requirements-client.txt
-
-# 4. Run (Set MESH_SERVER_URL if running remotely)
+# 3. Start
+# Set MESH_SERVER_URL if running remotely
 export MESH_SERVER_URL="http://<SERVER_IP>:8000/interact"
-export MESH_ALSA_DEVICE="plughw:3,0"
-python pi-client.py
+python -m mesh_client.main
 ```
 
 ### Setup: Client Auto-Start (Raspberry Pi)
@@ -141,7 +147,7 @@ To make M.E.S.H. start automatically on boot:
 
 1. **Make the startup script executable**:
    ```bash
-   chmod +x startup-client.sh
+   chmod +x scripts/startup-client.sh
    ```
 
 2. **Create the Service File**:
@@ -159,7 +165,7 @@ To make M.E.S.H. start automatically on boot:
    [Service]
    User=dclark
    WorkingDirectory=/home/dclark/mesh-robot
-   ExecStart=/bin/bash /home/dclark/mesh-robot/startup-client.sh
+   ExecStart=/bin/bash /home/dclark/mesh-robot/scripts/startup-client.sh
    Restart=always
    RestartSec=5
 
@@ -179,10 +185,10 @@ To make M.E.S.H. start automatically on boot:
 
 ## Personality & Modelfile
 
-The robot's personality is defined in `voice/server.py` (System Prompt).
+The robot's personality is defined in `src/mesh_server/config.py` (System Prompt).
 
 > [!NOTE]
-> `voice/Modelfile` is a mirror of the prompt in `server.py` for use with Ollama. If you edit the personality, prioritize `server.py` and sync changes to `Modelfile`.
+> `src/mesh_server/Modelfile` is a mirror of the prompt in `config.py` for use with Ollama.
 
 **Current Vibe: TARS (Interstellar)**
 - **Honesty**: 90% (Blunt)

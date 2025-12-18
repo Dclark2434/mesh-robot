@@ -4,9 +4,15 @@ import time
 import requests
 import base64
 import io
+import re
+from typing import Dict, Any, List, Optional
 from PIL import Image
 import google.generativeai as genai
+
+from mesh_common.logging import get_logger
 import config
+
+logger = get_logger("mesh_brain")
 
 # --- MEMORY STATE ---
 SESSION_MEMORY = {}  # { user_id: { context, summary, turn_count, last_updated } }
@@ -49,7 +55,7 @@ def load_memory_from_disk():
     if os.path.exists(config.MEMORY_FILE):
         try:
             with open(config.MEMORY_FILE, "r") as f:
-                print(f"\033[93m[SYSTEM] Restoring Memory from Disk...\033[0m")
+                logger.info("Restoring Memory from Disk...")
                 data = json.load(f)
                 
                 # Migration: Old format was { user_id: [context_tokens] }
@@ -58,7 +64,7 @@ def load_memory_from_disk():
                 for user_id, value in data.items():
                     if isinstance(value, list):
                         # Old format detected, migrate
-                        print(f"\033[93m[MEMORY] Migrating old format for {user_id}\033[0m")
+                        logger.warning(f"Migrating old memory format for {user_id}")
                         migrated[user_id] = {
                             "context": value,
                             "summary": "",
@@ -70,7 +76,7 @@ def load_memory_from_disk():
                 SESSION_MEMORY = migrated
                 return migrated
         except Exception as e:
-            print(f"[MEMORY ERROR] Failed to load: {e}")
+            logger.error(f"Failed to load memory: {e}")
     return {}
 
 def save_memory_to_disk():
@@ -81,7 +87,7 @@ def save_memory_to_disk():
         with open(config.MEMORY_FILE, "w") as f:
             json.dump(SESSION_MEMORY, f, indent=2)
     except Exception as e:
-        print(f"[MEMORY ERROR] Failed to save: {e}")
+        logger.error(f"Failed to save memory: {e}")
 
 def summarize_context(context_tokens, user_id):
     """
@@ -119,7 +125,7 @@ def summarize_context(context_tokens, user_id):
         
         return summary[:config.SUMMARY_MAX_LENGTH]  # Truncate if too long
     except Exception as e:
-        print(f"[SUMMARIZE ERROR] {e}")
+        logger.error(f"Summarization error: {e}")
         return ""
 
 def think_gemini(prompt, user_id="dustin"):
@@ -145,7 +151,7 @@ def think_gemini(prompt, user_id="dustin"):
         start_time = time.time()
         response = chat.send_message(prompt)
         duration = time.time() - start_time
-        print(f"\033[96m[LATENCY] LLM (Gemini): {duration:.2f}s\033[0m")
+        logger.info(f"[LATENCY] LLM (Gemini): {duration:.2f}s")
         
         # Update memory with new history
         # We need to serialize the history to standard dicts for JSON storage
@@ -164,21 +170,10 @@ def think_gemini(prompt, user_id="dustin"):
         return response.text
         
     except Exception as e:
-        print(f"\n\033[91m[GEMINI API ERROR] An error occurred while calling the Gemini API:\033[0m")
-        print(f"\033[91mType:\033[0m {type(e).__name__}")
-        print(f"\033[91mMessage:\033[0m {str(e)}")
-        
-        # Introspect for more details common in Google API clients
-        if hasattr(e, 'metadata'):
-            print(f"\033[93mMetadata:\033[0m {e.metadata}")
+        logger.error(f"Gemini API Error: {type(e).__name__} - {str(e)}")
         if hasattr(e, 'details'):
-            print(f"\033[93mDetails:\033[0m {e.details() if callable(e.details) else e.details}")
-        if hasattr(e, 'reason'):
-            print(f"\033[93mReason:\033[0m {e.reason}")
-        if hasattr(e, 'headers'):
-            print(f"\033[93mHeaders:\033[0m {e.headers}")
+            logger.debug(f"Details: {e.details() if callable(e.details) else e.details}")
             
-        print("-" * 40) # Visual separator
         return json.dumps({"response": "Signal interference. Repeat.", "action": "none"})
 
 def think(prompt, user_id="dustin"):
@@ -201,7 +196,7 @@ def think(prompt, user_id="dustin"):
     # 1. Smart Pruning with Summarization
     # Instead of discarding old context, we summarize it first
     if len(context) > config.CONTEXT_THRESHOLD:
-        print(f"\033[93m[MEMORY] Context large ({len(context)}), summarizing...\033[0m")
+        logger.info(f"Context large ({len(context)}), summarizing...")
         
         # Summarize the oldest half of the context
         half = len(context) // 2
@@ -218,7 +213,7 @@ def think(prompt, user_id="dustin"):
                 existing_summary = new_summary
             
             user_memory["summary"] = existing_summary
-            print(f"\033[92m[MEMORY] Summary updated: {existing_summary[:80]}...\033[0m")
+            logger.info(f"Summary updated: {existing_summary[:80]}...")
         
         # Keep only the recent half of context
         context = context[half:]
@@ -254,7 +249,7 @@ def think(prompt, user_id="dustin"):
         start_time = time.time()
         response = requests.post(config.OLLAMA_URL, json=payload)
         duration = time.time() - start_time
-        print(f"\033[96m[LATENCY] LLM (Ollama): {duration:.2f}s\033[0m")
+        logger.info(f"[LATENCY] LLM (Ollama): {duration:.2f}s")
         data = response.json()
         
         # Update memory
@@ -266,7 +261,7 @@ def think(prompt, user_id="dustin"):
         
         return data['response']
     except Exception as e:
-        print(f"[BRAIN ERROR] {e}")
+        logger.error(f"Brain Error: {e}")
         return "Connection lost."
 
 def look(prompt, image_bytes):
@@ -289,10 +284,10 @@ def look(prompt, image_bytes):
             start_time = time.time()
             response = gemini_model.generate_content([prompt, image])
             duration = time.time() - start_time
-            print(f"\033[96m[LATENCY] Vision (Gemini): {duration:.2f}s\033[0m")
+            logger.info(f"[LATENCY] Vision (Gemini): {duration:.2f}s")
             return response.text
         except Exception as e:
-            print(f"[GEMINI VISION ERROR] {e}")
+            logger.error(f"Gemini Vision Error: {e}")
             return "Visual sensors malfunction."
 
     # --- OLLAMA PATH ---
@@ -321,7 +316,7 @@ def look(prompt, image_bytes):
         data = response.json()
         return data['message']['content']
     except Exception as e:
-        print(f"[VISION ERROR] {e}")
+        logger.error(f"Vision Error: {e}")
         return "Visual sensors offline."
 
 def robust_json_parse(raw_text):

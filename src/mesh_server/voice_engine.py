@@ -9,7 +9,11 @@ import sys
 import contextlib
 import uuid
 import re
+
+from mesh_common.logging import get_logger
 import config
+
+logger = get_logger("mesh_voice")
 
 # --- HELPER FUNCTIONS ---
 
@@ -39,7 +43,7 @@ def process_audio_fx(input_file):
             audio_data = f.read()
         return audio_data
     except Exception as e:
-        print(f"[FX ERROR] {e}")
+        logger.error(f"Sound FX processing Error: {e}")
         return None
     finally:
         if os.path.exists(input_file): os.remove(input_file)
@@ -56,42 +60,42 @@ def get_prebaked_sound(category):
     return None
 
 # --- INITIALIZE ENGINES ---
-print("\033[93m[SYSTEM] Loading Neural Engines... (GPU)\033[0m")
+logger.info("Loading Neural Engines... (GPU)")
 device = "cuda" if torch.cuda.is_available() else "cpu"
 
 stt_model = WhisperModel("small", device=device, compute_type="float16")
 
 tts_engine = None
 if config.USE_F5_TTS:
-    print("\033[93m[SYSTEM] Initializing F5-TTS...\033[0m")
+    logger.info("Initializing F5-TTS...")
     from f5_tts.api import F5TTS
     tts_engine = F5TTS()
-    print("\033[92m[SYSTEM] F5-TTS Engine Loaded.\033[0m")
+    logger.info("F5-TTS Engine Loaded.")
 else:
-    print("\033[93m[SYSTEM] Initializing XTTS v2...\033[0m")
+    logger.info("Initializing XTTS v2...")
     from TTS.api import TTS
     tts_engine = TTS("tts_models/multilingual/multi-dataset/xtts_v2").to(device)
-    print("\033[92m[SYSTEM] XTTS v2 Engine Loaded.\033[0m")
+    logger.info("XTTS v2 Engine Loaded.")
 
-print(f"\033[92m[SYSTEM] MESH API Online on {device.upper()}\033[0m")
+logger.info(f"MESH API Online on {device.upper()}")
 
 def speak_generator(text_to_speak):
     # Clean text
     clean_text = text_to_speak.replace("[CUE: GREEN]", "").replace("[CUE: FLASHING]", "").replace("[CUE: ON]", "")
     clean_text = clean_text.replace("*", "").replace('"', '').strip()
     
-    print(f"\033[92mM.E.S.H.:\033[0m {clean_text}")
+    logger.info(f"M.E.S.H.: {clean_text}")
     
     # Split into sentences for better latency
     sentences = re.split(r'(?<=[.!?]) +', clean_text)
     # Filter out empty or very short strings
     sentences = [s.strip() for s in sentences if len(s.strip()) > 1]
     
-    print(f"\033[93m[TTS] Split into {len(sentences)} sentences.\033[0m")
+    logger.debug(f"Split into {len(sentences)} sentences.")
     
     first_chunk_timer = time.time()
     for i, sentence in enumerate(sentences):
-        print(f"\033[93m[TTS] ({i+1}/{len(sentences)}) Synthesizing: {sentence}\033[0m")
+        logger.debug(f"({i+1}/{len(sentences)}) Synthesizing: {sentence}")
         
         req_id = str(uuid.uuid4())[:8]
         temp_wav = f"temp_{req_id}.wav"
@@ -123,11 +127,11 @@ def speak_generator(text_to_speak):
             if processed_bytes:
                 if first_chunk_timer:
                     ttfb = time.time() - first_chunk_timer
-                    print(f"\033[96m[LATENCY] TTS (Time to First Byte): {ttfb:.2f}s\033[0m")
+                    logger.info(f"[LATENCY] TTS (Time to First Byte): {ttfb:.2f}s")
                     first_chunk_timer = None # Only log once
                 yield processed_bytes
         except Exception as e:
-            print(f"[TTS Error] {e}")
+            logger.error(f"TTS Error: {e}")
 
 def transcribe(audio_buffer):
     """Wrapper for STT transcription"""
@@ -136,8 +140,8 @@ def transcribe(audio_buffer):
         segments, _ = stt_model.transcribe(audio_buffer, beam_size=5)
         text = " ".join([segment.text for segment in segments]).strip()
         duration = time.time() - start_time
-        print(f"\033[96m[LATENCY] STT (Whisper): {duration:.2f}s\033[0m")
+        logger.info(f"[LATENCY] STT (Whisper): {duration:.2f}s")
         return text
     except Exception as e:
-        print(f"[STT Error] {e}")
+        logger.error(f"STT Error: {e}")
         return ""

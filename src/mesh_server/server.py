@@ -1,15 +1,25 @@
-from fastapi import FastAPI, UploadFile, File, Form, Request
-from fastapi.responses import StreamingResponse
 import asyncio
 import uvicorn
 import io
 import json
 import time
+from fastapi import FastAPI, UploadFile, File, Form, Request
+from fastapi.responses import StreamingResponse
+
+# Add src to path if needed for local execution, 
+# but better to run as `python -m mesh_server.server` from src/
+import sys
+import os
+sys.path.append(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
+
+from mesh_common.logging import get_logger
+from mesh_common.config import SAMPLE_RATE
 import brain
 import voice_engine
 import config
 
-app = FastAPI()
+logger = get_logger("mesh_server")
+app = FastAPI(title="M.E.S.H. Server")
 
 @app.middleware("http")
 async def add_process_time_header(request, call_next):
@@ -53,13 +63,13 @@ async def interact_generator(audio_bytes):
     ack_type = "ack" if is_poke else "processing"
 
     if trigger_word:
-        print(f"\033[92m[TRIGGER] {trigger_word}\033[0m")
+        logger.info(f"[TRIGGER] {trigger_word}")
         USER_STATES[user_id] = time.time()
         
         # Feedback on trigger
         ack_bytes = voice_engine.get_prebaked_sound(ack_type)
         if ack_bytes:
-            print(f"\033[93m[FEEDBACK] Yielding {ack_type} sound...\033[0m")
+            logger.info(f"[FEEDBACK] Yielding {ack_type} sound...")
             yield ack_bytes
         
         if len(remaining_command) < 2: return 
@@ -69,18 +79,17 @@ async def interact_generator(audio_bytes):
         if not is_poke:
             ack_bytes = voice_engine.get_prebaked_sound("processing")
             if ack_bytes:
-                print(f"\033[93m[FEEDBACK] Yielding processing sound (Focused mode)...\033[0m")
+                logger.info(f"[FEEDBACK] Yielding processing sound (Focused mode)...")
                 yield ack_bytes
     else:
-        print(f"\033[90m[IGNORED] {clean_input}\033[0m")
+        logger.debug(f"[IGNORED] {clean_input}")
         yield json.dumps({"status": "ignored"}).encode()
         return
 
-    print(f"\033[94mUser:\033[0m {final_prompt}")
+    logger.info(f"User: {final_prompt}")
 
     # 3. Think (In background thread!)
     if "shut down" in final_prompt.lower() or "power off" in final_prompt.lower():
-        # Wrapping the generator exhaustion in to_thread is safer for blocking TTS
         def get_all_chunks(text): return list(voice_engine.speak_generator(text))
         chunks = await asyncio.to_thread(get_all_chunks, "Powering down. Goodnight.")
         for chunk in chunks: yield chunk
@@ -93,18 +102,16 @@ async def interact_generator(audio_bytes):
     hardware_param = parsed.get("param", "null")
 
     if hardware_command != "none":
-        print(f"\033[93m[COMMAND] {hardware_command} -> {hardware_param}\033[0m")
+        logger.info(f"[COMMAND] {hardware_command} -> {hardware_param}")
 
     # 4. Speak
-    # We yield parts as they are generated. 
-    # Since speak_generator themselves block per-sentence, we loop.
     for chunk in voice_engine.speak_generator(spoken_text):
         yield chunk
         
-    print(f"\033[96m[LATENCY] Total Interaction Time: {time.time() - start_total:.2f}s\033[0m")
+    logger.info(f"[LATENCY] Total Interaction Time: {time.time() - start_total:.2f}s")
 
 def vision_interaction_stream(image_bytes, prompt):
-    print(f"\033[94mUser (Vision):\033[0m {prompt}")
+    logger.info(f"User (Vision): {prompt}")
     vision_response = brain.look(prompt, image_bytes)
     yield from voice_engine.speak_generator(vision_response)
 
@@ -112,16 +119,13 @@ def vision_interaction_stream(image_bytes, prompt):
 
 @app.post("/interact")
 async def interact_endpoint(request: Request, audio_file: UploadFile = File(...)):
-    # 0. Measure Request Overhead
     start_time = getattr(request.state, "start_time", time.time())
     overhead = time.time() - start_time
-    print(f"\033[96m[LATENCY] Request Overhead (Network/Buffering): {overhead:.2f}s\033[0m")
+    logger.info(f"[LATENCY] Request Overhead: {overhead:.2f}s")
 
-    # 1. Read Bytes First (FastAPI needs to read the body before we can stream back)
-    # This is the last bottleneck before the generator takes over.
     read_start = time.time()
     audio_bytes = await audio_file.read()
-    print(f"\033[96m[LATENCY] Server File Read: {time.time() - read_start:.2f}s\033[0m")
+    logger.info(f"[LATENCY] Server File Read: {time.time() - read_start:.2f}s")
     
     return StreamingResponse(
         interact_generator(audio_bytes),
@@ -140,4 +144,5 @@ async def see_endpoint(
     )
 
 if __name__ == "__main__":
+    # When running directly, we use host 0.0.0.0 for network access
     uvicorn.run(app, host="0.0.0.0", port=8000, log_level="warning")
