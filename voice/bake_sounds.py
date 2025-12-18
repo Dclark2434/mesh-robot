@@ -33,7 +33,7 @@ PHRASES = {
         "Yeah?", "I'm here.", "Go ahead.", "Listening.", "What's on your mind?",
         "Hearing you.", "Go for it.", "I'm all ears.", "Shoot.", "Speak up.",
         "Yep?", "Go.", "Waiting.", "Present.", "You have my attention.",
-        "Hmh?", "What?", "Ready when you are.", "Start talking.", "Status?"
+        "Hmh?", "What?", "Ready when you are.", "Start talking.", "I read you.", "I'm listening."
     ],
     "processing": [
         "Looking that up.", "One second.", "Checking the files.", "Let's see...",

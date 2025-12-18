@@ -91,7 +91,7 @@ def speak_generator(text_to_speak):
     
     first_chunk_timer = time.time()
     for i, sentence in enumerate(sentences):
-        print(f"\033[93m[TTS] ({i+1}/{len(sentences)}) Processing: {sentence}\033[0m")
+        print(f"\033[93m[TTS] ({i+1}/{len(sentences)}) Synthesizing: {sentence}\033[0m")
         
         req_id = str(uuid.uuid4())[:8]
         temp_wav = f"temp_{req_id}.wav"

@@ -41,25 +41,36 @@ async def interact_generator(audio_bytes):
     trigger_word = next((w for w in config.WAKE_WORDS if w in clean_input), None)
     
     final_prompt = user_text
+    remaining_command = ""
     
+    if trigger_word:
+        parts = clean_input.partition(trigger_word)
+        remaining_command = parts[2].strip(" .,?!")
+        final_prompt = remaining_command
+
+    # Determine feedback sound: 'ack' for pokes, 'processing' for logic
+    is_poke = len(final_prompt) < 2
+    ack_type = "ack" if is_poke else "processing"
+
     if trigger_word:
         print(f"\033[92m[TRIGGER] {trigger_word}\033[0m")
         USER_STATES[user_id] = time.time()
         
-        parts = clean_input.partition(trigger_word)
-        remaining_command = parts[2].strip(" .,?!")
-        
-        # Immediate ACK feedback
-        ack_bytes = voice_engine.get_prebaked_sound("ack" if len(remaining_command) < 2 else "processing")
-        if ack_bytes: yield ack_bytes
+        # Feedback on trigger
+        ack_bytes = voice_engine.get_prebaked_sound(ack_type)
+        if ack_bytes:
+            print(f"\033[93m[FEEDBACK] Yielding {ack_type} sound...\033[0m")
+            yield ack_bytes
         
         if len(remaining_command) < 2: return 
-        final_prompt = remaining_command
     elif is_focused:
-        # STILL YIELD ACK in focused mode so the user knows we heard them!
+        # If already focused, only say "Checking..." for longer commands
         USER_STATES[user_id] = time.time()
-        ack_bytes = voice_engine.get_prebaked_sound("ack")
-        if ack_bytes: yield ack_bytes
+        if not is_poke:
+            ack_bytes = voice_engine.get_prebaked_sound("processing")
+            if ack_bytes:
+                print(f"\033[93m[FEEDBACK] Yielding processing sound (Focused mode)...\033[0m")
+                yield ack_bytes
     else:
         print(f"\033[90m[IGNORED] {clean_input}\033[0m")
         yield json.dumps({"status": "ignored"}).encode()
