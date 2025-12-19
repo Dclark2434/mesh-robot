@@ -16,6 +16,7 @@ from typing import Optional, Generator
 
 from mesh_common.logging import get_logger
 from mesh_common.config import SAMPLE_RATE, CHANNELS, DEFAULT_SERVER_PORT
+from mesh_client.led_controller import LEDManager, LEDState
 
 logger = get_logger("mesh_client")
 
@@ -144,6 +145,10 @@ def audio_callback(indata, frames, time_info, status):
 def main():
     global THRESHOLD
     print_banner()
+    
+    # Initialize Hardware
+    leds = LEDManager()
+    leds.set_state(LEDState.THINKING)
 
     # Calibration
     logger.info("Calibrating noise floor...")
@@ -153,7 +158,9 @@ def main():
         noise_floor = np.max(np.abs(rec)) * 2.0
         THRESHOLD = max(THRESHOLD, noise_floor)
         logger.info(f"Calibration complete. Threshold: {THRESHOLD:.4f}")
+        leds.set_state(LEDState.IDLE)
     except Exception as e:
+        leds.set_state(LEDState.ERROR)
         logger.error(f"Calibration failed: {e}")
         sys.exit(1)
 
@@ -177,6 +184,7 @@ def main():
                     if not started:
                         if volume > THRESHOLD:
                             logger.info("Speech detected...")
+                            leds.set_state(LEDState.LISTENING)
                             started = True
                             audio_buffer.append(chunk)
                     else:
@@ -188,6 +196,7 @@ def main():
                         
                         # Stop if silence limit reached
                         if silence_counter > (SILENCE_LIMIT * (SAMPLE_RATE / len(chunk))):
+                            leds.set_state(LEDState.THINKING)
                             break
                 
                 if audio_buffer:
@@ -204,10 +213,15 @@ def main():
                             start_time = time.time()
                             with requests.post(SERVER_URL, files=files, stream=True) as r:
                                 if r.status_code == 200:
+                                    leds.set_state(LEDState.SPEAKING)
                                     stream_audio_response(r)
                                     logger.info(f"[LATENCY] Round-trip: {time.time() - start_time:.2f}s")
+                                    leds.set_state(LEDState.IDLE)
                                 else:
+                                    leds.set_state(LEDState.ERROR)
                                     logger.error(f"Server error: {r.status_code}")
+                                    time.sleep(1) # Show error for a bit
+                                    leds.set_state(LEDState.IDLE)
                         except Exception as e:
                             logger.error(f"Network error: {e}")
                     else:
@@ -220,7 +234,10 @@ def main():
     except KeyboardInterrupt:
         logger.info("Exiting...")
     except Exception as e:
+        leds.set_state(LEDState.ERROR)
         logger.error(f"Main loop error: {e}")
+    finally:
+        leds.stop()
 
 if __name__ == "__main__":
     main()
