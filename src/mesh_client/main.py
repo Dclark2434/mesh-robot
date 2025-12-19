@@ -23,7 +23,7 @@ logger = get_logger("mesh_client")
 
 # --- CONFIGURATION ---
 SERVER_URL = os.environ.get("MESH_SERVER_URL", f"http://127.0.0.1:{DEFAULT_SERVER_PORT}/interact")
-THRESHOLD = float(os.environ.get("MESH_THRESHOLD", 0.05))
+THRESHOLD = float(os.environ.get("MESH_THRESHOLD", 0.4))
 SILENCE_LIMIT = float(os.environ.get("MESH_SILENCE_LIMIT", 1.0))
 ALSA_DEVICE = os.environ.get("MESH_ALSA_DEVICE")
 
@@ -159,8 +159,9 @@ def main():
         rec = sd.rec(int(2 * SAMPLE_RATE), samplerate=SAMPLE_RATE, channels=CHANNELS)
         sd.wait()
         noise_floor = np.max(np.abs(rec)) * 2.0
-        THRESHOLD = max(THRESHOLD, noise_floor)
-        logger.info(f"Calibration complete. Threshold: {THRESHOLD:.4f}")
+        # Only overwrite THRESHOLD if it wasn't set by environment variable (optional logic)
+        # THRESHOLD = max(THRESHOLD, noise_floor) 
+        logger.info(f"Calibration captured noise floor: {noise_floor:.4f}. Using current Threshold: {THRESHOLD:.4f}")
         leds.set_state(LEDState.IDLE)
         head.look_neutral()
     except Exception as e:

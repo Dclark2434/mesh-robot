@@ -1,5 +1,8 @@
 #!/bin/bash
 
+
+# Only run this on your robot!
+
 # 1. Clone the Freenove Drivers
 if [ ! -d "freenove_code" ]; then
     echo "[SYSTEM] Cloning Freenove Drivers..."
