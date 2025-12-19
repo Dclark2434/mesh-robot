@@ -31,7 +31,7 @@ WAKE_WORDS = [
     "hey, mass", "hey max", "hey, max", 
     "hey mix", "hey, mix"
     ]
-ATTENTION_SPAN = 30 
+ATTENTION_SPAN = 60 
 
 # --- PERSISTENT IDENTITY (THE SOUL) ---
 SYSTEM_PROMPT = """

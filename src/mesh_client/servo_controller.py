@@ -124,8 +124,8 @@ class HeadController:
     """Specialized controller for the Hexapod head servos."""
     def __init__(self, servo_ctrl: ServoController):
         self.ctrl = servo_ctrl
-        self.tilt_channel = 1
-        self.pan_channel = 0
+        self.tilt_channel = 0
+        self.pan_channel = 1
         self.neutral_tilt = 90
         self.neutral_pan = 90
         
