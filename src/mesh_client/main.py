@@ -17,6 +17,7 @@ from typing import Optional, Generator
 from mesh_common.logging import get_logger
 from mesh_common.config import SAMPLE_RATE, CHANNELS, DEFAULT_SERVER_PORT
 from mesh_client.led_controller import LEDManager, LEDState
+from mesh_client.servo_controller import ServoController, HeadController
 
 logger = get_logger("mesh_client")
 
@@ -148,7 +149,9 @@ def main():
     
     # Initialize Hardware
     leds = LEDManager()
+    head = HeadController(ServoController())
     leds.set_state(LEDState.THINKING)
+    head.look_up(10)
 
     # Calibration
     logger.info("Calibrating noise floor...")
@@ -159,6 +162,7 @@ def main():
         THRESHOLD = max(THRESHOLD, noise_floor)
         logger.info(f"Calibration complete. Threshold: {THRESHOLD:.4f}")
         leds.set_state(LEDState.IDLE)
+        head.look_neutral()
     except Exception as e:
         leds.set_state(LEDState.ERROR)
         logger.error(f"Calibration failed: {e}")
@@ -197,6 +201,7 @@ def main():
                         # Stop if silence limit reached
                         if silence_counter > (SILENCE_LIMIT * (SAMPLE_RATE / len(chunk))):
                             leds.set_state(LEDState.THINKING)
+                            time.sleep(0.2) # Ensure thinking state is visible
                             break
                 
                 if audio_buffer:
@@ -214,14 +219,17 @@ def main():
                             with requests.post(SERVER_URL, files=files, stream=True) as r:
                                 if r.status_code == 200:
                                     leds.set_state(LEDState.SPEAKING)
+                                    head.look_up(20)
                                     stream_audio_response(r)
                                     logger.info(f"[LATENCY] Round-trip: {time.time() - start_time:.2f}s")
                                     leds.set_state(LEDState.IDLE)
+                                    head.look_neutral()
                                 else:
                                     leds.set_state(LEDState.ERROR)
                                     logger.error(f"Server error: {r.status_code}")
                                     time.sleep(1) # Show error for a bit
                                     leds.set_state(LEDState.IDLE)
+                                    head.look_neutral()
                         except Exception as e:
                             logger.error(f"Network error: {e}")
                     else:

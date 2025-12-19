@@ -37,3 +37,15 @@ class DummyLEDStrip(LEDStripInterface):
         logger.debug(f"[DUMMY LED] Set all LEDs to ({r}, {g}, {b})")
     def show(self):
         pass
+
+class ServoInterface:
+    def set_angle(self, channel, angle):
+        pass
+    def relax(self):
+        pass
+
+class DummyServo(ServoInterface):
+    def set_angle(self, channel, angle):
+        logger.debug(f"[DUMMY SERVO] Channel {channel} -> {angle} deg")
+    def relax(self):
+        logger.debug("[DUMMY SERVO] Relax all")

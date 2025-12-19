@@ -35,7 +35,8 @@ server = [
 client = [
     "sounddevice",
     "rpi-ws281x",
-    "spidev"
+    "spidev",
+    "smbus2"
 ]
 
 [tool.setuptools.packages.find]

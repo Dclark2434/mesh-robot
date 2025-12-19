@@ -53,10 +53,10 @@ class SPIConnector:
         self.spi.xfer(tx.tolist(), int(8 / 1.25e-6))
 
 class LEDManager(RobotHardware):
-    def __init__(self, led_count=8, brightness=50):
+    def __init__(self, led_count=8, brightness=150):
         super().__init__()
         self.led_count = led_count
-        self.brightness = brightness
+        self.brightness = brightness # 0-255
         self.current_state = LEDState.IDLE
         self.stop_event = threading.Event()
         self.thread = None
@@ -66,7 +66,8 @@ class LEDManager(RobotHardware):
             # Priority 1: SPI (Avoids Pin 18 audio conflicts)
             if spidev:
                 try:
-                    self.strip = SPIConnector(self.led_count, self.brightness)
+                    # Freenove Big Hexapod uses GRB sequence
+                    self.strip = SPIConnector(self.led_count, self.brightness, sequence="GRB")
                     self._Color = lambda r, g, b: (r, g, b)
                     logger.info("Freenove SPI LED initialized (MOSI/GPIO 10).")
                     self.start()
@@ -123,27 +124,27 @@ class LEDManager(RobotHardware):
             
             if state == LEDState.IDLE:
                 # Dim slow pulse blue
-                val = int(10 + 20 * (0.5 + 0.5 * math.sin(tick * 0.1)))
+                val = int(20 + 40 * (0.5 + 0.5 * math.sin(tick * 0.1)))
                 self._set_all(0, 0, val)
             
             elif state == LEDState.LISTENING:
                 # Solid Green
-                self._set_all(0, 50, 0)
+                self._set_all(0, 200, 0)
             
             elif state == LEDState.THINKING:
-                # Pulsing Yellow/Gold
-                val = int(30 + 70 * (0.5 + 0.5 * math.sin(tick * 0.5)))
-                self._set_all(val, int(val * 0.8), 0)
+                # Vibrant Yellow Pulse
+                val = int(50 + 150 * (0.5 + 0.5 * math.sin(tick * 0.4)))
+                self._set_all(val, int(val * 0.7), 0)
             
             elif state == LEDState.SPEAKING:
                 # Rapid Pulse Cyan
-                val = int(20 + 80 * (0.5 + 0.5 * math.sin(tick * 0.8)))
+                val = int(40 + 180 * (0.5 + 0.5 * math.sin(tick * 0.8)))
                 self._set_all(0, val, val)
             
             elif state == LEDState.ERROR:
-                # Flashing Red
+                # Bright Flashing Red
                 if (tick // 5) % 2 == 0:
-                    self._set_all(100, 0, 0)
+                    self._set_all(255, 0, 0)
                 else:
                     self._set_all(0, 0, 0)
             
