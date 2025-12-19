@@ -11,6 +11,7 @@ import sys
 import struct
 from scipy.io.wavfile import write
 from typing import Optional, Generator
+import re
 
 # Client imports
 
@@ -169,9 +170,22 @@ def main():
         """Handle hardware commands from server."""
         action = cmd.get("action")
         param = cmd.get("param")
-        if action == "walk_forward" or action == "move_forward":
-             steps = int(param) if param and str(param).isdigit() else 4
-             leds.set_state(LEDState.THINKING) # change color while moving?
+        
+        # Normalize action
+        if action in ["walk", "walk_forward", "move_forward"]:
+             # Try to extract number of steps from param, default to 4
+             steps = 4
+             if param:
+                 match = re.search(r'\d+', str(param))
+                 if match:
+                     # If they say "10cm", usually that's just 1-2 steps, but let's just treat digits as steps for now
+                     # to be responsive.
+                     val = int(match.group())
+                     # Cap it for safety
+                     steps = min(val, 10)
+             
+             logger.info(f"Executing Walk: {steps} steps")
+             leds.set_state(LEDState.THINKING) 
              locomotion.move_forward(steps)
              leds.set_state(LEDState.SPEAKING)
 
