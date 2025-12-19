@@ -97,9 +97,18 @@ def stream_audio_response(response: requests.Response, cmd_callback=None):
     current_part = b""
     expected_size = 0
     
+    first_chunk = True
+    
     for chunk in response.iter_content(chunk_size=4096): 
         if not chunk: continue
         current_part += chunk
+
+        if first_chunk:
+             logger.info(f"Stream Start Bytes: {current_part[:100]}")
+             # Check for any newlines in the first 100 bytes
+             if b"\n" in current_part[:100]:
+                 logger.info("Newline found in header.")
+             first_chunk = False
 
         # 1. Try to parse JSON Command at start of buffer
         # (Server sends '{"action":...}\n' between WAVs)

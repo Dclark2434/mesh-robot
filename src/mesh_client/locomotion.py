@@ -97,7 +97,7 @@ class LocomotionController:
 
         # Map to Servo Channels (Based on Freenove layout)
         # Leg 1
-        logger.debug(f"[IK] Leg 1 Angles: {final_angles[0]}")
+        logger.info(f"[IK] Leg 1 Angles: {final_angles[0]}")
         self.servo.set_angle(15, final_angles[0][0])
         self.servo.set_angle(14, final_angles[0][1])
         self.servo.set_angle(13, final_angles[0][2])
@@ -199,7 +199,7 @@ class LocomotionController:
             xy[i][0] = ((points[i][0] * math.cos(angle * math.pi / 180) + points[i][1] * math.sin(angle * math.pi / 180) - points[i][0]) + x) / F
             xy[i][1] = ((-points[i][0] * math.sin(angle * math.pi / 180) + points[i][1] * math.cos(angle * math.pi / 180) - points[i][1]) + y) / F
 
-        logger.debug(f"Gait XY Offset: {xy[0]}")
+        logger.info(f"Gait XY Offset: {xy[0]}")
 
         # Execute Ripple Gait Cycle
         for j in range(F):

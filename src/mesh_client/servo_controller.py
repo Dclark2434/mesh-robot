@@ -122,8 +122,9 @@ class ServoController(RobotHardware):
         off_count = int(map_value(duty_cycle, 0, 20000, 0, 4095))
         
         # Debug Log (Sample few channels to avoid spam)
+        # CHANGED TO INFO FOR DEBUGGING
         if channel in [0, 8, 16] or logger.level <= 10: 
-             logger.debug(f"[SERVO] Ch {channel} -> {angle} deg -> PWM {off_count}")
+             logger.info(f"[SERVO] Ch {channel} -> {angle} deg -> PWM {off_count}")
              
         target_pwm.set_pwm(target_channel, 0, off_count)
         self.angles[channel] = angle
