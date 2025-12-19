@@ -94,61 +94,80 @@ def stream_audio_response(response: requests.Response, cmd_callback=None):
     """Streams audio segments from server and plays them, executing commands if found."""
     logger.info("Response stream started...")
     
-    current_part = b""
+    buffer = b""
     expected_size = 0
-    
-    first_chunk = True
-    
+    # Match JSON commands: {"action":...} with optional newline
+    command_pattern = re.compile(b'(\{"action":.*?\})(\\n)?')
+
     for chunk in response.iter_content(chunk_size=4096): 
         if not chunk: continue
-        current_part += chunk
+        buffer += chunk
 
-        if first_chunk:
-             logger.info(f"Stream Start Bytes: {current_part[:100]}")
-             # Check for any newlines in the first 100 bytes
-             if b"\n" in current_part[:100]:
-                 logger.info("Newline found in header.")
-             first_chunk = False
-
-        # 1. Try to parse JSON Command at start of buffer
-        # (Server sends '{"action":...}\n' between WAVs)
-        if current_part.lstrip().startswith(b"{") and b"\n" in current_part:
+        # 1. Scan for Commands in the buffer
+        # We process commands immediately so they don't get stuck behind audio buffering
+        while True:
+            match = command_pattern.search(buffer)
+            if not match: break
+            
+            # Found command
+            json_bytes = match.group(1)
             try:
-                newline_idx = current_part.find(b"\n")
-                json_line = current_part[:newline_idx].strip()
-                data = json.loads(json_line)
-                if "action" in data:
-                    logger.info(f"Received Command: {data}")
-                    if cmd_callback: cmd_callback(data)
-                
-                # Consume JSON line
-                current_part = current_part[newline_idx+1:]
-                expected_size = 0 # Reset expectation
+                cmd = json.loads(json_bytes.decode("utf-8"))
+                logger.info(f"Received Command: {cmd}")
+                if cmd_callback: 
+                    # Run callback (Locomotion)
+                    # Note: Locomotion might block. If we want audio to continue parallel to walking,
+                    # we should potentially thread this. But walking usually shakes the robot, 
+                    # so maybe blocking is okay/better.
+                    cmd_callback(cmd)
             except Exception as e:
-                logger.debug(f"JSON Parse Attempt Failed: {e}")
+                logger.error(f"Command Parse Error: {e}")
+            
+            # Remove command from buffer to avoid corrupting audio parser or reparsing
+            start, end = match.span()
+            buffer = buffer[:start] + buffer[end:]
 
-        # 2. Parse WAV header for size
-        if expected_size == 0:
-            riff_idx = current_part.find(b"RIFF")
-            if riff_idx != -1:
+        # 2. Parse WAV headers to isolate and play files
+        # We loop to handle multiple WAVs in one chunk/buffer
+        while True:
+            if expected_size == 0:
+                riff_idx = buffer.find(b"RIFF")
+                if riff_idx == -1:
+                    break # No header yet
+                
+                # Check formatting
+                # We need at least 8 bytes to read size
+                if len(buffer) < riff_idx + 8:
+                    break 
+                
                 # Discard garbage before RIFF
-                current_part = current_part[riff_idx:]
-                if len(current_part) >= 8:
-                    expected_size = struct.unpack("<I", current_part[4:8])[0] + 8
-        
-        # 3. Play when full WAV part is received
-        if expected_size > 0 and len(current_part) >= expected_size:
-            wav_to_play = current_part[:expected_size]
-            current_part = current_part[expected_size:]
-            play_wav(wav_to_play)
-            expected_size = 0
-    
-    # Handle remaining simple JSON response (if old protocol)
-    if current_part.strip().startswith(b"{") and current_part.strip().endswith(b"}"):
-         try:
-            data = json.loads(current_part)
-            logger.info(f"Server Status: {data.get('status')}")
-         except: pass
+                if riff_idx > 0:
+                    buffer = buffer[riff_idx:]
+                
+                # Parse Size: 4 bytes integer at offset 4
+                # RIFF chunk size = FileSize - 8
+                val = struct.unpack("<I", buffer[4:8])[0]
+                expected_size = val + 8
+            
+            # 3. Check if we have the full WAV
+            if expected_size > 0:
+                if len(buffer) >= expected_size:
+                    # Extract WAV
+                    wav_data = buffer[:expected_size]
+                    buffer = buffer[expected_size:] # Advance buffer
+                    expected_size = 0 # Reset for next file
+                    
+                    # Play it
+                    # This relies on play_wav being synchronous or async?
+                    # play_wav_linux uses subprocess.call (Blocking).
+                    # play_wav_windows uses PlaySync (Blocking).
+                    # This means we won't process the next chunk until this audio finishes.
+                    # This is actually GOOD for synchronization (don't walk and talk at same time if order matters).
+                    # But for latency, it blocks receiving the rest of the stream?
+                    # requests stream is buffered by OS/network stack. It's fine.
+                    play_wav(wav_data)
+                else:
+                    break # Wait for more data
 
     logger.info("Stream complete.")
 
