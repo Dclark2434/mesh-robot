@@ -97,6 +97,7 @@ class LocomotionController:
 
         # Map to Servo Channels (Based on Freenove layout)
         # Leg 1
+        logger.debug(f"[IK] Leg 1 Angles: {final_angles[0]}")
         self.servo.set_angle(15, final_angles[0][0])
         self.servo.set_angle(14, final_angles[0][1])
         self.servo.set_angle(13, final_angles[0][2])
@@ -159,18 +160,22 @@ class LocomotionController:
         x = 25
         y = 0
         angle = 0
-        z_step = 40 # Step height
-        f_steps = 64 # Frames per cycle?
+        z_step = 30 # Reduced Step height for stability
+        f_steps = 32 # Faster cycle for testing
         
-        # Simplified Tripod Gait (Gait logic from control.py is complex, let's try to reuse it simplified)
-        # Using the Ripple Gait logic (Gait Mode 1 in control.py) as it's default
+        logger.info(f"Starting gait cycle: {steps} steps, Z={z_step}, F={f_steps}")
+
+        # Ensure we start from a clean posture
+        self.reset_posture()
         
         # We need to run the cycle 'steps' times
-        for _ in range(steps):
-            self.run_one_cycle(x, y, angle, z_step, f_steps)
+        for s in range(steps):
+             logger.info(f"Step {s+1}/{steps}...")
+             self.run_one_cycle(x, y, angle, z_step, f_steps)
             
         # Return to neutral
         self.reset_posture()
+        logger.info("Gait complete.")
 
     def reset_posture(self):
          self.body_points = [
@@ -193,6 +198,8 @@ class LocomotionController:
         for i in range(6):
             xy[i][0] = ((points[i][0] * math.cos(angle * math.pi / 180) + points[i][1] * math.sin(angle * math.pi / 180) - points[i][0]) + x) / F
             xy[i][1] = ((-points[i][0] * math.sin(angle * math.pi / 180) + points[i][1] * math.cos(angle * math.pi / 180) - points[i][1]) + y) / F
+
+        logger.debug(f"Gait XY Offset: {xy[0]}")
 
         # Execute Ripple Gait Cycle
         for j in range(F):

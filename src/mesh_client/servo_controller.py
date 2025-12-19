@@ -7,7 +7,9 @@ except ImportError:
 from mesh_common.logging import get_logger
 from mesh_common.hardware import RobotHardware, DummyServo
 
-logger = get_logger("mesh_servo")
+    def check_point_validity(self):
+        # ... implementation ...
+        return True
 
 def map_value(value, from_low, from_high, to_low, to_high):
     return (to_high - to_low) * (value - from_low) / (from_high - from_low) + to_low
@@ -71,6 +73,18 @@ class ServoController(RobotHardware):
                 
                 self.pwm40 = PCA9685(0x40)
                 self.pwm40.set_pwm_freq(50)
+
+                # Enable Servo Power (GPIO 4 low = Enable?)
+                # Freenove uses: OutputDevice(4).off() to enable.
+                try:
+                    from gpiozero import OutputDevice
+                    self.power_pin = OutputDevice(4)
+                    self.power_pin.off() # Enable power
+                    logger.info("Servo power enabled (GPIO 4 low).")
+                except ImportError:
+                    logger.warning("gpiozero not found, cannot toggle servo power pin.")
+                except Exception as e:
+                    logger.warning(f"Failed to control servo power pin: {e}")
                 
                 # Keep track of current angles
                 self.angles = {} 
@@ -108,6 +122,11 @@ class ServoController(RobotHardware):
         # Map 0-180 to 500-2500us pulse, then to 0-4095 (12-bit)
         duty_cycle = map_value(angle, 0, 180, 500, 2500)
         off_count = int(map_value(duty_cycle, 0, 20000, 0, 4095))
+        
+        # Debug Log (Sample few channels to avoid spam)
+        if channel in [0, 8, 16] or logger.level <= 10: 
+             logger.debug(f"[SERVO] Ch {channel} -> {angle} deg -> PWM {off_count}")
+             
         target_pwm.set_pwm(target_channel, 0, off_count)
         self.angles[channel] = angle
 
