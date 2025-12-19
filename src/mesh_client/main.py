@@ -102,80 +102,69 @@ def stream_audio_response(response: requests.Response, cmd_callback=None):
     for chunk in response.iter_content(chunk_size=4096): 
         if not chunk: continue
         buffer += chunk
-        # logger.debug(f"Buffer size: {len(buffer)}")
-
-        # 1. Scan for Commands in the buffer
+        
+        # 1. Scan for Commands manually (Regex can be flaky on binary)
         while True:
-            match = command_pattern.search(buffer)
-            if not match: 
-                # Debug: Check if we are missing it
-                if b"action" in buffer:
-                    idx = buffer.find(b"action")
-                    start_view = max(0, idx - 10)
-                    end_view = min(len(buffer), idx + 50)
-                    logger.warning(f"Regex failed but 'action' found at {idx}! Context: {buffer[start_view:end_view]}")
+            start_idx = buffer.find(b'{"action"')
+            if start_idx == -1:
                 break
             
-            # Found command
-            json_bytes = match.group(1)
-            logger.info(f"Regex Matched: {json_bytes}") # Verify what we matched
-            try:
-                cmd = json.loads(json_bytes.decode("utf-8"))
-                logger.info(f"Received Command: {cmd}")
-                if cmd_callback: 
-                    # Run callback (Locomotion)
-                    # Note: Locomotion might block. If we want audio to continue parallel to walking,
-                    # we should potentially thread this. But walking usually shakes the robot, 
-                    # so maybe blocking is okay/better.
-                    cmd_callback(cmd)
-            except Exception as e:
-                logger.error(f"Command Parse Error: {e}")
+            # Found start, look for end
+            # We assume simple JSON object ending with } or }\n
+            # Safest is to find "}" after start
+            end_idx = buffer.find(b'}', start_idx)
+            if end_idx == -1:
+                break # Wait for more data
             
-            # Remove command from buffer to avoid corrupting audio parser or reparsing
-            start, end = match.span()
-            buffer = buffer[:start] + buffer[end:]
+            # Extract candidate
+            json_bytes = buffer[start_idx:end_idx+1]
+            try:
+                cmd_str = json_bytes.decode("utf-8")
+                logger.info(f"Found Command Candidate: {cmd_str}")
+                cmd = json.loads(cmd_str)
+                if cmd_callback: 
+                    cmd_callback(cmd)
+                
+                # Remove from buffer
+                # Note: There might be a \n after match, it will be treated as garbage later (fine)
+                buffer = buffer[:start_idx] + buffer[end_idx+1:]
+                
+            except Exception as e:
+                logger.error(f"Manual Parse Failed: {e}")
+                # We should probably discard this attempt to avoid infinite loop
+                # checking the same invalid bytes?
+                # For now, assume if it looks like {"action" it's valid.
+                break 
 
-        # 2. Parse WAV headers to isolate and play files
-        # We loop to handle multiple WAVs in one chunk/buffer
+        # 2. Parse WAV headers
         while True:
             if expected_size == 0:
                 riff_idx = buffer.find(b"RIFF")
                 if riff_idx == -1:
-                    break # No header yet
+                    break 
                 
-                # Check formatting
-                # We need at least 8 bytes to read size
                 if len(buffer) < riff_idx + 8:
                     break 
                 
-                # Discard garbage before RIFF
+                # Discard garbage (Log it!)
                 if riff_idx > 0:
+                    garbage = buffer[:riff_idx]
+                    if len(garbage) > 4: # Ignore small newlines
+                         logger.warning(f"Discarding {len(garbage)} bytes before RIFF: {garbage[:50]}...")
                     buffer = buffer[riff_idx:]
                 
-                # Parse Size: 4 bytes integer at offset 4
-                # RIFF chunk size = FileSize - 8
                 val = struct.unpack("<I", buffer[4:8])[0]
                 expected_size = val + 8
+                # logger.info(f"WAV Detected. Size: {expected_size}")
             
-            # 3. Check if we have the full WAV
             if expected_size > 0:
                 if len(buffer) >= expected_size:
-                    # Extract WAV
                     wav_data = buffer[:expected_size]
-                    buffer = buffer[expected_size:] # Advance buffer
-                    expected_size = 0 # Reset for next file
-                    
-                    # Play it
-                    # This relies on play_wav being synchronous or async?
-                    # play_wav_linux uses subprocess.call (Blocking).
-                    # play_wav_windows uses PlaySync (Blocking).
-                    # This means we won't process the next chunk until this audio finishes.
-                    # This is actually GOOD for synchronization (don't walk and talk at same time if order matters).
-                    # But for latency, it blocks receiving the rest of the stream?
-                    # requests stream is buffered by OS/network stack. It's fine.
+                    buffer = buffer[expected_size:] 
+                    expected_size = 0 
                     play_wav(wav_data)
                 else:
-                    break # Wait for more data
+                    break
 
     logger.info("Stream complete.")
 
