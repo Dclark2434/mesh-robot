@@ -1,6 +1,11 @@
 import time
 import math
 import threading
+import numpy as np
+try:
+    import spidev
+except ImportError:
+    spidev = None
 from enum import Enum
 from mesh_common.logging import get_logger
 from mesh_common.hardware import RobotHardware, DummyLEDStrip
@@ -14,6 +19,39 @@ class LEDState(Enum):
     SPEAKING = "speaking"   # Pulsing cyan
     ERROR = "error"       # Flashing red
 
+class SPIConnector:
+    """Helper to handle WS2812 over SPI."""
+    def __init__(self, count, brightness, sequence="GRB"):
+        self.count = count
+        self.brightness = brightness
+        self.sequence = sequence
+        self.spi = spidev.SpiDev()
+        self.spi.open(0, 0)
+        self.spi.mode = 0
+        self.led_data = [0, 0, 0] * count
+        
+        # Color mapping (GRB vs RGB)
+        self.r_idx, self.g_idx, self.b_idx = (1, 0, 2) if sequence == "GRB" else (0, 1, 2)
+
+    def setPixelColor(self, n, color):
+        if n < self.count:
+            # color is (r, g, b) tuple or similar from our dummy logic
+            # but Adafruit Color returns a single int. 
+            # We'll stick to a (r,g,b) tuple locally for simplicity.
+            r, g, b = color
+            self.led_data[n*3 + self.r_idx] = r
+            self.led_data[n*3 + self.g_idx] = g
+            self.led_data[n*3 + self.b_idx] = b
+
+    def show(self):
+        # Scale brightness and convert to SPI bitstream
+        scaled = [int(v * self.brightness / 255) for v in self.led_data]
+        d = np.array(scaled).ravel()
+        tx = np.zeros(len(d) * 8, dtype=np.uint8)
+        for ibit in range(8):
+            tx[7 - ibit::8] = ((d >> ibit) & 1) * 0x78 + 0x80
+        self.spi.xfer(tx.tolist(), int(8 / 1.25e-6))
+
 class LEDManager(RobotHardware):
     def __init__(self, led_count=8, brightness=50):
         super().__init__()
@@ -25,17 +63,25 @@ class LEDManager(RobotHardware):
         
         # Hardware Setup
         if self.is_rpi:
+            # Priority 1: SPI (Avoids Pin 18 audio conflicts)
+            if spidev:
+                try:
+                    self.strip = SPIConnector(self.led_count, self.brightness)
+                    self._Color = lambda r, g, b: (r, g, b)
+                    logger.info("Freenove SPI LED initialized (MOSI/GPIO 10).")
+                    self.start()
+                    return
+                except Exception as e:
+                    logger.warning(f"SPI LED init failed: {e}. Trying PWM...")
+
+            # Priority 2: PWM (WS281x)
             try:
                 from rpi_ws281x import Adafruit_NeoPixel, Color
-                # Freenove default: Pin 18, 800khz, DMA 10, Brighness (0-255)
+                # Freenove default: Pin 18
                 self.strip = Adafruit_NeoPixel(self.led_count, 18, 800000, 10, False, self.brightness, 0)
                 self.strip.begin()
                 self._Color = Color
-                logger.info("Freenove LED strip initialized.")
-            except ImportError:
-                logger.error("rpi_ws281x not found. Falling back to dummy.")
-                self.strip = DummyLEDStrip()
-                self._Color = lambda r, g, b: (r, g, b)
+                logger.info("Freenove PWM LED initialized (Pin 18).")
             except Exception as e:
                 logger.error(f"Failed to initialize LED strip: {e}")
                 self.strip = DummyLEDStrip()
