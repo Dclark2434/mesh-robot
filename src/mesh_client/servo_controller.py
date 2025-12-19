@@ -7,9 +7,7 @@ except ImportError:
 from mesh_common.logging import get_logger
 from mesh_common.hardware import RobotHardware, DummyServo
 
-    def check_point_validity(self):
-        # ... implementation ...
-        return True
+logger = get_logger("mesh_servo")
 
 def map_value(value, from_low, from_high, to_low, to_high):
     return (to_high - to_low) * (value - from_low) / (from_high - from_low) + to_low
