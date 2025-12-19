@@ -102,15 +102,23 @@ def stream_audio_response(response: requests.Response, cmd_callback=None):
     for chunk in response.iter_content(chunk_size=4096): 
         if not chunk: continue
         buffer += chunk
+        # logger.debug(f"Buffer size: {len(buffer)}")
 
         # 1. Scan for Commands in the buffer
-        # We process commands immediately so they don't get stuck behind audio buffering
         while True:
             match = command_pattern.search(buffer)
-            if not match: break
+            if not match: 
+                # Debug: Check if we are missing it
+                if b"action" in buffer:
+                    idx = buffer.find(b"action")
+                    start_view = max(0, idx - 10)
+                    end_view = min(len(buffer), idx + 50)
+                    logger.warning(f"Regex failed but 'action' found at {idx}! Context: {buffer[start_view:end_view]}")
+                break
             
             # Found command
             json_bytes = match.group(1)
+            logger.info(f"Regex Matched: {json_bytes}") # Verify what we matched
             try:
                 cmd = json.loads(json_bytes.decode("utf-8"))
                 logger.info(f"Received Command: {cmd}")
