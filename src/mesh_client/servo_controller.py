@@ -52,41 +52,60 @@ class PCA9685:
 class ServoController(RobotHardware):
     def __init__(self):
         super().__init__()
+        self.pwm40 = None
+        self.pwm41 = None
+        
         if self.is_rpi and SMBus:
             try:
+                # Freenove Big Hexapod uses two PCA9685 boards:
+                # 0x41 handles channels 0-15 (Head and some legs)
+                # 0x40 handles channels 16-31 (The rest of the legs)
+                self.pwm41 = PCA9685(0x41)
+                self.pwm41.set_pwm_freq(50)
+                
                 self.pwm40 = PCA9685(0x40)
                 self.pwm40.set_pwm_freq(50)
+                
                 # Keep track of current angles
                 self.angles = {} 
-                logger.info("PCA9685 (0x40) initialized.")
+                logger.info("PCA9685 boards (0x40, 0x41) initialized.")
             except Exception as e:
                 logger.error(f"Failed to init PCA9685: {e}")
-                self.pwm40 = None
+                self.pwm41 = DummyServo()
+                self.pwm40 = DummyServo()
         else:
-            self.pwm40 = None
-            
-        if not self.pwm40:
+            self.pwm41 = DummyServo()
             self.pwm40 = DummyServo()
 
     def set_angle(self, channel, angle):
         angle = max(0, min(180, angle))
-        if isinstance(self.pwm40, DummyServo):
-            self.pwm40.set_angle(channel, angle)
+        
+        # Determine which board to use based on Freenove logic
+        if channel < 16:
+            target_pwm = self.pwm41
+            target_channel = channel
+        else:
+            target_pwm = self.pwm40
+            target_channel = channel - 16
+
+        if isinstance(target_pwm, DummyServo):
+            target_pwm.set_angle(channel, angle)
             return
 
-        # Map 0-180 to 500-2500us pulse, then to 0-4095
+        # Map 0-180 to 500-2500us pulse, then to 0-4095 (12-bit)
         duty_cycle = map_value(angle, 0, 180, 500, 2500)
         off_count = int(map_value(duty_cycle, 0, 20000, 0, 4095))
-        self.pwm40.set_pwm(channel, 0, off_count)
+        target_pwm.set_pwm(target_channel, 0, off_count)
         self.angles[channel] = angle
 
     def relax(self):
-        if isinstance(self.pwm40, DummyServo):
-            self.pwm40.relax()
-            return
-
-        for i in range(16):
-            self.pwm40.set_pwm(i, 4096, 4096)
+        # Relax both boards
+        for board in [self.pwm41, self.pwm40]:
+            if isinstance(board, DummyServo):
+                board.relax()
+            else:
+                for i in range(16):
+                    board.set_pwm(i, 4096, 4096)
 
 class HeadController:
     """Specialized controller for the Hexapod head servos."""
