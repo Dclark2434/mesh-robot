@@ -103,6 +103,8 @@ async def interact_generator(audio_bytes):
 
     if hardware_command != "none":
         logger.info(f"[COMMAND] {hardware_command} -> {hardware_param}")
+        cmd_payload = json.dumps({"action": hardware_command, "param": hardware_param})
+        yield (cmd_payload + "\n").encode("utf-8")
 
     # 4. Speak
     for chunk in voice_engine.speak_generator(spoken_text):

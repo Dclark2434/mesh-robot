@@ -18,6 +18,7 @@ from mesh_common.logging import get_logger
 from mesh_common.config import SAMPLE_RATE, CHANNELS, DEFAULT_SERVER_PORT
 from mesh_client.led_controller import LEDManager, LEDState
 from mesh_client.servo_controller import ServoController, HeadController
+from mesh_client.locomotion import LocomotionController
 
 logger = get_logger("mesh_client")
 
@@ -88,50 +89,57 @@ def play_wav(wav_data: bytes):
 
 # --- STREAMING ENGINE ---
 
-def stream_audio_response(response: requests.Response):
-    """Streams audio segments from server and plays them."""
+def stream_audio_response(response: requests.Response, cmd_callback=None):
+    """Streams audio segments from server and plays them, executing commands if found."""
     logger.info("Response stream started...")
     
     current_part = b""
     expected_size = 0
-    is_json = False
     
-    for chunk in response.iter_content(chunk_size=1024): 
+    for chunk in response.iter_content(chunk_size=4096): 
         if not chunk: continue
-        
-        if not current_part and chunk.lstrip().startswith(b"{"):
-            is_json = True
-            
         current_part += chunk
-        
-        if not is_json:
-            # 1. Parse header for size
-            if expected_size == 0 and len(current_part) >= 8:
-                riff_idx = current_part.find(b"RIFF")
-                if riff_idx != -1:
-                    if riff_idx > 0: current_part = current_part[riff_idx:]
-                    if len(current_part) >= 8:
-                        expected_size = struct.unpack("<I", current_part[4:8])[0] + 8
-            
-            # 2. Play when full part is received
-            if expected_size > 0 and len(current_part) >= expected_size:
-                wav_to_play = current_part[:expected_size]
-                current_part = current_part[expected_size:]
-                play_wav(wav_to_play)
-                expected_size = 0
-                if current_part.startswith(b"RIFF") and len(current_part) >= 8:
-                    expected_size = struct.unpack("<I", current_part[4:8])[0] + 8
 
-    if is_json:
-        try:
-            data = json.loads(current_part)
-            status = data.get("status", "unknown")
-            logger.info(f"Server Status: {status}")
-        except:
-            logger.error("Failed to parse JSON response from server")
-    elif current_part:
-        play_wav(current_part)
+        # 1. Try to parse JSON Command at start of buffer
+        # (Server sends '{"action":...}\n' between WAVs)
+        if current_part.lstrip().startswith(b"{") and b"\n" in current_part:
+            try:
+                newline_idx = current_part.find(b"\n")
+                json_line = current_part[:newline_idx].strip()
+                data = json.loads(json_line)
+                if "action" in data:
+                    logger.info(f"Received Command: {data}")
+                    if cmd_callback: cmd_callback(data)
+                
+                # Consume JSON line
+                current_part = current_part[newline_idx+1:]
+                expected_size = 0 # Reset expectation
+            except Exception as e:
+                logger.debug(f"JSON Parse Attempt Failed: {e}")
+
+        # 2. Parse WAV header for size
+        if expected_size == 0:
+            riff_idx = current_part.find(b"RIFF")
+            if riff_idx != -1:
+                # Discard garbage before RIFF
+                current_part = current_part[riff_idx:]
+                if len(current_part) >= 8:
+                    expected_size = struct.unpack("<I", current_part[4:8])[0] + 8
+        
+        # 3. Play when full WAV part is received
+        if expected_size > 0 and len(current_part) >= expected_size:
+            wav_to_play = current_part[:expected_size]
+            current_part = current_part[expected_size:]
+            play_wav(wav_to_play)
+            expected_size = 0
     
+    # Handle remaining simple JSON response (if old protocol)
+    if current_part.strip().startswith(b"{") and current_part.strip().endswith(b"}"):
+         try:
+            data = json.loads(current_part)
+            logger.info(f"Server Status: {data.get('status')}")
+         except: pass
+
     logger.info("Stream complete.")
 
 # --- RECORDING ENGINE ---
@@ -148,10 +156,25 @@ def main():
     print_banner()
     
     # Initialize Hardware
+    # Initialize Hardware
     leds = LEDManager()
-    head = HeadController(ServoController())
+    sc = ServoController()
+    head = HeadController(sc)
+    locomotion = LocomotionController(sc)
+    
     leds.set_state(LEDState.THINKING)
     head.look_up(10)
+
+    def on_server_command(cmd):
+        """Handle hardware commands from server."""
+        action = cmd.get("action")
+        param = cmd.get("param")
+        if action == "walk_forward" or action == "move_forward":
+             steps = int(param) if param and str(param).isdigit() else 4
+             leds.set_state(LEDState.THINKING) # change color while moving?
+             locomotion.move_forward(steps)
+             leds.set_state(LEDState.SPEAKING)
+
 
     # Calibration
     logger.info("Calibrating noise floor...")
@@ -221,7 +244,9 @@ def main():
                                 if r.status_code == 200:
                                     leds.set_state(LEDState.SPEAKING)
                                     head.look_up(20)
-                                    stream_audio_response(r)
+                                    leds.set_state(LEDState.SPEAKING)
+                                    head.look_up(20)
+                                    stream_audio_response(r, on_server_command)
                                     logger.info(f"[LATENCY] Round-trip: {time.time() - start_time:.2f}s")
                                     leds.set_state(LEDState.IDLE)
                                     head.look_neutral()
