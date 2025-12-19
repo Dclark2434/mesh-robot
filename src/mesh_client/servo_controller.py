@@ -23,11 +23,17 @@ class PCA9685:
 
     def write(self, reg, value):
         if self.bus:
-            self.bus.write_byte_data(self.address, reg, value)
+            try:
+                self.bus.write_byte_data(self.address, reg, value)
+            except Exception as e:
+                logger.error(f"I2C Write Error [Addr: 0x{self.address:02x}, Reg: 0x{reg:02x}]: {e}")
 
     def read(self, reg):
         if self.bus:
-            return self.bus.read_byte_data(self.address, reg)
+            try:
+                return self.bus.read_byte_data(self.address, reg)
+            except Exception as e:
+                logger.error(f"I2C Read Error [Addr: 0x{self.address:02x}, Reg: 0x{reg:02x}]: {e}")
         return 0
 
     def set_pwm_freq(self, freq):
@@ -68,12 +74,19 @@ class ServoController(RobotHardware):
                 
                 # Keep track of current angles
                 self.angles = {} 
-                logger.info("PCA9685 boards (0x40, 0x41) initialized.")
+                logger.info("PCA9685 boards (0x40, 0x41) successfully initialized via smbus2.")
             except Exception as e:
                 logger.error(f"Failed to init PCA9685: {e}")
+                import traceback
+                logger.error(traceback.format_exc())
                 self.pwm41 = DummyServo()
                 self.pwm40 = DummyServo()
         else:
+            if not self.is_rpi:
+                logger.info("Not on Raspberry Pi. Using Dummy Servo.")
+            elif not SMBus:
+                logger.error("smbus2 module not found! Head movement will be disabled. Run 'pip install smbus2'.")
+            
             self.pwm41 = DummyServo()
             self.pwm40 = DummyServo()
 
