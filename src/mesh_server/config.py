@@ -195,7 +195,7 @@ Allowed actions (for now):
 - "turn_left"     param: "integer" (number of gait cycles)
 - "turn_right"    param: "integer" (number of gait cycles)
 - "scan"          param: "ultrasonic" | "camera" | "area"
-- "balance"       param: "stabilize"
+- "reset"         param: "flat" (Forces robot to lay flat)
 - "shutdown"      param: "now" | "confirm"
 
 ========================
