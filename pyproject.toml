@@ -36,7 +36,9 @@ client = [
     "sounddevice",
     "rpi-ws281x",
     "spidev",
-    "smbus2"
+    "smbus2",
+    "gpiozero",
+    "RPi.GPIO"
 ]
 
 [tool.setuptools.packages.find]
