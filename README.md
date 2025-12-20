@@ -8,29 +8,12 @@
 > **Status: Active Development**
 > This project provides the "Brain" and "Senses" for a physical hexapod robot. It is an evolving architecture, not a finished product.
 
-M.E.S.H. is a "Brain" for hexapod robots, inspired by the TARS unit from *Interstellar*. It features a custom speech-to-speech pipeline, on-the-fly voice cloning, and a modular architecture designed for high-performance inference.
+M.E.S.H. is a "Brain" for Freenove Big Hexapod robots, inspired by the TARS unit from *Interstellar*. It features a custom speech-to-speech pipeline, on-the-fly voice cloning, and a modular architecture designed for high-performance inference. This will only work with a Freenove Big Hexapod robot with the following components:
 
----
-
-## Quick Start (Server)
-
-```bash
-# Clone and enter
-git clone https://github.com/Dclark2434/mesh-robot.git
-cd mesh-robot
-
-# Setup environment (Python 3.11 Required)
-python3.11 -m venv venv
-source venv/bin/activate
-
-# Install package and dependencies
-pip install torch torchaudio torchvision --index-url https://download.pytorch.org/whl/cu121
-pip install -e .[server]
-
-# Start the brain
-export GEMINI_API_KEY="your_api_key_here"
-python -m mesh_server.server
-```
+- Raspberry Pi 3/4/5
+- Microphone
+- Speakers
+- A beefy workstation or server with NVIDIA GPU (8GB+ VRAM recommended)
 
 ---
 
@@ -42,6 +25,28 @@ python -m mesh_server.server
 - **Vision System**: Image analysis and commentary via the `/see` endpoint.
 - **TARS Personality**: Customizable cynical, dry, and military-aware persona.
 - **Command Engine**: Integrated stubs for hardware control (walking, scanning, etc.).
+
+---
+
+## Interaction Capabilities
+
+M.E.S.H. supports a rich set of verbal and non-verbal interactions:
+
+### Comedic Timing
+The robot can "act" while speaking by embedding Action Tags in its response.
+- "Scanning for intelligent life. [ACTION: LOOK_LEFT] [ACTION: LOOK_RIGHT] ...Negative."
+- "Self-destruct in 3... 2... [ACTION: BUZZER_ALARM] ...Kidding."
+- "Look at this mess. [ACTION: LOOK_DOWN] Disappointing."
+- "Power management engaged. [ACTION: RELAX] Don't wake me."
+
+### Extended Actions
+- **Head**: `look_left`, `look_right`, `look_up`, `look_down`.
+- **Cue Light (Back LED)**: `led_on` (Solid White), `led_off`, `led_flash`.
+  - Manual ON/OFF commands override the default speaking animation.
+- **Voice**: `buzzer_beep`, `buzzer_warn`, `buzzer_alarm`.
+- **Safety**:
+  - **Relax**: Servos power down after 10s of separate idle time or via `[ACTION: RELAX]`.
+  - **Reset**: `[ACTION: RESET]` forces the robot into a flat, safe installation posture.
 
 ---
 
@@ -90,6 +95,10 @@ Control M.E.S.H. via environment variables.
 Runs on your high-end workstation or server.
 
 ```bash
+# Clone the repository
+git clone https://github.com/Dclark2434/mesh-robot.git
+cd mesh-robot
+
 # Install system deps
 sudo apt update && sudo apt install python3.11-venv sox libsox-fmt-all ffmpeg -y
 
@@ -101,6 +110,10 @@ pip install -e .[server]
 
 # Generate soundboard
 python src/mesh_server/bake_sounds.py
+
+# Start the brain
+export GEMINI_API_KEY="your_api_key_here"
+python -m mesh_server.server
 ```
 
 ### 2. Client Installation (The Interface)
@@ -112,12 +125,16 @@ python -m venv venv-client
 # Windows (PowerShell): .\venv-client\Scripts\Activate.ps1
 # Linux/Pi (Bash): source venv-client/bin/activate
 
-# 2. Install only client-side dependencies
+# 2. Install client-side dependencies (including hardware drivers)
 pip install -e ".[client]"
 
-# 3. Start client
-# Windows: $env:MESH_SERVER_URL="http://<SERVER_IP>:8000/interact"
-# Linux/Pi: export MESH_SERVER_URL="http://127.0.0.1:8000/interact"
+# 3. Configure Connection (Replace <SERVER_IP> with the IP of your Brain/PC)
+# Windows (PowerShell):
+$env:MESH_SERVER_URL="http://<SERVER_IP>:8000/interact"
+# Linux/Pi (Bash): 
+export MESH_SERVER_URL="http://<SERVER_IP>:8000/interact"
+
+# 4. Start client
 python -m mesh_client.main
 ```
 

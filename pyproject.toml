@@ -33,7 +33,12 @@ server = [
     "torchvision"
 ]
 client = [
-    "sounddevice"
+    "sounddevice",
+    "rpi-ws281x",
+    "spidev",
+    "smbus2",
+    "gpiozero",
+    "RPi.GPIO"
 ]
 
 [tool.setuptools.packages.find]
