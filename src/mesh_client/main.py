@@ -1,4 +1,5 @@
 import sounddevice as sd
+import threading
 import json
 import numpy as np
 import requests
@@ -227,74 +228,72 @@ def main():
         nonlocal last_activity_time
         last_activity_time = time.time()
         
-        """Handle hardware commands from server."""
-        action = cmd.get("action")
-        param = cmd.get("param")
-        
-        # Normalize action
-        steps = 4
-        if param:
-            match = re.search(r'\d+', str(param))
-            if match:
-                val = int(match.group())
-                steps = min(val, 10) # Cap at 10
+        def run_action():
+            try:
+                """Handle hardware commands from server."""
+                action = cmd.get("action")
+                param = cmd.get("param")
+                
+                # Normalize action
+                steps = 4
+                if param:
+                    match = re.search(r'\d+', str(param))
+                    if match:
+                        val = int(match.group())
+                        steps = min(val, 10) # Cap at 10
 
-        logger.info(f"Executing {action}: {steps} steps")
-        
-        # Determine if we should resume speaking animation after action
-        resume_speaking = True
+                logger.info(f"Executing {action}: {steps} steps")
+                
+                if action in ["walk", "walk_forward", "move_forward"]:
+                     locomotion.move_forward(steps)
+                elif action == "move_backward":
+                     locomotion.move_backward(steps)
+                elif action == "turn_left":
+                     locomotion.turn_left(steps)
+                elif action == "turn_right":
+                     locomotion.turn_right(steps)
+                
+                # Head Actions
+                elif action == "look_left":
+                     head.look_left()
+                elif action == "look_right":
+                     head.look_right()
+                elif action == "look_down":
+                     head.look_down()
+                elif action == "look_up":
+                     head.look_up()
+                elif action == "look_center":
+                     head.look_neutral()
+                
+                # LED Actions
+                elif action == "led_on":
+                     leds.set_state(LEDState.LISTENING) # Use white/listening for ON
+                elif action == "led_off":
+                     leds.set_state(LEDState.IDLE)
+                elif action == "led_flash":
+                     for _ in range(3):
+                         leds.set_state(LEDState.SPEAKING)
+                         time.sleep(0.1)
+                         leds.set_state(LEDState.IDLE)
+                         time.sleep(0.1)
 
-        if action in ["walk", "walk_forward", "move_forward"]:
-             locomotion.move_forward(steps)
-        elif action == "move_backward":
-             locomotion.move_backward(steps)
-        elif action == "turn_left":
-             locomotion.turn_left(steps)
-        elif action == "turn_right":
-             locomotion.turn_right(steps)
-        
-        # Head Actions
-        elif action == "look_left":
-             head.look_left()
-        elif action == "look_right":
-             head.look_right()
-        elif action == "look_down":
-             head.look_down()
-        elif action == "look_up":
-             head.look_up()
-        elif action == "look_center":
-             head.look_neutral()
-        
-        # LED Actions
-        elif action == "led_on":
-             leds.set_state(LEDState.LISTENING) # Use white/listening for ON
-             resume_speaking = False # Keep it ON
-        elif action == "led_off":
-             leds.set_state(LEDState.IDLE)
-             resume_speaking = False # Keep it OFF
-        elif action == "led_flash":
-             for _ in range(3):
-                 leds.set_state(LEDState.SPEAKING)
-                 time.sleep(0.1)
-                 leds.set_state(LEDState.IDLE)
-                 time.sleep(0.1)
-             # Resume speaking after flash
+                # Buzzer Actions
+                elif action == "buzzer_beep":
+                     buzzer.beep()
+                elif action == "buzzer_warn":
+                     buzzer.warn()
+                elif action == "buzzer_alarm":
+                     buzzer.alarm()
+                elif action in ["relax", "stand_by"]:
+                     sc.relax()
+                elif action in ["reset", "lay_flat"]:
+                     locomotion.reset_posture_flat()
+                     
+            except Exception as e:
+                logger.error(f"Command execution error: {e}")
 
-        # Buzzer Actions
-        elif action == "buzzer_beep":
-             buzzer.beep()
-        elif action == "buzzer_warn":
-             buzzer.warn()
-        elif action == "buzzer_alarm":
-             buzzer.alarm()
-        elif action in ["relax", "stand_by"]:
-             sc.relax()
-        elif action in ["reset", "lay_flat"]:
-             locomotion.reset_posture_flat()
-
-        # Resume "Speaking" state only if not overridden
-        if resume_speaking:
-            leds.set_state(LEDState.SPEAKING)
+        # Start execution in background
+        threading.Thread(target=run_action, daemon=True).start()
 
 
     # Calibration
