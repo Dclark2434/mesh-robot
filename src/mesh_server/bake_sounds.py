@@ -38,11 +38,11 @@ PHRASES = {
         "Hmh?", "What?", "Ready when you are.", "Start talking.", "I read you.", "I'm listening."
     ],
     "processing": [
-        "Looking that up.", "One second.", "Checking the files.", "Let's see...",
-        "Checking...", "Hang on.", "Working on it.", "Searching.", "Stand by.",
-        "Processing that.", "Give me a beat.", "Thinking...", "One moment.",
-        "Looking into it.", "Checking data.", "Accessing records.", "Just a sec.",
-        "Pulling that up.", "Digestive pause. Hang on.", "Doing the work. Wait."
+        "One second.", "Let's see...",
+        "Hang on.", "Working on it.", "Stand by.",
+        "Processing that.", "Give me a beat.", "Uhhh...", "One moment.",
+        "Looking into it.", "Hmmm...", "What? Oh.", "Just a sec.",
+        "Digestive pause. Hang on."
     ],
     "boot": [
         "Mesh System Online.",

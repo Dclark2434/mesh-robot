@@ -16,7 +16,7 @@ OLLAMA_MODEL_NAME = "mesh"
 BASE_DIR = os.path.dirname(os.path.abspath(__file__))
 
 # Make paths absolute relative to BASE_DIR
-REFERENCE_AUDIO = os.path.join(BASE_DIR, "tars_ref.wav")
+REFERENCE_AUDIO = os.path.join(BASE_DIR, "reference.wav")
 DATA_DIR = os.path.join(BASE_DIR, "data")
 MEMORY_FILE = os.path.join(DATA_DIR, "mesh_memory.json")
 
