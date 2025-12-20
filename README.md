@@ -8,11 +8,11 @@
 > **Status: Active Development**
 > This project provides the "Brain" and "Senses" for a physical hexapod robot. It is an evolving architecture, not a finished product.
 
-M.E.S.H. is a "Brain" for Freenove Big Hexapod robots, inspired by the TARS unit from *Interstellar*. It features a custom speech-to-speech pipeline, on-the-fly voice cloning, and a modular architecture designed for high-performance inference. This will only work with a Freenove Big Hexapod robot with the following components:
+M.E.S.H. is a "Brain" for Freenove Big Hexapod robots. It features a custom speech-to-speech pipeline, on-the-fly voice cloning, and a modular architecture designed for high-performance inference. This will only work with a Freenove Big Hexapod robot with the following components:
 
 - Raspberry Pi 3/4/5
-- Microphone
-- Speakers
+- Added Microphone
+- Added Speakers
 - A beefy workstation or server with NVIDIA GPU (8GB+ VRAM recommended)
 
 ---
@@ -23,7 +23,7 @@ M.E.S.H. is a "Brain" for Freenove Big Hexapod robots, inspired by the TARS unit
 - **Advanced TTS**: State-of-the-art voice cloning via F5-TTS or legacy XTTS v2.
 - **Real-time Senses**: Whisper-powered STT for hands-free interaction.
 - **Vision System**: Image analysis and commentary via the `/see` endpoint.
-- **TARS Personality**: Customizable cynical, dry, and military-aware persona.
+- **Custom Identity**: Configurable cynical, dry, and military-aware persona.
 - **Command Engine**: Integrated stubs for hardware control (walking, scanning, etc.).
 
 ---

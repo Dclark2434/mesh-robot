@@ -84,13 +84,14 @@ for category, variations in PHRASES.items():
         print(f"Baking: {filename} -> '{text}'")
         
         # 1. Generate Raw
+        ref_audio = os.path.join(os.path.dirname(__file__), "reference.wav")
         temp_file = os.path.join(SCRIPT_DIR, "temp_bake.wav")
         
         try:
             if USE_F5:
                  with suppress_output():
                     wav, sample_rate, spect = tts_engine.infer(
-                        ref_file=config.REFERENCE_AUDIO,
+                        ref_file=ref_audio,
                         ref_text="",
                         gen_text=text,
                         speed=0.3,
