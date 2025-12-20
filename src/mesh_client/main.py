@@ -64,18 +64,37 @@ def play_wav_windows(wav_data: bytes):
             except: pass
 
 def play_wav_linux(wav_data: bytes, alsa_device: Optional[str] = None):
-    """Utility to play a single WAV buffer on Linux via aplay."""
+    """Utility to play a single WAV buffer on Linux via pw-play (Primary) or aplay (Fallback)."""
     if not wav_data.startswith(b"RIFF"): return
     temp_filename = f"temp_recv_{int(time.time() * 1000)}.wav"
     try:
         with open(temp_filename, "wb") as f:
             f.write(wav_data)
-        cmd = ["pw-play", temp_filename]
-        # pw-play uses system default by default, ignoring deprecated alsa_device arg
-        if alsa_device:
-             # Log warning only once? Or just debug.
-             pass 
-        subprocess.call(cmd, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+        
+        # 1. Attempt Primary: PipeWire (pw-play)
+        # Using subprocess.run to verify success/failure (capturing stderr)
+        try:
+            cmd = ["pw-play", temp_filename]
+            result = subprocess.run(cmd, capture_output=True, text=True) # text=True for string output
+            
+            if result.returncode != 0:
+                logger.warning(f"pw-play failed (rc={result.returncode}): {result.stderr.strip()}")
+                raise Exception("pw-play failure")
+                
+        except Exception as e:
+            # 2. Attempt Fallback: ALSA (aplay)
+            logger.info("Falling back to ALSA (aplay)...")
+            cmd = ["aplay", "-q", "-t", "wav"]
+            if alsa_device:
+                dev = alsa_device.replace("hw:", "plughw:", 1) if alsa_device.startswith("hw:") else alsa_device
+                cmd.extend(["-D", dev])
+            cmd.append(temp_filename)
+            
+            # Run fallback, still capturing output to diagnose if that fails too
+            result_alsa = subprocess.run(cmd, capture_output=True, text=True)
+            if result_alsa.returncode != 0:
+                logger.error(f"aplay also failed (rc={result_alsa.returncode}): {result_alsa.stderr.strip()}")
+
     finally:
         if os.path.exists(temp_filename):
             try: os.remove(temp_filename)
@@ -243,6 +262,10 @@ def main():
                 silence_counter = 0
                 started = False
                 
+                # Pre-roll buffer to capture audio before threshold trigger
+                # Using a list of chunks, aimed at roughly 0.5s duration
+                preroll_buffer = []
+                
                 while True:
                     try:
                         chunk = audio_queue.get(timeout=0.1)
@@ -252,11 +275,24 @@ def main():
                     volume = np.max(np.abs(chunk))
                     
                     if not started:
+                        # Append to pre-roll
+                        preroll_buffer.append(chunk)
+                        
+                        # Maintain roughly 0.5s of audio in pre-roll
+                        # Heuristic: Total samples in buffer should be ~ SAMPLE_RATE * 0.5
+                        current_samples = sum(len(c) for c in preroll_buffer)
+                        while current_samples > int(SAMPLE_RATE * 0.5):
+                            removed = preroll_buffer.pop(0)
+                            current_samples -= len(removed)
+                            
                         if volume > THRESHOLD:
-                            logger.info("Speech detected...")
+                            logger.info(f"Speech detected (Pre-roll: {len(preroll_buffer)} chunks)...")
                             leds.set_state(LEDState.LISTENING)
                             started = True
-                            audio_buffer.append(chunk)
+                            
+                            # Move pre-roll to main buffer
+                            audio_buffer.extend(preroll_buffer)
+                            preroll_buffer = [] # Clear logic
                     else:
                         audio_buffer.append(chunk)
                         if volume < THRESHOLD:
