@@ -70,12 +70,12 @@ def play_wav_linux(wav_data: bytes, alsa_device: Optional[str] = None):
     try:
         with open(temp_filename, "wb") as f:
             f.write(wav_data)
-        cmd = ["aplay", "-q", "-t", "wav"]
+        cmd = ["pw-play", temp_filename]
+        # pw-play uses system default by default, ignoring deprecated alsa_device arg
         if alsa_device:
-            dev = alsa_device.replace("hw:", "plughw:", 1) if alsa_device.startswith("hw:") else alsa_device
-            cmd.extend(["-D", dev])
-        cmd.append(temp_filename)
-        subprocess.call(cmd)
+             # Log warning only once? Or just debug.
+             pass 
+        subprocess.call(cmd, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
     finally:
         if os.path.exists(temp_filename):
             try: os.remove(temp_filename)
