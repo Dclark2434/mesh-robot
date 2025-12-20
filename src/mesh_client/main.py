@@ -67,14 +67,18 @@ def play_wav_linux(wav_data: bytes, alsa_device: Optional[str] = None):
     """Utility to play a single WAV buffer on Linux via pw-play (Primary) or aplay (Fallback)."""
     if not wav_data.startswith(b"RIFF"): return
     temp_filename = f"temp_recv_{int(time.time() * 1000)}.wav"
+    abs_filepath = os.path.abspath(temp_filename)
+    
+    logger.info(f"Playing {len(wav_data)} bytes...")
+    
     try:
-        with open(temp_filename, "wb") as f:
+        with open(abs_filepath, "wb") as f:
             f.write(wav_data)
         
         # 1. Attempt Primary: PipeWire (pw-play)
         # Using subprocess.run to verify success/failure (capturing stderr)
         try:
-            cmd = ["pw-play", temp_filename]
+            cmd = ["pw-play", abs_filepath]
             result = subprocess.run(cmd, capture_output=True, text=True) # text=True for string output
             
             if result.returncode != 0:
@@ -88,7 +92,7 @@ def play_wav_linux(wav_data: bytes, alsa_device: Optional[str] = None):
             if alsa_device:
                 dev = alsa_device.replace("hw:", "plughw:", 1) if alsa_device.startswith("hw:") else alsa_device
                 cmd.extend(["-D", dev])
-            cmd.append(temp_filename)
+            cmd.append(abs_filepath)
             
             # Run fallback, still capturing output to diagnose if that fails too
             result_alsa = subprocess.run(cmd, capture_output=True, text=True)
@@ -96,8 +100,8 @@ def play_wav_linux(wav_data: bytes, alsa_device: Optional[str] = None):
                 logger.error(f"aplay also failed (rc={result_alsa.returncode}): {result_alsa.stderr.strip()}")
 
     finally:
-        if os.path.exists(temp_filename):
-            try: os.remove(temp_filename)
+        if os.path.exists(abs_filepath):
+            try: os.remove(abs_filepath)
             except: pass
 
 def play_wav(wav_data: bytes):
