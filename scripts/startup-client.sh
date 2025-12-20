@@ -23,5 +23,8 @@ fi
 # Ensure package is installed in editable mode if not already
 # pip install -e .[client]
 
+echo "Waiting 10s for system services..."
+sleep 10
+
 echo "Starting M.E.S.H. Client..."
 python -m mesh_client.main

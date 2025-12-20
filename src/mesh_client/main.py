@@ -217,19 +217,22 @@ def main():
 
     # Calibration
     logger.info("Calibrating noise floor...")
-    try:
-        rec = sd.rec(int(2 * SAMPLE_RATE), samplerate=SAMPLE_RATE, channels=CHANNELS)
-        sd.wait()
-        noise_floor = np.max(np.abs(rec)) * 2.0
-        # Only overwrite THRESHOLD if it wasn't set by environment variable (optional logic)
-        # THRESHOLD = max(THRESHOLD, noise_floor) 
-        logger.info(f"Calibration captured noise floor: {noise_floor:.4f}. Using current Threshold: {THRESHOLD:.4f}")
-        leds.set_state(LEDState.IDLE)
-        head.look_neutral()
-    except Exception as e:
-        leds.set_state(LEDState.ERROR)
-        logger.error(f"Calibration failed: {e}")
-        sys.exit(1)
+    while True:
+        try:
+            leds.set_state(LEDState.THINKING) # Yellow/Blue pulse to indicate initializing
+            rec = sd.rec(int(2 * SAMPLE_RATE), samplerate=SAMPLE_RATE, channels=CHANNELS)
+            sd.wait()
+            noise_floor = np.max(np.abs(rec)) * 2.0
+            # Only overwrite THRESHOLD if it wasn't set by environment variable (optional logic)
+            # THRESHOLD = max(THRESHOLD, noise_floor) 
+            logger.info(f"Calibration captured noise floor: {noise_floor:.4f}. Using current Threshold: {THRESHOLD:.4f}")
+            leds.set_state(LEDState.IDLE)
+            head.look_neutral()
+            break
+        except Exception as e:
+            leds.set_state(LEDState.ERROR) # Flash Red
+            logger.warning(f"Audio device not ready, retrying in 5s... Error: {e}")
+            time.sleep(5)
 
     logger.info("Listening... (Ctrl+C to exit)")
 
