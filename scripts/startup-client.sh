@@ -8,7 +8,7 @@ cd "$SCRIPT_DIR/.."
 # --- CONFIGURATION ---
 # Replace with your WSL/Server IP
 export MESH_SERVER_URL="http://192.168.4.89:8000/interact"
-export MESH_ALSA_DEVICE="plughw:3,0"
+
 
 # --- EXECUTION ---
 if [ -d "venv-client" ]; then
