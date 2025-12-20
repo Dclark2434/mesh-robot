@@ -240,7 +240,9 @@ def main():
                 steps = min(val, 10) # Cap at 10
 
         logger.info(f"Executing {action}: {steps} steps")
-        leds.set_state(LEDState.THINKING)
+        
+        # Determine if we should resume speaking animation after action
+        resume_speaking = True
 
         if action in ["walk", "walk_forward", "move_forward"]:
              locomotion.move_forward(steps)
@@ -266,14 +268,17 @@ def main():
         # LED Actions
         elif action == "led_on":
              leds.set_state(LEDState.LISTENING) # Use white/listening for ON
+             resume_speaking = False # Keep it ON
         elif action == "led_off":
              leds.set_state(LEDState.IDLE)
+             resume_speaking = False # Keep it OFF
         elif action == "led_flash":
              for _ in range(3):
                  leds.set_state(LEDState.SPEAKING)
                  time.sleep(0.1)
                  leds.set_state(LEDState.IDLE)
                  time.sleep(0.1)
+             # Resume speaking after flash
 
         # Buzzer Actions
         elif action == "buzzer_beep":
@@ -287,11 +292,9 @@ def main():
         elif action in ["reset", "lay_flat"]:
              locomotion.reset_posture_flat()
 
-        # Resume "Speaking" state if we were interrupting speech flow?
-        # Actually, Server sends chunks -> Action -> Chunks.
-        # But `on_server_command` is async-ish callback.
-        # Ideally we just execute. If speaking happens in parallel, fine.
-        leds.set_state(LEDState.SPEAKING)
+        # Resume "Speaking" state only if not overridden
+        if resume_speaking:
+            leds.set_state(LEDState.SPEAKING)
 
 
     # Calibration
