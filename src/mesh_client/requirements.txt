@@ -5,3 +5,4 @@ scipy
 colorama
 gpiozero
 rpi.gpio
+smbus2
