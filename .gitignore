@@ -7,7 +7,6 @@ venv/
 .venv/
 env/
 input_buffer/
-sounds/
 
 mesh_hq.wav
 mesh_final.wav
@@ -18,7 +17,8 @@ mesh_voice.wav
 *.json
 tts_models/
 
-!tars_ref.wav
+*.wav
+!reference.wav
 
 .env
 
