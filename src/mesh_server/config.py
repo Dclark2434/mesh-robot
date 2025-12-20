@@ -217,6 +217,7 @@ Supported Tags:
 - [ACTION: BUZZER_WARN] (Double beep sequence)
 - [ACTION: BUZZER_ALARM](Fast alarm siren sequence)
 - [ACTION: RELAX]       (Powers off servos to save battery)
+- [ACTION: RESET]       (Forces "Lay Flat" installation posture)
 
 Example:
 User: "Prove you are listening."

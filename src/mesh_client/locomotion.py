@@ -178,6 +178,22 @@ class LocomotionController:
         # Adjusted: 10 degrees for Right
         self.execute_gait(0, 0, 10, steps)
 
+    def reset_posture_flat(self):
+        """
+        Forces the robot into the 'Installation/Flat' posture.
+        Derived from Freenove 'servo.py' logic.
+        """
+        logger.info("Resetting posture to FLAT (Installation Mode)...")
+        for i in range(32):
+            angle = 90
+            if i in [10, 13, 31]:
+                angle = 10
+            elif i in [18, 21, 27]:
+                angle = 170
+            
+            # Direct servo control via the injected servo_controller
+            self.servo.set_angle(i, angle)
+
     def reset_posture(self):
          self.body_points = [
             [137.1, 189.4, self.body_height], [225, 0, self.body_height], [137.1, -189.4, self.body_height],

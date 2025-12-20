@@ -284,6 +284,8 @@ def main():
              buzzer.alarm()
         elif action in ["relax", "stand_by"]:
              sc.relax()
+        elif action in ["reset", "lay_flat"]:
+             locomotion.reset_posture_flat()
 
         # Resume "Speaking" state if we were interrupting speech flow?
         # Actually, Server sends chunks -> Action -> Chunks.
