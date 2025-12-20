@@ -28,9 +28,31 @@ M.E.S.H. is a "Brain" for Freenove Big Hexapod robots, inspired by the TARS unit
 
 ---
 
-## Interaction Capabilities
+## Command Manual & Capabilities
 
-M.E.S.H. supports a rich set of verbal and non-verbal interactions:
+You can control M.E.S.H. using natural language. Below are the supported capabilities and the types of phrases that trigger them.
+
+### Movement
+- **Walk**: "Walk forward 5 steps", "Move ahead".
+- **Turn**: "Turn left", "Turn right", "Spin around".
+- **Back up**: "Back up", "Walk backward".
+
+### Head
+- **Look**: "Look left", "Look right", "Look up", "Look down", "Look at me (center)".
+
+### Cue Light (Back LED)
+- **Control**: "Turn on your light", "Turn off the light". (Overrides speaking animation).
+- **Express**: "Flash your light".
+
+### Audio (Buzzer)
+- **Beep**: "Beep once".
+- **Warn**: "Give me a warning beep".
+- **Alarm**: "Sound the alarm".
+
+### Safety & Power
+- **Relax**: "Relax", "Stand by", "Power down servos". (Saves battery, reduces jitter).
+  - *Note: Auto-relaxes after 10s of inactivity.*
+- **Reset / Lay Flat**: "Reset posture", "Lay flat". (Safe installation pose for picking up).
 
 ### Comedic Timing
 The robot can "act" while speaking by embedding Action Tags in its response.
@@ -38,15 +60,6 @@ The robot can "act" while speaking by embedding Action Tags in its response.
 - "Self-destruct in 3... 2... [ACTION: BUZZER_ALARM] ...Kidding."
 - "Look at this mess. [ACTION: LOOK_DOWN] Disappointing."
 - "Power management engaged. [ACTION: RELAX] Don't wake me."
-
-### Extended Actions
-- **Head**: `look_left`, `look_right`, `look_up`, `look_down`.
-- **Cue Light (Back LED)**: `led_on` (Solid White), `led_off`, `led_flash`.
-  - Manual ON/OFF commands override the default speaking animation.
-- **Voice**: `buzzer_beep`, `buzzer_warn`, `buzzer_alarm`.
-- **Safety**:
-  - **Relax**: Servos power down after 10s of separate idle time or via `[ACTION: RELAX]`.
-  - **Reset**: `[ACTION: RESET]` forces the robot into a flat, safe installation posture.
 
 ---
 
