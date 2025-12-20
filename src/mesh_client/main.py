@@ -25,7 +25,7 @@ logger = get_logger("mesh_client")
 
 # --- CONFIGURATION ---
 SERVER_URL = os.environ.get("MESH_SERVER_URL", f"http://127.0.0.1:{DEFAULT_SERVER_PORT}/interact")
-THRESHOLD = float(os.environ.get("MESH_THRESHOLD", 0.4))
+THRESHOLD = float(os.environ.get("MESH_THRESHOLD", 0.0))
 SILENCE_LIMIT = float(os.environ.get("MESH_SILENCE_LIMIT", 1.0))
 ALSA_DEVICE = os.environ.get("MESH_ALSA_DEVICE")
 
