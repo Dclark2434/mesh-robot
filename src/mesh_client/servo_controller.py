@@ -155,7 +155,15 @@ class HeadController:
         self.ctrl.set_angle(self.tilt_channel, self.neutral_tilt + degrees)
 
     def look_down(self, degrees=20):
+        # Cap downward gaze to avoid hitting chest
+        degrees = min(degrees, 30)
         self.ctrl.set_angle(self.tilt_channel, self.neutral_tilt - degrees)
+
+    def look_left(self, degrees=30):
+        self.ctrl.set_angle(self.pan_channel, self.neutral_pan + degrees)
+
+    def look_right(self, degrees=30):
+        self.ctrl.set_angle(self.pan_channel, self.neutral_pan - degrees)
 
 if __name__ == "__main__":
     sc = ServoController()

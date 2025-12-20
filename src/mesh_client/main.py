@@ -20,6 +20,7 @@ from mesh_common.config import SAMPLE_RATE, CHANNELS, DEFAULT_SERVER_PORT
 from mesh_client.led_controller import LEDManager, LEDState
 from mesh_client.servo_controller import ServoController, HeadController
 from mesh_client.locomotion import LocomotionController
+from mesh_client.buzzer_controller import BuzzerController
 
 logger = get_logger("mesh_client")
 
@@ -213,33 +214,82 @@ def main():
     leds = LEDManager()
     sc = ServoController()
     head = HeadController(sc)
+    head = HeadController(sc)
     locomotion = LocomotionController(sc)
+    buzzer = BuzzerController()
+    
+    last_activity_time = time.time()
     
     leds.set_state(LEDState.THINKING)
     head.look_up(10)
 
     def on_server_command(cmd):
+        nonlocal last_activity_time
+        last_activity_time = time.time()
+        
         """Handle hardware commands from server."""
         action = cmd.get("action")
         param = cmd.get("param")
         
         # Normalize action
+        steps = 4
+        if param:
+            match = re.search(r'\d+', str(param))
+            if match:
+                val = int(match.group())
+                steps = min(val, 10) # Cap at 10
+
+        logger.info(f"Executing {action}: {steps} steps")
+        leds.set_state(LEDState.THINKING)
+
         if action in ["walk", "walk_forward", "move_forward"]:
-             # Try to extract number of steps from param, default to 4
-             steps = 4
-             if param:
-                 match = re.search(r'\d+', str(param))
-                 if match:
-                     # If they say "10cm", usually that's just 1-2 steps, but let's just treat digits as steps for now
-                     # to be responsive.
-                     val = int(match.group())
-                     # Cap it for safety
-                     steps = min(val, 10)
-             
-             logger.info(f"Executing Walk: {steps} steps")
-             leds.set_state(LEDState.THINKING) 
              locomotion.move_forward(steps)
-             leds.set_state(LEDState.SPEAKING)
+        elif action == "move_backward":
+             locomotion.move_backward(steps)
+        elif action == "turn_left":
+             locomotion.turn_left(steps)
+        elif action == "turn_right":
+             locomotion.turn_right(steps)
+        
+        # Head Actions
+        elif action == "look_left":
+             head.look_left()
+        elif action == "look_right":
+             head.look_right()
+        elif action == "look_down":
+             head.look_down()
+        elif action == "look_up":
+             head.look_up()
+        elif action == "look_center":
+             head.look_neutral()
+        
+        # LED Actions
+        elif action == "led_on":
+             leds.set_state(LEDState.LISTENING) # Use white/listening for ON
+        elif action == "led_off":
+             leds.set_state(LEDState.IDLE)
+        elif action == "led_flash":
+             for _ in range(3):
+                 leds.set_state(LEDState.SPEAKING)
+                 time.sleep(0.1)
+                 leds.set_state(LEDState.IDLE)
+                 time.sleep(0.1)
+
+        # Buzzer Actions
+        elif action == "buzzer_beep":
+             buzzer.beep()
+        elif action == "buzzer_warn":
+             buzzer.warn()
+        elif action == "buzzer_alarm":
+             buzzer.alarm()
+        elif action in ["relax", "stand_by"]:
+             sc.relax()
+
+        # Resume "Speaking" state if we were interrupting speech flow?
+        # Actually, Server sends chunks -> Action -> Chunks.
+        # But `on_server_command` is async-ish callback.
+        # Ideally we just execute. If speaking happens in parallel, fine.
+        leds.set_state(LEDState.SPEAKING)
 
 
     # Calibration
@@ -278,6 +328,10 @@ def main():
                     try:
                         chunk = audio_queue.get(timeout=0.1)
                     except queue.Empty:
+                        if time.time() - last_activity_time > 10.0:
+                             sc.relax()
+                             # Should we log? Maybe too verbose if checking every 0.1s
+                             # Only log once if needed, but sc.relax() is safe to call repeatedly (idempotent-ish)
                         continue
 
                     volume = np.max(np.abs(chunk))
@@ -294,6 +348,7 @@ def main():
                             current_samples -= len(removed)
                             
                         if volume > THRESHOLD:
+                            last_activity_time = time.time()
                             logger.info(f"Speech detected (Pre-roll: {len(preroll_buffer)} chunks)...")
                             leds.set_state(LEDState.LISTENING)
                             started = True

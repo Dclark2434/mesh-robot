@@ -109,9 +109,29 @@ async def interact_generator(audio_bytes):
         cmd_payload = json.dumps({"action": hardware_command, "param": hardware_param})
         yield (cmd_payload + "\n").encode("utf-8")
 
-    # 4. Speak
-    for chunk in voice_engine.speak_generator(spoken_text):
-        yield chunk
+    import re
+
+    # 4. Speak & Act (with Tag Parsing)
+    # Split by tags: e.g. "Text [ACTION: LOOK_LEFT] More text"
+    # Regex: (\[ACTION: [A-Z_]+\]) capturing group keeps the delimiter
+    parts = re.split(r'(\[ACTION: [A-Z_]+\])', spoken_text)
+    
+    for part in parts:
+        if not part.strip(): continue
+        
+        # Check if it's a tag
+        if part.startswith("[ACTION:") and part.endswith("]"):
+            # Extract action name: [ACTION: LOOK_LEFT] -> LOOK_LEFT -> look_left
+            action_raw = part[8:-1].strip().lower()
+            logger.info(f"[TIMED ACTION] {action_raw}")
+            
+            # Send as command
+            cmd_payload = json.dumps({"action": action_raw, "param": "trigger"})
+            yield (cmd_payload + "\n").encode("utf-8")
+        else:
+            # It's speech
+            for chunk in voice_engine.speak_generator(part):
+                yield chunk
         
     logger.info(f"[LATENCY] Total Interaction Time: {time.time() - start_total:.2f}s")
 

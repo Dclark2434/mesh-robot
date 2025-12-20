@@ -149,33 +149,34 @@ class LocomotionController:
         self.leg_positions[5][1] = -points[5][0] * math.sin(126 * math.pi/180) + points[5][1] * math.cos(126 * math.pi/180)
         self.leg_positions[5][2] = points[5][2] - 14
 
+    def execute_gait(self, x, y, angle, steps=4):
+        """Generic gait execution wrapper."""
+        z_step = 30
+        f_steps = 32
+        
+        logger.info(f"Gait Cycle: x={x}, y={y}, angle={angle}, steps={steps}")
+        self.reset_posture()
+        for s in range(steps):
+             self.run_one_cycle(x, y, angle, z_step, f_steps)
+        self.reset_posture()
+
     def move_forward(self, steps=5):
         logger.info(f"Walking forward {steps} steps...")
-        # Gait parameters for moving Forward
-        # x=25, y=0, z=0
-        # Gait '1' = Ripple, '2' = Tripod? default to tripod logic
-        
-        # Simulating "run_gait" with hardcoded forward parameters
-        # x=25 (forward speed), y=0, angle=0
-        x = 0
-        y = 25
-        angle = 0
-        z_step = 30 # Reduced Step height for stability
-        f_steps = 32 # Faster cycle for testing
-        
-        logger.info(f"Starting gait cycle: {steps} steps, Z={z_step}, F={f_steps}")
+        self.execute_gait(0, 25, 0, steps)
 
-        # Ensure we start from a clean posture
-        self.reset_posture()
-        
-        # We need to run the cycle 'steps' times
-        for s in range(steps):
-             logger.info(f"Step {s+1}/{steps}...")
-             self.run_one_cycle(x, y, angle, z_step, f_steps)
-            
-        # Return to neutral
-        self.reset_posture()
-        logger.info("Gait complete.")
+    def move_backward(self, steps=5):
+        logger.info(f"Walking backward {steps} steps...")
+        self.execute_gait(0, -25, 0, steps)
+
+    def turn_left(self, steps=5):
+        logger.info(f"Turning left {steps} steps...")
+        # Positive angle turns left? Needs verification. 
+        # Standard convention: Z-axis up, Right-Hand Rule -> CCW is positive
+        self.execute_gait(0, 0, 10, steps)
+
+    def turn_right(self, steps=5):
+        logger.info(f"Turning right {steps} steps...")
+        self.execute_gait(0, 0, -10, steps)
 
     def reset_posture(self):
          self.body_points = [
