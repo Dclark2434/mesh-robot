@@ -52,6 +52,13 @@ class LocomotionController:
             os.path.join(home, "Freenove_Big_Hexapod_Kit/Code/Server/point.txt")
         ]
 
+
+        found_path = None
+        for candidate in candidates:
+            if os.path.exists(candidate):
+                found_path = candidate
+                break
+
         if found_path:
             logger.info(f"Loading calibration from: {found_path}")
         else:

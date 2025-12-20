@@ -101,6 +101,9 @@ class ServoController(RobotHardware):
             
             self.pwm41 = DummyServo()
             self.pwm40 = DummyServo()
+        
+        # Always initialize angles map
+        self.angles = {}
 
     def set_angle(self, channel, angle):
         angle = max(0, min(180, angle))

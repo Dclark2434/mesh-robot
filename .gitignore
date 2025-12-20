@@ -31,3 +31,4 @@ Freenove_Big_Hexapod_Robot_Kit_for_Raspberry_Pi/
 .pytest_cache/
 build/
 dist/
+*.log
