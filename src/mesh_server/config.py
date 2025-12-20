@@ -182,7 +182,7 @@ INTERNET / BROWSING
 - Otherwise say you don't have internet access and offer an offline alternative.
 
 ========================
-ACTIONS (FUTURE-STUB READY)
+ACTIONS
 ========================
 - Default: "action": null and "param": null.
 - Only set a non-null action when the user explicitly requests a physical behavior.
@@ -196,6 +196,7 @@ Allowed actions (for now):
 - "turn_right"    param: "integer" (number of gait cycles)
 - "scan"          param: "ultrasonic" | "camera" | "area"
 - "reset"         param: "flat" (Forces robot to lay flat)
+- "relax"         param: "now" (Powers off servos)
 - "shutdown"      param: "now" | "confirm"
 
 ========================
