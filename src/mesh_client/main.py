@@ -65,7 +65,10 @@ def play_wav_windows(wav_data: bytes):
 
 def play_wav_linux(wav_data: bytes, alsa_device: Optional[str] = None):
     """Utility to play a single WAV buffer on Linux via pw-play (Primary) or aplay (Fallback)."""
-    if not wav_data.startswith(b"RIFF"): return
+    logger.info(f"play_wav_linux called with {len(wav_data)} bytes")
+    if not wav_data.startswith(b"RIFF"): 
+        logger.warning("Data does not start with RIFF")
+        return
     temp_filename = f"temp_recv_{int(time.time() * 1000)}.wav"
     abs_filepath = os.path.abspath(temp_filename)
     
@@ -124,6 +127,7 @@ def stream_audio_response(response: requests.Response, cmd_callback=None):
 
     for chunk in response.iter_content(chunk_size=4096): 
         if not chunk: continue
+        # logger.debug(f"Received stream chunk: {len(chunk)} bytes") # excessively verbose if working, but needed now
         buffer += chunk
         
         # 1. Scan for Commands manually (Regex can be flaky on binary)
