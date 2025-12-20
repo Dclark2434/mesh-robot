@@ -28,8 +28,64 @@ class LocomotionController:
         self.l2 = 90
         self.l3 = 110
 
+        self.load_calibration()
         self.calibrate()
         self.set_leg_angles()
+
+    def load_calibration(self):
+        """
+        Attempts to load calibration data from 'point.txt'.
+        Checks current directory first, then user home (where Freenove app might save it).
+        """
+        import os
+        
+        # Possible locations for point.txt. 
+        # The Freenove app typically saves it in the directory where the script is running.
+        cwd = os.getcwd()
+        home = os.path.expanduser("~")
+        
+        candidates = [
+            os.path.join(cwd, "point.txt"),
+            os.path.join(os.path.dirname(os.path.abspath(__file__)), "point.txt"), # Check where this python file is
+            os.path.join(home, "point.txt"),
+            # Check Freenove default location if user just cloned it
+            os.path.join(home, "Freenove_Big_Hexapod_Kit/Code/Server/point.txt")
+        ]
+
+        if found_path:
+            logger.info(f"Loading calibration from: {found_path}")
+        else:
+            # Fallback: Recursive search in the Freenove codebase if it exists nearby
+            logger.info("Searching for point.txt in known locations...")
+            for root, dirs, files in os.walk(home):
+                if "point.txt" in files:
+                    found_path = os.path.join(root, "point.txt")
+                    # Sanity check: is it the default one (all 140s)?
+                    # We'll take it anyway, better than nothing.
+                    logger.info(f"Auto-discovered calibration file: {found_path}")
+                    break
+        
+        if found_path:
+            try:
+                with open(found_path, 'r') as f:
+                    for i in range(6):
+                        line = f.readline()
+                        if not line: break
+                        try:
+                            # Freenove uses tab or space separation
+                            parts = line.strip().split() 
+                            if len(parts) >= 3:
+                                x = float(parts[0])
+                                y = float(parts[1])
+                                z = float(parts[2])
+                                self.calibration_leg_positions[i] = [x, y, z]
+                                logger.debug(f"Leg {i+1} cal: {x}, {y}, {z}")
+                        except ValueError:
+                            logger.warn(f"Invalid calibration data on line {i+1}")
+            except Exception as e:
+                logger.error(f"Failed to read calibration file: {e}")
+        else:
+            logger.warning("No calibration file (point.txt) found. Using defaults (140, 0, 0).")
 
     def restrict_value(self, value, min_value, max_value):
         return max(min_value, min(value, max_value))
