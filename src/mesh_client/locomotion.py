@@ -157,8 +157,8 @@ class LocomotionController:
         
         # Simulating "run_gait" with hardcoded forward parameters
         # x=25 (forward speed), y=0, angle=0
-        x = 25
-        y = 0
+        x = 0
+        y = 25
         angle = 0
         z_step = 30 # Reduced Step height for stability
         f_steps = 32 # Faster cycle for testing
