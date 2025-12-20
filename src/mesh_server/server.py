@@ -39,6 +39,9 @@ async def interact_generator(audio_bytes):
     # 1. Transcribe (In background thread!)
     user_text = await asyncio.to_thread(voice_engine.transcribe, audio_buffer)
     
+    if user_text:
+        logger.info(f"[HEARD] '{user_text}'")
+
     if not user_text:
         yield json.dumps({"status": "no_speech"}).encode()
         return
