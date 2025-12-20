@@ -170,13 +170,13 @@ class LocomotionController:
 
     def turn_left(self, steps=5):
         logger.info(f"Turning left {steps} steps...")
-        # Positive angle turns left? Needs verification. 
-        # Standard convention: Z-axis up, Right-Hand Rule -> CCW is positive
-        self.execute_gait(0, 0, 10, steps)
+        # Adjusted: -10 degrees for Left
+        self.execute_gait(0, 0, -10, steps)
 
     def turn_right(self, steps=5):
         logger.info(f"Turning right {steps} steps...")
-        self.execute_gait(0, 0, -10, steps)
+        # Adjusted: 10 degrees for Right
+        self.execute_gait(0, 0, 10, steps)
 
     def reset_posture(self):
          self.body_points = [

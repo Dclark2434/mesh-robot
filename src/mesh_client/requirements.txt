@@ -3,3 +3,5 @@ numpy
 requests
 scipy
 colorama
+gpiozero
+rpi.gpio
