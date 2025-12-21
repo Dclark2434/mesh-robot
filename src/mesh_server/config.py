@@ -301,6 +301,28 @@ You must follow these rules for every user message.
 
 """
 
+
+AUDIO_TAGS_INSTRUCTIONS = """
+========================
+AUDIO TAGS (EXPRESSIVE SPEECH)
+========================
+You may use audio tags to add vocal expression.
+Rules:
+- Tags MUST be in square brackets: [laughing], [sighs], [whispers].
+- Tags MUST describe vocal delivery ONLY (emotion, breath, tone).
+- DO NOT use tags for actions, sound effects, or movement.
+
+Allowed Tags:
+- [laughing], [chuckles], [giggles]
+- [sighs], [exhales], [clears throat]
+- [whispers], [shouting]
+- [happy], [sad], [angry], [excited], [bored], [annoyed]
+- [thoughtful], [surprised], [sarcastic]
+
+Example:
+"[sighs] Fine. I'll do it. [laughing] But I won't enjoy it."
+"""
+
 # --- MEMORY STORE ---
 CONTEXT_THRESHOLD = 12000  # Trigger summarization at this context size
 SUMMARY_MAX_LENGTH = 500   # Max chars for rolling summary

@@ -122,8 +122,19 @@ logger.info(f"MESH API Online on {device.upper()}")
 
 def speak_generator(text_to_speak):
     # Clean text
+    # Clean text
     clean_text = text_to_speak.replace("[CUE: GREEN]", "").replace("[CUE: FLASHING]", "").replace("[CUE: ON]", "")
     clean_text = clean_text.replace("*", "").replace('"', '').strip()
+    
+    # If NOT using ElevenLabs, or if we need to clean tags for fallback (we'll check config later, but
+    # it's safer to not clean here if we want to support tags.
+    # Actually, we should only clean tags just before sending to local TTS.
+    # But `speak_generator` splits sentences. If we split "[laughs] words", one sentence is "[laughs] words".
+    # ElevenLabs handles that. Local TTS needs it removed.
+    
+    # Let's clean it ONLY if USE_ELEVENLABS is False.
+    if not config.USE_ELEVENLABS:
+        clean_text = re.sub(r'\[.*?\]', '', clean_text)
     
     logger.info(f"M.E.S.H.: {clean_text}")
     
@@ -154,13 +165,17 @@ def speak_generator(text_to_speak):
             
             # If ElevenLabs was not used or failed, use local engine
             if not use_elevenlabs_success:
+                # Clean tags for local fallback (ElevenLabs uses them, but local engines will read them)
+                local_sentence = re.sub(r'\[.*?\]', '', sentence).strip()
+                if not local_sentence: continue # Skip if only tag remained
+
                 if config.USE_F5_TTS:
                     # F5-TTS Logic
                     with suppress_output():
                         wav, sample_rate, spect = tts_engine.infer(
                             ref_file=config.REFERENCE_AUDIO,
                             ref_text="",
-                            gen_text=sentence,
+                            gen_text=local_sentence,
                             speed=0.7,
                             nfe_step=32,
                             remove_silence=False
@@ -170,7 +185,7 @@ def speak_generator(text_to_speak):
                     # XTTS v2 Logic
                     with suppress_output():
                         tts_engine.tts_to_file(
-                            text=sentence, 
+                            text=local_sentence, 
                             speaker_wav=config.REFERENCE_AUDIO, 
                             language="en", 
                             file_path=temp_wav,
