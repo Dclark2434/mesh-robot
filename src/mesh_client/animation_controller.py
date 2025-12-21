@@ -78,7 +78,9 @@ class AnimationController:
         steps = 15 # Slower setup
         
         # Support shifts
-        shift_mid_fwd = 100 # mm (Increased 60->100 to prevent falling forward)
+        shift_mid_fwd = 120 # mm (Increased 100->120)
+        shift_mid_splay = 20 # mm (Decreased 40->20)
+        shift_back_out = 20 # mm (New rear splay)
         shift_body_back = 40 # mm
         
         # Mantis Lift
@@ -89,11 +91,16 @@ class AnimationController:
              # Mid Legs Move Forward (+Y) and Out (+X) for stability
              for leg in mid_legs:
                  current[leg][1] += (shift_mid_fwd / steps)
-                 current[leg][0] += (40 / steps) if leg == 1 else -(40 / steps)
+                 # Outward Splay
+                 if leg == 1: current[leg][0] += (shift_mid_splay / steps) # Right
+                 if leg == 4: current[leg][0] -= (shift_mid_splay / steps) # Left
                  
-             # Back Legs Move Back (-Y? No, Body Back means support legs relative +Y)
+             # Back Legs Move Back (+Y) and Out (+X)
              for leg in back_legs:
                  current[leg][1] += (shift_body_back / steps)
+                 # Outward Splay
+                 if leg == 2: current[leg][0] += (shift_back_out / steps) # Right
+                 if leg == 3: current[leg][0] -= (shift_back_out / steps) # Left
 
              # Lift & Tuck Front Legs
              for leg in front_legs:
