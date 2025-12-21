@@ -142,6 +142,11 @@ class AnimationController:
             # 5. Safe Return Sequence (Prevents Head Slap)
             # Reverse Step 3: Lower and Untuck partially BEFORE moving head
             logger.info("Safe Return: Lowering legs before head...")
+
+            # DEFENSIVE: Re-assert Head Up in case it drifted or was reset
+            if self.head:
+                self.head.look_up(40)
+                time.sleep(0.2)
             
             current[0][2] = base_z[0] # Stop wiggling (reset to lifted state)
             current[5][2] = base_z[1]
