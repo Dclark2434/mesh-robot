@@ -78,14 +78,14 @@ class AnimationController:
         steps = 15 # Slower setup
         
         # Support shifts
-        shift_mid_fwd = 120 # mm (Increased 100->120)
-        shift_mid_splay = 20 # mm (Decreased 40->20)
-        shift_back_out = 20 # mm (New rear splay)
+        shift_mid_fwd = 120 # mm
+        shift_mid_splay = 10 # mm (Decreased 20->10)
+        shift_back_out = 20 # mm
         shift_body_back = 40 # mm
         
         # Mantis Lift
-        lift_height = 90 # mm (VERY HIGH)
-        tuck_in = 50 # mm (Overlap inward)
+        lift_height = 90 # mm
+        tuck_in = 50 # mm
         
         for _ in range(steps):
              # Mid Legs Move Forward (+Y) and Out (+X) for stability
@@ -117,10 +117,10 @@ class AnimationController:
 
         # 2. Mantis Wave (Anti-Phase Wiggle)
         # "Top joint back and forth" -> Oscillate Y (Forward/Back) and Z (Up/Down) slightly
-        cycles = 6
+        cycles = 12 # Increased duration (was 6)
         resolution = 20
-        amp_y = 15 # Forward/Back wave
-        amp_z = 10 # Up/Down bob
+        amp_y = 30 # Forward/Back wave (Increased 15->30)
+        amp_z = 20 # Up/Down bob (Increased 10->20)
         
         base = [copy.deepcopy(current[0]), copy.deepcopy(current[5])]
         
@@ -138,7 +138,7 @@ class AnimationController:
             
             self.loco.transform_coordinates(current)
             self.loco.set_leg_angles()
-            time.sleep(0.04)
+            time.sleep(0.015) # Faster (0.04 -> 0.015)
 
         time.sleep(0.5)
 
