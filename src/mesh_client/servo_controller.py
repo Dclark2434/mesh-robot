@@ -139,7 +139,7 @@ class ServoController(RobotHardware):
                 board.relax()
             else:
                 for i in range(16):
-                    board.set_pwm(i, 4096, 4096)
+                    board.set_pwm(i, 0, 4096)
 
 class HeadController:
     """Specialized controller for the Hexapod head servos."""
