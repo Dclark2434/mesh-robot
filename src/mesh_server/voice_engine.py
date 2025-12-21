@@ -91,7 +91,10 @@ def generate_elevenlabs_audio(text, output_file):
         return False
 
 def get_prebaked_sound(category):
-    search_dir = "sounds"
+    # Resolve sounds directory relative to this script
+    script_dir = os.path.dirname(os.path.abspath(__file__))
+    search_dir = os.path.join(script_dir, "sounds")
+    
     if not os.path.exists(search_dir): return None
     files = [f for f in os.listdir(search_dir) if f.startswith(category)]
     if files:

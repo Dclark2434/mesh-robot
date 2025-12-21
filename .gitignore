@@ -16,8 +16,7 @@ mesh_voice.wav
 *.onnx
 *.json
 tts_models/
-
-*.wav
+reference.bak.wav
 !reference.wav
 
 .env

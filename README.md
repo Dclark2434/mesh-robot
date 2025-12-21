@@ -20,6 +20,7 @@ M.E.S.H. is a "Brain" for Freenove Big Hexapod robots. It features a custom spee
 ## Key Features
 
 - **Dual Brain Core**: Seamlessly toggle between Google Gemini (Cloud) and Ollama (Local).
+- **Pro-Grade Voice**: ElevenLabs integration for expressive speech (laughs, sighs) with seamless fallback to F5-TTS (Local and free).
 - **Advanced TTS**: State-of-the-art voice cloning via F5-TTS or legacy XTTS v2.
 - **Real-time Senses**: Whisper-powered STT for hands-free interaction.
 - **Vision System**: Image analysis and commentary via the `/see` endpoint.
@@ -61,6 +62,11 @@ The robot can "act" while speaking by embedding Action Tags in its response.
 - "Look at this mess. [ACTION: LOOK_DOWN] Disappointing."
 - "Power management engaged. [ACTION: RELAX] Don't wake me."
 
+### Expressive Audio (ElevenLabs Only)
+When using the elevenlabs voice engine, the robot uses audio tags to add emotion.
+- `[laughing]`, `[sighs]`, `[clears throat]`, `[whispers]`.
+- *Note: These are automatically stripped if the system falls back to local TTS.*
+
 ---
 
 ## Project Structure
@@ -88,11 +94,15 @@ Control M.E.S.H. via environment variables.
 | Variable | Default | Description |
 |----------|---------|-------------|
 | `USE_GEMINI` | `True` | Use Google Gemini Flash (Cloud). `False` for local Ollama. |
-| `USE_F5_TTS` | `True` | Use F5-TTS (SOTA). `False` for XTTS v2. |
+| `USE_ELEVENLABS` | `False` | Use ElevenLabs API. `False` for local F5/XTTS. |
+| `USE_F5_TTS` | `True` | Use F5-TTS (SOTA). `False` for XTTS v2 (Legacy). |
 | `GEMINI_API_KEY`| - | **Required** for Cloud Brain. |
+| `ELEVENLABS_API_KEY`| - | **Required** for Cloud Voice. |
+| `ELEVENLABS_VOICE_ID`| - | Voice ID for ElevenLabs. |
 
 > [!IMPORTANT]
 > Ensure `GEMINI_API_KEY` is set in your environment if `USE_GEMINI` is enabled.
+> Ensure `ELEVENLABS_API_KEY` is set in your environment if `USE_ELEVENLABS` is enabled.
 
 ---
 
@@ -124,7 +134,10 @@ pip install -e .[server]
 # Generate soundboard
 python src/mesh_server/bake_sounds.py
 
-# Start the brain
+# Start the brain (GUI Launcher)
+python src/mesh_server/launcher_gui.py
+
+# OR Start via Command Line
 export GEMINI_API_KEY="your_api_key_here"
 python -m mesh_server.server
 ```
