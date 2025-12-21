@@ -5,6 +5,8 @@ from mesh_common.logging import get_logger
 
 logger = get_logger("mesh_anim")
 
+
+class AnimationController:
     def __init__(self, locomotion, head_controller=None):
         self.loco = locomotion
         self.head = head_controller

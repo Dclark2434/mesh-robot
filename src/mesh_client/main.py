@@ -126,7 +126,7 @@ def stream_audio_response(response: requests.Response, cmd_callback=None):
     buffer = b""
     expected_size = 0
     # Match JSON commands: {"action":...} with optional newline
-    command_pattern = re.compile(b'(\\{"action":.*?\})(\\n)?')
+    command_pattern = re.compile(rb'(\{"action":.*?\})(\n)?')
 
     for chunk in response.iter_content(chunk_size=4096): 
         if not chunk: continue
