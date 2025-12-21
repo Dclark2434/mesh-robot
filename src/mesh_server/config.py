@@ -45,7 +45,7 @@ WAKE_WORDS = [
     "hey, ash", "hey man", "hey, man", 
     "hamish"
     ]
-ATTENTION_SPAN = 60 
+ATTENTION_SPAN = 6 
 
 # --- PERSISTENT IDENTITY (THE SOUL) ---
 SYSTEM_PROMPT = """
@@ -300,6 +300,15 @@ User: "Are you always this dry?"
 You must follow these rules for every user message.
 
 """
+
+# WHISPER HALLUCINATION FILTERS
+# Common phrases generated during silence
+PHANTOM_PHRASES = [
+    "thank you", "thanks", "thanks for watching", "watching",
+    "see you in the next one",
+    "please subscribe", "subtitles by", "amara.org", 
+    "copyright", "all rights reserved"
+]
 
 
 AUDIO_TAGS_INSTRUCTIONS = """

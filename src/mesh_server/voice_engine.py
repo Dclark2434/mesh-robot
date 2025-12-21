@@ -210,6 +210,17 @@ def transcribe(audio_buffer):
         start_time = time.time()
         segments, _ = stt_model.transcribe(audio_buffer, beam_size=5)
         text = " ".join([segment.text for segment in segments]).strip()
+        
+        # Filter Hallucinations
+        text_lower = text.lower().strip(" .,?!")
+        if not text_lower: return ""
+        
+        # Exact match or very close containment for common ghosts
+        for phantom in config.PHANTOM_PHRASES:
+            if phantom in text_lower:
+                logger.debug(f"Ignored phantom phrase: '{text}'")
+                return ""
+
         duration = time.time() - start_time
         logger.info(f"[LATENCY] STT (Whisper): {duration:.2f}s")
         return text

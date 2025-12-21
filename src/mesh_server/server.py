@@ -133,6 +133,8 @@ async def interact_generator(audio_bytes):
             for chunk in voice_engine.speak_generator(part):
                 yield chunk
         
+    # Reset attention span timer AFTER he finishes speaking/acting
+    USER_STATES[user_id] = time.time()
     logger.info(f"[LATENCY] Total Interaction Time: {time.time() - start_total:.2f}s")
 
 def vision_interaction_stream(image_bytes, prompt):

@@ -28,7 +28,7 @@ logger = get_logger("mesh_client")
 # --- CONFIGURATION ---
 SERVER_URL = os.environ.get("MESH_SERVER_URL", f"http://127.0.0.1:{DEFAULT_SERVER_PORT}/interact")
 THRESHOLD = float(os.environ.get("MESH_THRESHOLD", 0.2))
-SILENCE_LIMIT = float(os.environ.get("MESH_SILENCE_LIMIT", 1.0))
+SILENCE_LIMIT = float(os.environ.get("MESH_SILENCE_LIMIT", 2.5))
 ALSA_DEVICE = os.environ.get("MESH_ALSA_DEVICE")
 
 def print_banner():
@@ -223,6 +223,9 @@ def main():
     leds.set_state(LEDState.THINKING)
     head.look_up(10)
 
+    # Movement State Flag
+    is_moving = threading.Event()
+
     def on_server_command(cmd):
         nonlocal last_activity_time
         last_activity_time = time.time()
@@ -245,14 +248,23 @@ def main():
                 
                 if action in ["walk", "walk_forward", "move_forward", "move_backward", "turn_left", "turn_right"]:
                      logger.info(f"Movement Action: {action} for {steps} steps")
-                     if action in ["walk", "walk_forward", "move_forward"]:
-                          locomotion.move_forward(steps)
-                     elif action == "move_backward":
-                          locomotion.move_backward(steps)
-                     elif action == "turn_left":
-                          locomotion.turn_left(steps)
-                     elif action == "turn_right":
-                          locomotion.turn_right(steps)
+                     
+                     # MUTE MICROPHONE
+                     is_moving.set()
+                     try:
+                         if action in ["walk", "walk_forward", "move_forward"]:
+                              locomotion.move_forward(steps)
+                         elif action == "move_backward":
+                              locomotion.move_backward(steps)
+                         elif action == "turn_left":
+                              locomotion.turn_left(steps)
+                         elif action == "turn_right":
+                              locomotion.turn_right(steps)
+                     finally:
+                         # Brief cool-down to let servos settle silence
+                         time.sleep(0.2)
+                         is_moving.clear()
+                     
                      return # Movement handled
                 
                 # Non-movement actions
@@ -296,6 +308,7 @@ def main():
                      
             except Exception as e:
                 logger.error(f"Command execution error: {e}")
+                is_moving.clear() # Ensure cleared on error
 
         # Start execution in background
         threading.Thread(target=run_action, daemon=True).start()
@@ -313,8 +326,8 @@ def main():
             # We want to be sensitive enough to pick up speech (which might be quiet)
             # but above the noise floor.
             # 0.2 is often too high for standard mics.
-            # Let's use 5x noise floor, bit clamped to a reasonable range [0.03, 0.2]
-            calculated_threshold = max(0.03, min(noise_floor * 5.0, 0.2))
+            # Let's use 5x noise floor, bit clamped to a reasonable range [0.08, 0.4]
+            calculated_threshold = max(0.08, min(noise_floor * 5.0, 0.4))
             
             # If user manually set MESH_THRESHOLD in env, respect it? 
             # Ideally yes, but 0.2 default is problematic. 
@@ -336,6 +349,15 @@ def main():
     try:
         with sd.InputStream(samplerate=SAMPLE_RATE, channels=CHANNELS, callback=audio_callback):
             while True:
+                # MUTE during movement to prevent self-triggering
+                if is_moving.is_set():
+                    # Drain queue to discard servo noise
+                    while not audio_queue.empty():
+                        try: audio_queue.get_nowait()
+                        except queue.Empty: break
+                    time.sleep(0.1)
+                    continue
+
                 audio_buffer = []
                 silence_counter = 0
                 started = False
