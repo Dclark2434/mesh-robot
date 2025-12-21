@@ -513,11 +513,7 @@ def main():
                                 leds.set_state(LEDState.ERROR)
                                 time.sleep(1)
                                 leds.set_state(LEDState.IDLE)
-                                    time.sleep(1) # Show error for a bit
-                                    leds.set_state(LEDState.IDLE)
-                                    head.look_neutral()
-                        except Exception as e:
-                            logger.error(f"Network error: {e}")
+
                     else:
                          logger.debug("Captured audio too short, ignoring.")
                 
