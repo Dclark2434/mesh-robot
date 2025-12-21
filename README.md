@@ -134,6 +134,9 @@ pip install -e .[server]
 # Generate soundboard
 python src/mesh_server/bake_sounds.py
 
+> [!TIP]
+> If you replace `src/mesh_server/reference.wav`, you MUST re-run `bake_sounds.py` to regenerate the system sounds in the new voice. Otherwise your robot will have split personality.
+
 # Start the brain (GUI Launcher)
 python src/mesh_server/launcher_gui.py
 
