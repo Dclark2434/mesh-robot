@@ -131,9 +131,6 @@ source venv/bin/activate
 pip install torch torchaudio torchvision --index-url https://download.pytorch.org/whl/cu121
 pip install -e .[server]
 
-# Generate soundboard
-python src/mesh_server/bake_sounds.py
-
 > [!TIP]
 > If you replace `src/mesh_server/reference.wav`, you MUST re-run `bake_sounds.py` to regenerate the system sounds in the new voice. Otherwise your robot will have split personality.
 
