@@ -488,19 +488,31 @@ def main():
                             }
                             
                             start_time = time.time()
-                            with requests.post(SERVER_URL, files=files, data=data, stream=True) as r:
-                                if r.status_code == 200:
-                                    leds.set_state(LEDState.SPEAKING)
-                                    head.look_up(20)
-                                    leds.set_state(LEDState.SPEAKING)
-                                    head.look_up(20)
-                                    stream_audio_response(r, on_server_command)
-                                    logger.info(f"[LATENCY] Round-trip: {time.time() - start_time:.2f}s")
-                                    leds.set_state(LEDState.IDLE)
-                                    head.look_neutral()
-                                else:
-                                    leds.set_state(LEDState.ERROR)
-                                    logger.error(f"Server error: {r.status_code}")
+                            try:
+                                with requests.post(SERVER_URL, files=files, data=data, stream=True, timeout=10) as r:
+                                    if r.status_code == 200:
+                                        leds.set_state(LEDState.SPEAKING)
+                                        head.look_up(20)
+                                        stream_audio_response(r, on_server_command)
+                                        logger.info(f"[LATENCY] Round-trip: {time.time() - start_time:.2f}s")
+                                        leds.set_state(LEDState.IDLE)
+                                        head.look_neutral()
+                                    else:
+                                        leds.set_state(LEDState.ERROR)
+                                        logger.error(f"Server error: {r.status_code}")
+                                        time.sleep(1) # Show error state briefly
+                                        leds.set_state(LEDState.IDLE)
+                            except requests.exceptions.Timeout:
+                                logger.error("Server Timed Out (10s)")
+                                leds.set_state(LEDState.ERROR)
+                                buzzer.warn()
+                                time.sleep(1)
+                                leds.set_state(LEDState.IDLE)
+                            except Exception as e:
+                                logger.error(f"Network Error: {e}")
+                                leds.set_state(LEDState.ERROR)
+                                time.sleep(1)
+                                leds.set_state(LEDState.IDLE)
                                     time.sleep(1) # Show error for a bit
                                     leds.set_state(LEDState.IDLE)
                                     head.look_neutral()
