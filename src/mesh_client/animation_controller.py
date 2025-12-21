@@ -52,39 +52,53 @@ class AnimationController:
 
     def palp_wiggle(self):
         """
-        Idle Animation: Jumping Spider Display (Refined).
-        1. Raise Head 40 deg (Clearance).
-        2. Posture Up on back 4 legs.
-        3. Tuck front legs laterally and Lift.
-        4. Smooth Sine Wave 'Mandible' Wiggle.
+        Idle Animation: Mantis/Spider Display.
+        1. Look UP.
+        2. Shift Mid Legs Forward (Support).
+        3. Lift Front Legs HIGH & Tuck.
+        4. Wiggle "Mandibles" (Anti-phase).
         """
-        logger.info("Animation: Palp Wiggle (Spider Mode V2)")
+        logger.info("Animation: Palp Wiggle (Mantis Mode)")
         self.is_animating = True
         
-        # 0. Safety Head Raise
+        # 0. Head Up (Check logs if this fails)
         if self.head:
+            logger.info("Head Up...")
             self.head.look_up(40)
             time.sleep(0.5)
+        else:
+            logger.warning("Head controller missing!")
 
         current = copy.deepcopy(self.loco.body_points)
         front_legs = [0, 5]     
-        support_legs = [1, 2, 3, 4]
+        mid_legs = [1, 4]
+        back_legs = [2, 3]
 
-        # 1. Posture Up (Shift Body Back & Lift Front Legs)
-        steps = 10
-        shift_back = 40 # Total mm
-        lift_height = 40 # Total mm up
-        tuck_in = 30 # Total mm inward (Safe, no overlap)
-
+        # 1. Posture Up (Establish Support Base)
+        steps = 15 # Slower setup
+        
+        # Support shifts
+        shift_mid_fwd = 60 # mm (Move mid legs forward to take weight)
+        shift_body_back = 40 # mm (Move other legs back effectively)
+        
+        # Mantis Lift
+        lift_height = 90 # mm (VERY HIGH)
+        tuck_in = 50 # mm (Overlap inward)
+        
         for _ in range(steps):
-             # Shift support legs Y+ (Body moves Back)
-             for leg in support_legs:
-                 current[leg][1] += (shift_back / steps)
-            
+             # Mid Legs Move Forward (+Y) and Out (+X) for stability
+             for leg in mid_legs:
+                 current[leg][1] += (shift_mid_fwd / steps)
+                 current[leg][0] += (10 / steps) if leg == 1 else -(10 / steps)
+                 
+             # Back Legs Move Back (-Y? No, Body Back means support legs relative +Y)
+             for leg in back_legs:
+                 current[leg][1] += (shift_body_back / steps)
+
              # Lift & Tuck Front Legs
              for leg in front_legs:
                  current[leg][2] += (lift_height / steps)
-                 # Tuck: Left Leg (5) moves +X, Right Leg (0) moves -X
+                 # Tuck: Leg 0 (Right) -> Left (-X), Leg 5 (Left) -> Right (+X)
                  if leg == 0: current[leg][0] -= (tuck_in / steps)
                  if leg == 5: current[leg][0] += (tuck_in / steps)
 
@@ -92,32 +106,36 @@ class AnimationController:
              self.loco.set_leg_angles()
              time.sleep(0.05)
         
-        time.sleep(0.2)
+        time.sleep(0.3)
 
-        # 2. Smooth Mandible Wave (Sine Wave on Z)
-        # "Outside servos up and down back and forth smoothly"
-        cycles = 4
-        resolution = 20 # Steps per cycle
-        amplitude = 25 # mm oscillation
+        # 2. Mantis Wave (Anti-Phase Wiggle)
+        # "Top joint back and forth" -> Oscillate Y (Forward/Back) and Z (Up/Down) slightly
+        cycles = 6
+        resolution = 20
+        amp_y = 15 # Forward/Back wave
+        amp_z = 10 # Up/Down bob
         
-        base_z = [current[0][2], current[5][2]] # Capture lifted height
+        base = [copy.deepcopy(current[0]), copy.deepcopy(current[5])]
         
         for i in range(cycles * resolution):
             angle = (i / resolution) * 2 * math.pi
-            offset = math.sin(angle) * amplitude
             
-            # Anti-phase or In-phase? 
-            # Spiders usually alternate or sync. Let's alternate (Left Up, Right Down).
-            current[0][2] = base_z[0] + offset
-            current[5][2] = base_z[1] - offset
+            # Anti-phase oscillation
+            # Leg 0
+            current[0][1] = base[0][1] + math.sin(angle) * amp_y
+            current[0][2] = base[0][2] + math.cos(angle) * amp_z
+            
+            # Leg 5 (Opposite phase)
+            current[5][1] = base[1][1] + math.sin(angle + math.pi) * amp_y
+            current[5][2] = base[1][2] + math.cos(angle + math.pi) * amp_z
             
             self.loco.transform_coordinates(current)
             self.loco.set_leg_angles()
-            time.sleep(0.03) # Smooth speed
+            time.sleep(0.04)
 
         time.sleep(0.5)
 
-        # 3. Return to ground
+        # 3. Return
         self.reset_neutral()
         if self.head:
             self.head.look_neutral()
