@@ -27,8 +27,8 @@ class BuzzerController:
     def off(self):
         if self.device: self.device.off()
 
-    def beep(self, duration=1.0):
-        """Standard beep. Default 1s, Max 2s."""
+    def beep(self, duration=0.25):
+        """Standard beep. Default 0.25s, Max 2s."""
         # Enforce limits
         duration = min(duration, 2.0)
         
