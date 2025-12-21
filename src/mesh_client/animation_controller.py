@@ -134,10 +134,31 @@ class AnimationController:
             self.loco.set_leg_angles()
             time.sleep(0.01) # Fast
 
-        # 5. Return
-        self.reset_neutral()
+        # 5. Safe Return Sequence (Prevents Head Slap)
+        # Reverse Step 3: Lower and Untuck partially BEFORE moving head
+        logger.info("Safe Return: Lowering legs before head...")
+        
+        current[0][2] = base_z[0] # Stop wiggling (reset to lifted state)
+        current[5][2] = base_z[1]
+        
+        for _ in range(steps):
+             for leg in front_legs:
+                 current[leg][2] -= (lift_height / steps)
+                 if leg == 0: current[leg][0] += (tuck_in / steps)
+                 if leg == 5: current[leg][0] -= (tuck_in / steps)
+             
+             self.loco.transform_coordinates(current)
+             self.loco.set_leg_angles()
+             time.sleep(0.03)
+
+        time.sleep(0.2)
+
+        # NOW Safe to move head
         if self.head:
             self.head.look_neutral()
+            
+        # Finally Reset Stance (Clean up offsets)
+        self.reset_neutral()
         self.is_animating = False
 
         time.sleep(0.5)
