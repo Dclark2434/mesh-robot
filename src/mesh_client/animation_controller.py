@@ -78,8 +78,8 @@ class AnimationController:
         steps = 15 # Slower setup
         
         # Support shifts
-        shift_mid_fwd = 60 # mm (Move mid legs forward to take weight)
-        shift_body_back = 40 # mm (Move other legs back effectively)
+        shift_mid_fwd = 100 # mm (Increased 60->100 to prevent falling forward)
+        shift_body_back = 40 # mm
         
         # Mantis Lift
         lift_height = 90 # mm (VERY HIGH)
@@ -89,7 +89,7 @@ class AnimationController:
              # Mid Legs Move Forward (+Y) and Out (+X) for stability
              for leg in mid_legs:
                  current[leg][1] += (shift_mid_fwd / steps)
-                 current[leg][0] += (10 / steps) if leg == 1 else -(10 / steps)
+                 current[leg][0] += (40 / steps) if leg == 1 else -(40 / steps)
                  
              # Back Legs Move Back (-Y? No, Body Back means support legs relative +Y)
              for leg in back_legs:
