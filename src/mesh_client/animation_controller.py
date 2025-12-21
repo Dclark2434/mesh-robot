@@ -52,93 +52,93 @@ class AnimationController:
 
     def palp_wiggle(self):
         """
-        Idle Animation: Mantis/Spider Display.
-        1. Look UP.
-        2. Shift Mid Legs Forward (Support).
-        3. Lift Front Legs HIGH & Tuck.
-        4. Wiggle "Mandibles" (Anti-phase).
+        Idle Animation: Sequential Spider Display.
+        1. Head Up 40.
+        2. Step Middle Legs forward individually (for stability).
+        3. Tuck & Lift Front Legs High.
+        4. Oscillate Outer Servos.
         """
-        logger.info("Animation: Palp Wiggle (Mantis Mode)")
+        logger.info("Animation: Palp Wiggle (Sequential Mode)")
         self.is_animating = True
         
-        # 0. Head Up (Check logs if this fails)
+        # 1. Head Up first
         if self.head:
-            logger.info("Head Up...")
             self.head.look_up(40)
             time.sleep(0.5)
-        else:
-            logger.warning("Head controller missing!")
 
         current = copy.deepcopy(self.loco.body_points)
-        front_legs = [0, 5]     
-        mid_legs = [1, 4]
-        back_legs = [2, 3]
+        
+        # 2. Step Middle Legs Forward (One at a time)
+        # Goal: Move mid legs (1 and 4) forward 100mm and slightly out 20mm
+        mid_target_y = [100, 100] # Relative
+        mid_target_x = [20, -20] # Splay out
+        
+        mid_legs = [1, 4] # Right, Left
+        
+        for idx, leg in enumerate(mid_legs):
+            # Lift
+            steps = 5
+            for _ in range(steps):
+                current[leg][2] += (40 / steps) # Lift 40mm
+                self.loco.transform_coordinates(current)
+                self.loco.set_leg_angles()
+                time.sleep(0.02)
+            
+            # Move & Drop
+            steps = 5
+            for _ in range(steps):
+                current[leg][1] += (100 / steps)            # Move Forward 100mm
+                current[leg][0] += (mid_target_x[idx] / steps) # Splay
+                current[leg][2] -= (40 / steps)             # Drop
+                self.loco.transform_coordinates(current)
+                self.loco.set_leg_angles()
+                time.sleep(0.02)
+                
+            time.sleep(0.1)
 
-        # 1. Posture Up (Establish Support Base)
-        steps = 15 # Slower setup
+        # 3. Lift & Tuck Front Legs (Safe Max)
+        front_legs = [0, 5]
+        lift_height = 110 # mm (Max before servo strain?)
+        tuck_in = 60 # mm
         
-        # Support shifts
-        shift_mid_fwd = 120 # mm
-        shift_mid_splay = 10 # mm (Decreased 20->10)
-        shift_back_out = 20 # mm
-        shift_body_back = 40 # mm
-        
-        # Mantis Lift
-        lift_height = 90 # mm
-        tuck_in = 50 # mm
-        
+        steps = 15
         for _ in range(steps):
-             # Mid Legs Move Forward (+Y) and Out (+X) for stability
-             for leg in mid_legs:
-                 current[leg][1] += (shift_mid_fwd / steps)
-                 # Outward Splay
-                 if leg == 1: current[leg][0] += (shift_mid_splay / steps) # Right
-                 if leg == 4: current[leg][0] -= (shift_mid_splay / steps) # Left
-                 
-             # Back Legs Move Back (+Y) and Out (+X)
-             for leg in back_legs:
-                 current[leg][1] += (shift_body_back / steps)
-                 # Outward Splay
-                 if leg == 2: current[leg][0] += (shift_back_out / steps) # Right
-                 if leg == 3: current[leg][0] -= (shift_back_out / steps) # Left
-
-             # Lift & Tuck Front Legs
              for leg in front_legs:
                  current[leg][2] += (lift_height / steps)
-                 # Tuck: Leg 0 (Right) -> Left (-X), Leg 5 (Left) -> Right (+X)
                  if leg == 0: current[leg][0] -= (tuck_in / steps)
                  if leg == 5: current[leg][0] += (tuck_in / steps)
-
+             
              self.loco.transform_coordinates(current)
              self.loco.set_leg_angles()
-             time.sleep(0.05)
-        
-        time.sleep(0.3)
+             time.sleep(0.03)
 
-        # 2. Mantis Wave (Anti-Phase Wiggle)
-        # "Top joint back and forth" -> Oscillate Y (Forward/Back) and Z (Up/Down) slightly
-        cycles = 12 # Increased duration (was 6)
-        resolution = 20
-        amp_y = 30 # Forward/Back wave (Increased 15->30)
-        amp_z = 20 # Up/Down bob (Increased 10->20)
+        time.sleep(0.2)
         
-        base = [copy.deepcopy(current[0]), copy.deepcopy(current[5])]
+        # 4. Oscillate Outer Servos (Z-Axis / Tibia)
+        # "Moving top joint back and forth"
+        cycles = 15
+        resolution = 20
+        amp = 35 # mm (Big swing)
+        
+        base_z = [copy.deepcopy(current[0][2]), copy.deepcopy(current[5][2])]
         
         for i in range(cycles * resolution):
             angle = (i / resolution) * 2 * math.pi
+            offset = math.sin(angle) * amp
             
-            # Anti-phase oscillation
-            # Leg 0
-            current[0][1] = base[0][1] + math.sin(angle) * amp_y
-            current[0][2] = base[0][2] + math.cos(angle) * amp_z
-            
-            # Leg 5 (Opposite phase)
-            current[5][1] = base[1][1] + math.sin(angle + math.pi) * amp_y
-            current[5][2] = base[1][2] + math.cos(angle + math.pi) * amp_z
+            # Anti-phase
+            current[0][2] = base_z[0] + offset
+            current[5][2] = base_z[1] - offset
             
             self.loco.transform_coordinates(current)
             self.loco.set_leg_angles()
-            time.sleep(0.015) # Faster (0.04 -> 0.015)
+            time.sleep(0.01) # Fast
+
+        # 5. Return
+        self.reset_neutral()
+        if self.head:
+            self.head.look_neutral()
+        self.is_animating = False
 
         time.sleep(0.5)
 
