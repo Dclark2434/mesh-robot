@@ -118,7 +118,7 @@ class AnimationController:
         # "Moving top joint back and forth"
         cycles = 15
         resolution = 20
-        amp = 35 # mm (Big swing)
+        amp = 60 # mm (Big swing, increased from 35)
         
         base_z = [copy.deepcopy(current[0][2]), copy.deepcopy(current[5][2])]
         
