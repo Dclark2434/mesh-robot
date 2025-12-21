@@ -327,7 +327,7 @@ def main():
                         elif param == "wiggle": anim.palp_wiggle()
                     finally:
                         is_moving.clear()
-                     buzzer.beep()
+
                 elif action == "buzzer_warn":
                      buzzer.warn()
                 elif action == "buzzer_alarm":
