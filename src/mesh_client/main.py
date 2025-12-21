@@ -225,6 +225,8 @@ def main():
     
     leds.set_state(LEDState.THINKING)
     head.look_up(10)
+    buzzer.beep(0.25) # Startup Beep
+    logger.info("Hardware Initialized.")
 
     # Movement State Flag
     is_moving = threading.Event()
@@ -322,9 +324,13 @@ def main():
                 elif action == "emote":
                     is_moving.set()
                     try:
+                        logger.info(f"Executing Emote: {param}")
                         if param == "laugh": anim.laugh()
                         elif param == "bow": anim.bow()
                         elif param == "wiggle": anim.palp_wiggle()
+                        else: logger.warning(f"Unknown emote: {param}")
+                    except Exception as e:
+                        logger.error(f"Emote Failed: {e}")
                     finally:
                         is_moving.clear()
 
