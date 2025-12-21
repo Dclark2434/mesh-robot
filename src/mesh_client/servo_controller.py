@@ -105,7 +105,23 @@ class ServoController(RobotHardware):
         # Always initialize angles map
         self.angles = {}
 
+    def _ensure_power(self):
+        """Checks if servo power is enabled, and enables if not."""
+        # Using a simple attribute to track state to avoid excessive GPIO calls
+        # Assuming power is enabled on init.
+        # But we can just force it ON if we recently relaxed.
+        if hasattr(self, 'power_pin') and self.power_pin:
+             # If we are using gpiozero, check value? 
+             # OutputDevice.value is 1 if on, 0 if off.
+             # Logic: off() -> Enable (Low Active). on() -> Disable (High Active).
+             if self.power_pin.value == 1: # It is currently High (OFF)
+                 logger.info("Auto-Enabling Servo Power...")
+                 self.power_pin.off() # Enable
+                 time.sleep(0.05) # Stabilize
+
     def set_angle(self, channel, angle):
+        self._ensure_power() # Wake up if needed
+        
         angle = max(0, min(180, angle))
         
         # Determine which board to use based on Freenove logic
@@ -134,12 +150,18 @@ class ServoController(RobotHardware):
 
     def relax(self):
         # Relax both boards
+        logger.info("Relaxing Servos (Cutting PWM & Power)...")
         for board in [self.pwm41, self.pwm40]:
             if isinstance(board, DummyServo):
                 board.relax()
             else:
                 for i in range(16):
                     board.set_pwm(i, 0, 4096)
+        
+        # Cut Power Rail (GPIO 4 High)
+        if hasattr(self, 'power_pin') and self.power_pin:
+            self.power_pin.on() # Disable Power
+            logger.info("Servo Power Rail Disabled.")
 
 class HeadController:
     """Specialized controller for the Hexapod head servos."""
