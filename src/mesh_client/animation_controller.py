@@ -1,6 +1,7 @@
 import time
 import math
 import copy
+import threading
 from mesh_common.logging import get_logger
 
 logger = get_logger("mesh_anim")
@@ -11,6 +12,7 @@ class AnimationController:
         self.loco = locomotion
         self.head = head_controller
         self.is_animating = False
+        self.anim_lock = threading.Lock()
 
     def _interpolate(self, start_val, end_val, progress):
         """Standard linear interpolation."""
@@ -53,18 +55,21 @@ class AnimationController:
     def palp_wiggle(self):
         """
         Idle Animation: Sequential Spider Display.
-        1. Head Up 40.
-        2. Step Middle Legs forward individually (for stability).
-        3. Tuck & Lift Front Legs High.
-        4. Oscillate Outer Servos.
+        See walkthrough.md for sequence details.
         """
+        # Non-blocking acquire: If busy, SKIP the wiggle to avoid collision/spazzing.
+        if not self.anim_lock.acquire(blocking=False):
+            logger.warning("Animation System Busy: Skipping Wiggle.")
+            return
+
         logger.info("Animation: Palp Wiggle (Sequential Mode)")
         self.is_animating = True
         
-        # 1. Head Up first
-        if self.head:
-            self.head.look_up(40)
-            time.sleep(0.5)
+        try:
+            # 1. Head Up first
+            if self.head:
+                self.head.look_up(40)
+                time.sleep(0.5)
 
         current = copy.deepcopy(self.loco.body_points)
         
@@ -156,10 +161,12 @@ class AnimationController:
         # NOW Safe to move head
         if self.head:
             self.head.look_neutral()
+            # Finally Reset Stance (Clean up offsets)
+            self.reset_neutral()
             
-        # Finally Reset Stance (Clean up offsets)
-        self.reset_neutral()
-        self.is_animating = False
+        finally:
+            self.is_animating = False
+            self.anim_lock.release()
 
         time.sleep(0.5)
 
@@ -171,73 +178,82 @@ class AnimationController:
 
     def laugh(self):
         """Rapid pitch changes."""
+        if not self.anim_lock.acquire(blocking=False):
+            logger.warning("Animation System Busy: Skipping Laugh.")
+            return
+
         logger.info("Animation: Laugh")
         self.is_animating = True
-        
-        # Pitch Up/Down 3 times
-        # INCREASED INTENSITY: 15 -> 35
-        
-        current = copy.deepcopy(self.loco.body_points)
-        front_legs = [0, 5]
-        back_legs = [2, 3]
-        
-        for _ in range(4): # 4 bounces
-            # Up
-            for i in front_legs: current[i][2] += 35
-            for i in back_legs: current[i][2] -= 35
-            self.loco.transform_coordinates(current)
-            self.loco.set_leg_angles()
-            time.sleep(0.08) # Faster
+        try:
+            current = copy.deepcopy(self.loco.body_points)
+            front_legs = [0, 5]
+            back_legs = [2, 3]
             
-            # Down
-            for i in front_legs: current[i][2] -= 35
-            for i in back_legs: current[i][2] += 35
-            self.loco.transform_coordinates(current)
-            self.loco.set_leg_angles()
-            time.sleep(0.08)
-            
-        self.reset_neutral()
-        self.is_animating = False
+            for _ in range(4): # 4 bounces
+                # Up
+                for i in front_legs: current[i][2] += 35
+                for i in back_legs: current[i][2] -= 35
+                self.loco.transform_coordinates(current)
+                self.loco.set_leg_angles()
+                time.sleep(0.08) # Faster
+                
+                # Down
+                for i in front_legs: current[i][2] -= 35
+                for i in back_legs: current[i][2] += 35
+                self.loco.transform_coordinates(current)
+                self.loco.set_leg_angles()
+                time.sleep(0.08)
+                
+            self.reset_neutral()
+        finally:
+            self.is_animating = False
+            self.anim_lock.release()
 
     def bow(self):
         """Deep pitch forward."""
+        if not self.anim_lock.acquire(blocking=False):
+            logger.warning("Animation System Busy: Skipping Bow.")
+            return
+
         logger.info("Animation: Bow")
         self.is_animating = True
-        
-        current = copy.deepcopy(self.loco.body_points)
-        front_legs = [0, 5]
-        back_legs = [2, 3] # Add rear support
-        
-        # Deep Bow
-        # Front legs Retract (+Z) -> Body Down
-        # Back legs Extend (-Z) -> Body Up
-        steps = 15
-        depth = 60 # mm
-        lift_rear = 40 # mm
-        
-        for _ in range(steps):
-            for i in front_legs:
-                current[i][2] += (depth / steps) # Retract (Drop Front)
+        try:
+            current = copy.deepcopy(self.loco.body_points)
+            front_legs = [0, 5]
+            back_legs = [2, 3] # Add rear support
             
-            for i in back_legs:
-                current[i][2] -= (lift_rear / steps) # Extend (Raise Rear)
+            # Deep Bow
+            # Front legs Retract (+Z) -> Body Down
+            # Back legs Extend (-Z) -> Body Up
+            steps = 15
+            depth = 60 # mm
+            lift_rear = 40 # mm
             
-            self.loco.transform_coordinates(current)
-            self.loco.set_leg_angles()
-            time.sleep(0.05)
+            for _ in range(steps):
+                for i in front_legs:
+                    current[i][2] += (depth / steps) # Retract (Drop Front)
+                
+                for i in back_legs:
+                    current[i][2] -= (lift_rear / steps) # Extend (Raise Rear)
+                
+                self.loco.transform_coordinates(current)
+                self.loco.set_leg_angles()
+                time.sleep(0.05)
+                
+            time.sleep(1.0) # Hold Longer
             
-        time.sleep(1.0) # Hold Longer
-        
-        # Return Slowly
-        for _ in range(steps):
-            for i in front_legs:
-                current[i][2] -= (depth / steps) 
-            for i in back_legs:
-                current[i][2] += (lift_rear / steps)
+            # Return Slowly
+            for _ in range(steps):
+                for i in front_legs:
+                    current[i][2] -= (depth / steps) 
+                for i in back_legs:
+                    current[i][2] += (lift_rear / steps)
 
-            self.loco.transform_coordinates(current)
-            self.loco.set_leg_angles()
-            time.sleep(0.05)
+                self.loco.transform_coordinates(current)
+                self.loco.set_leg_angles()
+                time.sleep(0.05)
 
-        self.reset_neutral()
-        self.is_animating = False
+            self.reset_neutral()
+        finally:
+            self.is_animating = False
+            self.anim_lock.release()
