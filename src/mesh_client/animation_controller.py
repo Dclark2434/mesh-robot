@@ -185,13 +185,21 @@ class AnimationController:
         
         current = copy.deepcopy(self.loco.body_points)
         front_legs = [0, 5]
+        back_legs = [2, 3] # Add rear support
         
         # Deep Bow
-        # INCREASED DEPTH: 3 * 10 = 30 -> 6 * 12 = 72mm
-        steps = 12
+        # Front legs Retract (+Z) -> Body Down
+        # Back legs Extend (-Z) -> Body Up
+        steps = 15
+        depth = 60 # mm
+        lift_rear = 40 # mm
+        
         for _ in range(steps):
             for i in front_legs:
-                current[i][2] -= 6 # Drop front legs drastically
+                current[i][2] += (depth / steps) # Retract (Drop Front)
+            
+            for i in back_legs:
+                current[i][2] -= (lift_rear / steps) # Extend (Raise Rear)
             
             self.loco.transform_coordinates(current)
             self.loco.set_leg_angles()
@@ -202,7 +210,10 @@ class AnimationController:
         # Return Slowly
         for _ in range(steps):
             for i in front_legs:
-                current[i][2] += 6 # Raise back up
+                current[i][2] -= (depth / steps) 
+            for i in back_legs:
+                current[i][2] += (lift_rear / steps)
+
             self.loco.transform_coordinates(current)
             self.loco.set_leg_angles()
             time.sleep(0.05)
