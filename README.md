@@ -130,10 +130,11 @@ python3.11 -m venv venv
 source venv/bin/activate
 pip install torch torchaudio torchvision --index-url https://download.pytorch.org/whl/cu121
 pip install -e .[server]
-
+```
 > [!TIP]
 > If you replace `src/mesh_server/reference.wav`, you MUST re-run `bake_sounds.py` to regenerate the system sounds in the new voice. Otherwise your robot will have split personality.
 
+```bash
 # Start the brain (GUI Launcher)
 python src/mesh_server/launcher_gui.py
 
