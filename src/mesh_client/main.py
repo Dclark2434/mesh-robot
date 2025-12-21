@@ -217,7 +217,7 @@ def main():
     sc = ServoController()
     head = HeadController(sc)
     locomotion = LocomotionController(sc)
-    anim = AnimationController(locomotion)
+    anim = AnimationController(locomotion, head)
     buzzer = BuzzerController()
     power = PowerMonitor()
     
@@ -342,6 +342,8 @@ def main():
                 elif action == "buzzer_alarm":
                      buzzer.alarm()
                 elif action in ["relax", "stand_by"]:
+                     head.look_neutral()
+                     time.sleep(0.5)
                      sc.relax()
                 elif action in ["reset", "lay_flat"]:
                      locomotion.reset_posture_flat()
@@ -427,6 +429,9 @@ def main():
                                       time.sleep(5.0)
                                       
                                       # Relax logic
+                                      logger.info("Auto-Relaxing...")
+                                      head.look_neutral()
+                                      time.sleep(0.5)
                                       sc.relax()
                                       has_idled = True # Mark as done so we don't loop
                              else:
