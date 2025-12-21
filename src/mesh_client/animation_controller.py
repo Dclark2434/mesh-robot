@@ -71,98 +71,98 @@ class AnimationController:
                 self.head.look_up(40)
                 time.sleep(0.5)
 
-        current = copy.deepcopy(self.loco.body_points)
-        
-        # 2. Step Middle Legs Forward (One at a time)
-        # Goal: Move mid legs (1 and 4) forward 100mm and slightly out 20mm
-        mid_target_y = [100, 100] # Relative
-        mid_target_x = [20, -20] # Splay out
-        
-        mid_legs = [1, 4] # Right, Left
-        
-        for idx, leg in enumerate(mid_legs):
-            # Lift
-            steps = 5
-            for _ in range(steps):
-                current[leg][2] += (40 / steps) # Lift 40mm
-                self.loco.transform_coordinates(current)
-                self.loco.set_leg_angles()
-                time.sleep(0.02)
+            current = copy.deepcopy(self.loco.body_points)
             
-            # Move & Drop
-            steps = 5
-            for _ in range(steps):
-                current[leg][1] += (100 / steps)            # Move Forward 100mm
-                current[leg][0] += (mid_target_x[idx] / steps) # Splay
-                current[leg][2] -= (40 / steps)             # Drop
-                self.loco.transform_coordinates(current)
-                self.loco.set_leg_angles()
-                time.sleep(0.02)
+            # 2. Step Middle Legs Forward (One at a time)
+            # Goal: Move mid legs (1 and 4) forward 100mm and slightly out 20mm
+            mid_target_y = [100, 100] # Relative
+            mid_target_x = [20, -20] # Splay out
+            
+            mid_legs = [1, 4] # Right, Left
+            
+            for idx, leg in enumerate(mid_legs):
+                # Lift
+                steps = 5
+                for _ in range(steps):
+                    current[leg][2] += (40 / steps) # Lift 40mm
+                    self.loco.transform_coordinates(current)
+                    self.loco.set_leg_angles()
+                    time.sleep(0.02)
                 
-            time.sleep(0.1)
+                # Move & Drop
+                steps = 5
+                for _ in range(steps):
+                    current[leg][1] += (100 / steps)            # Move Forward 100mm
+                    current[leg][0] += (mid_target_x[idx] / steps) # Splay
+                    current[leg][2] -= (40 / steps)             # Drop
+                    self.loco.transform_coordinates(current)
+                    self.loco.set_leg_angles()
+                    time.sleep(0.02)
+                    
+                time.sleep(0.1)
 
-        # 3. Lift & Tuck Front Legs (Safe Max)
-        front_legs = [0, 5]
-        lift_height = 110 # mm (Max before servo strain?)
-        tuck_in = 60 # mm
-        
-        steps = 15
-        for _ in range(steps):
-             for leg in front_legs:
-                 current[leg][2] += (lift_height / steps)
-                 if leg == 0: current[leg][0] -= (tuck_in / steps)
-                 if leg == 5: current[leg][0] += (tuck_in / steps)
-             
-             self.loco.transform_coordinates(current)
-             self.loco.set_leg_angles()
-             time.sleep(0.03)
-
-        time.sleep(0.2)
-        
-        # 4. Oscillate Outer Servos (Z-Axis / Tibia)
-        # "Moving top joint back and forth"
-        cycles = 15
-        resolution = 20
-        amp = 60 # mm (Big swing, increased from 35)
-        
-        base_z = [copy.deepcopy(current[0][2]), copy.deepcopy(current[5][2])]
-        
-        for i in range(cycles * resolution):
-            angle = (i / resolution) * 2 * math.pi
-            offset = math.sin(angle) * amp
+            # 3. Lift & Tuck Front Legs (Safe Max)
+            front_legs = [0, 5]
+            lift_height = 110 # mm (Max before servo strain?)
+            tuck_in = 60 # mm
             
-            # Anti-phase
-            current[0][2] = base_z[0] + offset
-            current[5][2] = base_z[1] - offset
+            steps = 15
+            for _ in range(steps):
+                 for leg in front_legs:
+                     current[leg][2] += (lift_height / steps)
+                     if leg == 0: current[leg][0] -= (tuck_in / steps)
+                     if leg == 5: current[leg][0] += (tuck_in / steps)
+                 
+                 self.loco.transform_coordinates(current)
+                 self.loco.set_leg_angles()
+                 time.sleep(0.03)
+
+            time.sleep(0.2)
             
-            self.loco.transform_coordinates(current)
-            self.loco.set_leg_angles()
-            time.sleep(0.01) # Fast
+            # 4. Oscillate Outer Servos (Z-Axis / Tibia)
+            # "Moving top joint back and forth"
+            cycles = 15
+            resolution = 20
+            amp = 60 # mm (Big swing, increased from 35)
+            
+            base_z = [copy.deepcopy(current[0][2]), copy.deepcopy(current[5][2])]
+            
+            for i in range(cycles * resolution):
+                angle = (i / resolution) * 2 * math.pi
+                offset = math.sin(angle) * amp
+                
+                # Anti-phase
+                current[0][2] = base_z[0] + offset
+                current[5][2] = base_z[1] - offset
+                
+                self.loco.transform_coordinates(current)
+                self.loco.set_leg_angles()
+                time.sleep(0.01) # Fast
 
-        # 5. Safe Return Sequence (Prevents Head Slap)
-        # Reverse Step 3: Lower and Untuck partially BEFORE moving head
-        logger.info("Safe Return: Lowering legs before head...")
-        
-        current[0][2] = base_z[0] # Stop wiggling (reset to lifted state)
-        current[5][2] = base_z[1]
-        
-        for _ in range(steps):
-             for leg in front_legs:
-                 current[leg][2] -= (lift_height / steps)
-                 if leg == 0: current[leg][0] += (tuck_in / steps)
-                 if leg == 5: current[leg][0] -= (tuck_in / steps)
-             
-             self.loco.transform_coordinates(current)
-             self.loco.set_leg_angles()
-             time.sleep(0.03)
+            # 5. Safe Return Sequence (Prevents Head Slap)
+            # Reverse Step 3: Lower and Untuck partially BEFORE moving head
+            logger.info("Safe Return: Lowering legs before head...")
+            
+            current[0][2] = base_z[0] # Stop wiggling (reset to lifted state)
+            current[5][2] = base_z[1]
+            
+            for _ in range(steps):
+                 for leg in front_legs:
+                     current[leg][2] -= (lift_height / steps)
+                     if leg == 0: current[leg][0] += (tuck_in / steps)
+                     if leg == 5: current[leg][0] -= (tuck_in / steps)
+                 
+                 self.loco.transform_coordinates(current)
+                 self.loco.set_leg_angles()
+                 time.sleep(0.03)
 
-        time.sleep(0.2)
+            time.sleep(0.2)
 
-        # NOW Safe to move head
-        if self.head:
-            self.head.look_neutral()
-            # Finally Reset Stance (Clean up offsets)
-            self.reset_neutral()
+            # NOW Safe to move head
+            if self.head:
+                self.head.look_neutral()
+                # Finally Reset Stance (Clean up offsets)
+                self.reset_neutral()
             
         finally:
             self.is_animating = False
