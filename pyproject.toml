@@ -30,7 +30,9 @@ server = [
     "TTS",
     "torch",
     "torchaudio",
-    "torchvision"
+    "torchvision",
+    "customtkinter",
+    "python-dotenv"
 ]
 client = [
     "sounddevice",

@@ -9,6 +9,8 @@ import sys
 import contextlib
 import uuid
 import re
+import requests
+import json
 
 from mesh_common.logging import get_logger
 from mesh_server import config
@@ -48,6 +50,45 @@ def process_audio_fx(input_file):
     finally:
         if os.path.exists(input_file): os.remove(input_file)
         if os.path.exists(output_file): os.remove(output_file)
+
+def generate_elevenlabs_audio(text, output_file):
+    """
+    Generates audio using ElevenLabs API.
+    Returns True if successful, False otherwise.
+    """
+    if not config.ELEVENLABS_API_KEY or not config.ELEVENLABS_VOICE_ID:
+        logger.error("ElevenLabs API Key or Voice ID missing.")
+        return False
+
+    url = f"https://api.elevenlabs.io/v1/text-to-speech/{config.ELEVENLABS_VOICE_ID}"
+    
+    headers = {
+        "Accept": "audio/mpeg",
+        "Content-Type": "application/json",
+        "xi-api-key": config.ELEVENLABS_API_KEY
+    }
+    
+    data = {
+        "text": text,
+        "model_id": "eleven_turbo_v2_5", # Low latency model
+        "voice_settings": {
+            "stability": 0.5,
+            "similarity_boost": 0.75
+        }
+    }
+    
+    try:
+        response = requests.post(url, json=data, headers=headers)
+        if response.status_code == 200:
+            with open(output_file, 'wb') as f:
+                f.write(response.content)
+            return True
+        else:
+            logger.warning(f"ElevenLabs API Error: {response.status_code} - {response.text}")
+            return False
+    except Exception as e:
+        logger.error(f"ElevenLabs Connection Error: {e}")
+        return False
 
 def get_prebaked_sound(category):
     search_dir = "sounds"
@@ -101,28 +142,40 @@ def speak_generator(text_to_speak):
         temp_wav = f"temp_{req_id}.wav"
         
         try:
-            if config.USE_F5_TTS:
-                # F5-TTS Logic
-                with suppress_output():
-                    wav, sample_rate, spect = tts_engine.infer(
-                        ref_file=config.REFERENCE_AUDIO,
-                        ref_text="",
-                        gen_text=sentence,
-                        speed=0.7,
-                        nfe_step=32,
-                        remove_silence=False
-                    )
-                sf.write(temp_wav, wav, sample_rate)
-            else:
-                # XTTS v2 Logic
-                with suppress_output():
-                    tts_engine.tts_to_file(
-                        text=sentence, 
-                        speaker_wav=config.REFERENCE_AUDIO, 
-                        language="en", 
-                        file_path=temp_wav,
-                        speed=1.0
-                    )
+            # Fallback / Selection Logic
+            use_elevenlabs_success = False
+
+            if config.USE_ELEVENLABS:
+                logger.info(f"Generating with ElevenLabs: '{sentence[:20]}...'")
+                if generate_elevenlabs_audio(sentence, temp_wav):
+                    use_elevenlabs_success = True
+                else:
+                    logger.warning("ElevenLabs Failed. Falling back to local engine...")
+            
+            # If ElevenLabs was not used or failed, use local engine
+            if not use_elevenlabs_success:
+                if config.USE_F5_TTS:
+                    # F5-TTS Logic
+                    with suppress_output():
+                        wav, sample_rate, spect = tts_engine.infer(
+                            ref_file=config.REFERENCE_AUDIO,
+                            ref_text="",
+                            gen_text=sentence,
+                            speed=0.7,
+                            nfe_step=32,
+                            remove_silence=False
+                        )
+                    sf.write(temp_wav, wav, sample_rate)
+                else:
+                    # XTTS v2 Logic
+                    with suppress_output():
+                        tts_engine.tts_to_file(
+                            text=sentence, 
+                            speaker_wav=config.REFERENCE_AUDIO, 
+                            language="en", 
+                            file_path=temp_wav,
+                            speed=1.0
+                        )
             processed_bytes = process_audio_fx(temp_wav)
             if processed_bytes:
                 if first_chunk_timer:

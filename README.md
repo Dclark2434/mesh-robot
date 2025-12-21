@@ -102,7 +102,7 @@ Control M.E.S.H. via environment variables.
 - **OS**: Linux (WSL2 recommended for Windows users).
 - **Python**: 3.11 (3.12+ currently incompatible with TTS libraries).
 - **GPU**: NVIDIA GPU with CUDA 12.1 (8GB+ VRAM recommended).
-- **Dependencies**: `ffmpeg`, `sox`, `libsox-fmt-all`.
+- **Dependencies**: `ffmpeg`, `sox`, `libsox-fmt-all`, `python3.11-tk` (for GUI).
 
 ### 1. Server Installation (The Brain)
 Runs on your high-end workstation or server.
@@ -113,7 +113,7 @@ git clone https://github.com/Dclark2434/mesh-robot.git
 cd mesh-robot
 
 # Install system deps
-sudo apt update && sudo apt install python3.11-venv sox libsox-fmt-all ffmpeg -y
+sudo apt update && sudo apt install python3.11-venv python3.11-tk sox libsox-fmt-all ffmpeg -y
 
 # Setup and install
 python3.11 -m venv venv

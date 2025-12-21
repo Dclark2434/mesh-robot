@@ -1,10 +1,16 @@
 import os
+from dotenv import load_dotenv
+
+# Load environment variables from .env file
+# We load this BEFORE setting constants so that .env overrides defaults
+BASE_DIR = os.path.dirname(os.path.abspath(__file__))
+load_dotenv(os.path.join(BASE_DIR, ".env"), override=True)
 
 # ========================================
 # BRAIN TOGGLE: Set to True for Gemini, False for Ollama
 # ========================================
-USE_GEMINI = True  # <-- Brain Toggle
-USE_F5_TTS = True  # <-- Voice Toggle (True for F5, False for XTTSv2)
+USE_GEMINI = os.getenv("USE_GEMINI", "True") == "True"  # <-- Brain Toggle
+USE_F5_TTS = os.getenv("USE_F5_TTS", "True") == "True"  # <-- Voice Toggle (True for F5, False for XTTSv2)
 
 # Ollama Config (used when USE_GEMINI = False)
 OLLAMA_URL = "http://127.0.0.1:11434/api/generate"
@@ -21,7 +27,12 @@ DATA_DIR = os.path.join(BASE_DIR, "data")
 MEMORY_FILE = os.path.join(DATA_DIR, "mesh_memory.json")
 
 # Gemini Config
-GEMINI_API_KEY = os.environ.get("GEMINI_API_KEY")
+GEMINI_API_KEY = os.getenv("GEMINI_API_KEY")
+
+# ElevenLabs Config
+USE_ELEVENLABS = os.getenv("USE_ELEVENLABS", "False") == "True"
+ELEVENLABS_API_KEY = os.getenv("ELEVENLABS_API_KEY")
+ELEVENLABS_VOICE_ID = os.getenv("ELEVENLABS_VOICE_ID", "21m00Tcm4TlvDq8ikWAM") # Default placeholder
 
 WAKE_WORDS = [
     "hey mesh", "hey, mesh", "hey mech", 

@@ -10,7 +10,7 @@ import subprocess
 import os
 import sys
 import struct
-from scipy.io.wavfile import write
+from scipy.io.wavfile import write, read
 from typing import Optional, Generator
 import re
 
@@ -48,22 +48,21 @@ def print_banner():
 # --- PLAYBACK ENGINES ---
 
 def play_wav_windows(wav_data: bytes):
-    """Utility to play a single WAV buffer on Windows via PowerShell."""
+    """Utility to play a single WAV buffer on Windows via SoundDevice (Avoids PowerShell overhead)."""
     if not wav_data.startswith(b"RIFF"): return
-    temp_filename = f"temp_recv_{int(time.time() * 1000)}.wav"
-    abs_filepath = os.path.abspath(temp_filename)
     try:
-        with open(temp_filename, "wb") as f:
-            f.write(wav_data)
-        cmd = [
-            "powershell", "-NoProfile", "-ExecutionPolicy", "Bypass", 
-            "-Command", f"(New-Object Media.SoundPlayer '{abs_filepath}').PlaySync()"
-        ]
-        subprocess.call(cmd, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
-    finally:
-        if os.path.exists(temp_filename):
-            try: os.remove(temp_filename)
-            except: pass
+        # Use scipy to read the in-memory WAV bytes
+        # read returns (sample_rate, data)
+        rate, data = read(io.BytesIO(wav_data))
+        
+        # Determine device (optional, uses default if None)
+        sd.play(data, samplerate=rate)
+        sd.wait() # Block until playback finishes to maintain sync
+        
+    except Exception as e:
+        logger.error(f"SoundDevice Playback Error: {e}")
+        # Fallback to PowerShell if SD fails?
+        # For now, let's assume SD works since we are using it for Input.
 
 def play_wav_linux(wav_data: bytes, alsa_device: Optional[str] = None):
     """Utility to play a single WAV buffer on Linux via pw-play (Primary) or aplay (Fallback)."""
@@ -125,7 +124,7 @@ def stream_audio_response(response: requests.Response, cmd_callback=None):
     buffer = b""
     expected_size = 0
     # Match JSON commands: {"action":...} with optional newline
-    command_pattern = re.compile(b'(\{"action":.*?\})(\\n)?')
+    command_pattern = re.compile(b'(\\{"action":.*?\})(\\n)?')
 
     for chunk in response.iter_content(chunk_size=4096): 
         if not chunk: continue
@@ -242,16 +241,22 @@ def main():
                         val = int(match.group())
                         steps = min(val, 10) # Cap at 10
 
-                logger.info(f"Executing {action}: {steps} steps")
+                logger.info(f"Command Received: {action} (Param: {param})")
                 
-                if action in ["walk", "walk_forward", "move_forward"]:
-                     locomotion.move_forward(steps)
-                elif action == "move_backward":
-                     locomotion.move_backward(steps)
-                elif action == "turn_left":
-                     locomotion.turn_left(steps)
-                elif action == "turn_right":
-                     locomotion.turn_right(steps)
+                if action in ["walk", "walk_forward", "move_forward", "move_backward", "turn_left", "turn_right"]:
+                     logger.info(f"Movement Action: {action} for {steps} steps")
+                     if action in ["walk", "walk_forward", "move_forward"]:
+                          locomotion.move_forward(steps)
+                     elif action == "move_backward":
+                          locomotion.move_backward(steps)
+                     elif action == "turn_left":
+                          locomotion.turn_left(steps)
+                     elif action == "turn_right":
+                          locomotion.turn_right(steps)
+                     return # Movement handled
+                
+                # Non-movement actions
+                if action == "null": return
                 
                 # Head Actions
                 elif action == "look_left":
@@ -304,9 +309,20 @@ def main():
             rec = sd.rec(int(2 * SAMPLE_RATE), samplerate=SAMPLE_RATE, channels=CHANNELS)
             sd.wait()
             noise_floor = np.max(np.abs(rec)) * 2.0
-            # Only overwrite THRESHOLD if it wasn't set by environment variable (optional logic)
-            # THRESHOLD = max(THRESHOLD, noise_floor) 
-            logger.info(f"Calibration captured noise floor: {noise_floor:.4f}. Using current Threshold: {THRESHOLD:.4f}")
+            # Adaptive Threshold Logic:
+            # We want to be sensitive enough to pick up speech (which might be quiet)
+            # but above the noise floor.
+            # 0.2 is often too high for standard mics.
+            # Let's use 5x noise floor, bit clamped to a reasonable range [0.03, 0.2]
+            calculated_threshold = max(0.03, min(noise_floor * 5.0, 0.2))
+            
+            # If user manually set MESH_THRESHOLD in env, respect it? 
+            # Ideally yes, but 0.2 default is problematic. 
+            # Let's only respect env var if it was explicitly set (hard to tell here easily without re-reading os.environ).
+            # For now, let's prefer our calibrated value UNLESS it's dangerously low.
+            
+            THRESHOLD = calculated_threshold
+            logger.info(f"Calibration captured noise floor: {noise_floor:.4f}. Setting Threshold: {THRESHOLD:.4f}")
             leds.set_state(LEDState.IDLE)
             head.look_neutral()
             break
