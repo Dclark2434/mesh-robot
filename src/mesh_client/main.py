@@ -515,7 +515,7 @@ def main():
                                 leds.set_state(LEDState.IDLE)
 
                     else:
-                         logger.debug("Captured audio too short, ignoring.")
+                        logger.debug("Captured audio too short, ignoring.")
                 
                 # Clear queue to avoid echoes
                 with audio_queue.mutex:
