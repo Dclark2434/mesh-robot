@@ -32,7 +32,7 @@ USER_STATES = {}
 
 # --- STREAM LOGIC ---
 
-async def interact_generator(audio_bytes):
+async def interact_generator(audio_bytes, telemetry=None):
     start_total = time.time()
     audio_buffer = io.BytesIO(audio_bytes)
     
@@ -60,6 +60,25 @@ async def interact_generator(audio_bytes):
         parts = clean_input.partition(trigger_word)
         remaining_command = parts[2].strip(" .,?!")
         final_prompt = remaining_command
+
+    # INJECT TELEMETRY INTO PROMPT
+    # We add it as a system note inside the user message
+    if telemetry:
+        try:
+            # telemetry is a JSON string "{\"servo_voltage\": ...}"
+            t_data = json.loads(telemetry)
+            # Format minimal string for LLM
+            t_str = (
+                f"[SYSTEM DATA: "
+                f"Servo={t_data.get('servo_voltage')}V ({t_data.get('servo_percent')}%), "
+                f"Logic={t_data.get('logic_voltage')}V ({t_data.get('logic_percent')}%)"
+                f"]"
+            )
+            final_prompt = f"{t_str} {final_prompt}"
+            logger.info(f"[CONTEXT] Injected: {t_str}")
+        except Exception as e:
+            logger.warning(f"Telemetry parse error: {e}")
+            pass
 
     # Determine feedback sound: 'ack' for pokes, 'processing' for logic
     is_poke = len(final_prompt) < 2
@@ -145,7 +164,7 @@ def vision_interaction_stream(image_bytes, prompt):
 # --- API ENDPOINTS ---
 
 @app.post("/interact")
-async def interact_endpoint(request: Request, audio_file: UploadFile = File(...)):
+async def interact_endpoint(request: Request, audio_file: UploadFile = File(...), telemetry: str = Form(None)):
     start_time = getattr(request.state, "start_time", time.time())
     overhead = time.time() - start_time
     logger.info(f"[LATENCY] Request Overhead: {overhead:.2f}s")
@@ -155,7 +174,7 @@ async def interact_endpoint(request: Request, audio_file: UploadFile = File(...)
     logger.info(f"[LATENCY] Server File Read: {time.time() - read_start:.2f}s")
     
     return StreamingResponse(
-        interact_generator(audio_bytes),
+        interact_generator(audio_bytes, telemetry),
         media_type="audio/wav"
     )
 

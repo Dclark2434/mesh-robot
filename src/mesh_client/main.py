@@ -22,6 +22,7 @@ from mesh_client.led_controller import LEDManager, LEDState
 from mesh_client.servo_controller import ServoController, HeadController
 from mesh_client.locomotion import LocomotionController
 from mesh_client.buzzer_controller import BuzzerController
+from mesh_client.power_monitor import PowerMonitor
 
 logger = get_logger("mesh_client")
 
@@ -217,6 +218,7 @@ def main():
     head = HeadController(sc)
     locomotion = LocomotionController(sc)
     buzzer = BuzzerController()
+    power = PowerMonitor()
     
     last_activity_time = time.time()
     
@@ -418,12 +420,25 @@ def main():
                         
                         wav_io = io.BytesIO()
                         write(wav_io, SAMPLE_RATE, recording)
-                        wav_io.seek(0)
-                        
+                        wav_io.seek(0) # Important: reset stream position to beginning
+                       # Send to server
                         try:
-                            files = {'audio_file': ('cmd.wav', wav_io, 'audio/wav')}
+                            leds.set_state(LEDState.THINKING)
+                            
+                            # 1. Gather Telemetry
+                            telemetry = power.get_status()
+                            telemetry_json = json.dumps(telemetry)
+                            # logger.info(f"Telemetry: {telemetry_json}")
+
+                            files = {
+                                'audio_file': ('audio.wav', wav_io, 'audio/wav')
+                            }
+                            data = {
+                                'telemetry': telemetry_json
+                            }
+                            
                             start_time = time.time()
-                            with requests.post(SERVER_URL, files=files, stream=True) as r:
+                            with requests.post(SERVER_URL, files=files, data=data, stream=True) as r:
                                 if r.status_code == 200:
                                     leds.set_state(LEDState.SPEAKING)
                                     head.look_up(20)
