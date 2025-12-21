@@ -471,48 +471,47 @@ def main():
                         wav_io = io.BytesIO()
                         write(wav_io, SAMPLE_RATE, recording)
                         wav_io.seek(0) # Important: reset stream position to beginning
-                       # Send to server
-                        try:
-                            leds.set_state(LEDState.THINKING)
-                            
-                            # 1. Gather Telemetry
-                            telemetry = power.get_status()
-                            telemetry_json = json.dumps(telemetry)
-                            # logger.info(f"Telemetry: {telemetry_json}")
+                        
+                        # Send to server
+                        leds.set_state(LEDState.THINKING)
+                        
+                        # 1. Gather Telemetry
+                        telemetry = power.get_status()
+                        telemetry_json = json.dumps(telemetry)
 
-                            files = {
-                                'audio_file': ('audio.wav', wav_io, 'audio/wav')
-                            }
-                            data = {
-                                'telemetry': telemetry_json
-                            }
-                            
-                            start_time = time.time()
-                            try:
-                                with requests.post(SERVER_URL, files=files, data=data, stream=True, timeout=10) as r:
-                                    if r.status_code == 200:
-                                        leds.set_state(LEDState.SPEAKING)
-                                        head.look_up(20)
-                                        stream_audio_response(r, on_server_command)
-                                        logger.info(f"[LATENCY] Round-trip: {time.time() - start_time:.2f}s")
-                                        leds.set_state(LEDState.IDLE)
-                                        head.look_neutral()
-                                    else:
-                                        leds.set_state(LEDState.ERROR)
-                                        logger.error(f"Server error: {r.status_code}")
-                                        time.sleep(1) # Show error state briefly
-                                        leds.set_state(LEDState.IDLE)
-                            except requests.exceptions.Timeout:
-                                logger.error("Server Timed Out (10s)")
-                                leds.set_state(LEDState.ERROR)
-                                buzzer.warn()
-                                time.sleep(1)
-                                leds.set_state(LEDState.IDLE)
-                            except Exception as e:
-                                logger.error(f"Network Error: {e}")
-                                leds.set_state(LEDState.ERROR)
-                                time.sleep(1)
-                                leds.set_state(LEDState.IDLE)
+                        files = {
+                            'audio_file': ('audio.wav', wav_io, 'audio/wav')
+                        }
+                        data = {
+                            'telemetry': telemetry_json
+                        }
+                        
+                        start_time = time.time()
+                        try:
+                            with requests.post(SERVER_URL, files=files, data=data, stream=True, timeout=10) as r:
+                                if r.status_code == 200:
+                                    leds.set_state(LEDState.SPEAKING)
+                                    head.look_up(20)
+                                    stream_audio_response(r, on_server_command)
+                                    logger.info(f"[LATENCY] Round-trip: {time.time() - start_time:.2f}s")
+                                    leds.set_state(LEDState.IDLE)
+                                    head.look_neutral()
+                                else:
+                                    leds.set_state(LEDState.ERROR)
+                                    logger.error(f"Server error: {r.status_code}")
+                                    time.sleep(1) # Show error state briefly
+                                    leds.set_state(LEDState.IDLE)
+                        except requests.exceptions.Timeout:
+                            logger.error("Server Timed Out (10s)")
+                            leds.set_state(LEDState.ERROR)
+                            buzzer.warn()
+                            time.sleep(1)
+                            leds.set_state(LEDState.IDLE)
+                        except Exception as e:
+                            logger.error(f"Network Error: {e}")
+                            leds.set_state(LEDState.ERROR)
+                            time.sleep(1)
+                            leds.set_state(LEDState.IDLE)
 
                     else:
                         logger.debug("Captured audio too short, ignoring.")
