@@ -21,6 +21,7 @@ from mesh_common.config import SAMPLE_RATE, CHANNELS, DEFAULT_SERVER_PORT
 from mesh_client.led_controller import LEDManager, LEDState
 from mesh_client.servo_controller import ServoController, HeadController
 from mesh_client.locomotion import LocomotionController
+from mesh_client.animation_controller import AnimationController
 from mesh_client.buzzer_controller import BuzzerController
 from mesh_client.power_monitor import PowerMonitor
 
@@ -215,8 +216,8 @@ def main():
     leds = LEDManager()
     sc = ServoController()
     head = HeadController(sc)
-    head = HeadController(sc)
     locomotion = LocomotionController(sc)
+    anim = AnimationController(locomotion)
     buzzer = BuzzerController()
     power = PowerMonitor()
     
@@ -227,10 +228,13 @@ def main():
 
     # Movement State Flag
     is_moving = threading.Event()
+    has_idled = False # Flag to prevent repeating idle anim
 
     def on_server_command(cmd):
         nonlocal last_activity_time
+        nonlocal has_idled
         last_activity_time = time.time()
+        has_idled = False
         
         def run_action():
             try:
@@ -269,6 +273,20 @@ def main():
                      
                      return # Movement handled
                 
+                # IDLE CHECK
+                if time.time() - last_activity_time > 30.0: # 30s of silence
+                     # Trigger idle animation if not already moving
+                     if not is_moving.is_set():
+                          logger.info("Auto-Idle: Palp Wiggle")
+                          is_moving.set()
+                          try:
+                              anim.palp_wiggle()
+                          finally:
+                              is_moving.clear()
+                          last_activity_time = time.time()
+
+                time.sleep(0.05)
+                
                 # Non-movement actions
                 if action == "null": return
                 
@@ -298,6 +316,17 @@ def main():
 
                 # Buzzer Actions
                 elif action == "buzzer_beep":
+                     buzzer.beep()
+
+                # Emote Actions
+                elif action == "emote":
+                    is_moving.set()
+                    try:
+                        if param == "laugh": anim.laugh()
+                        elif param == "bow": anim.bow()
+                        elif param == "wiggle": anim.palp_wiggle()
+                    finally:
+                        is_moving.clear()
                      buzzer.beep()
                 elif action == "buzzer_warn":
                      buzzer.warn()
@@ -372,10 +401,30 @@ def main():
                     try:
                         chunk = audio_queue.get(timeout=0.1)
                     except queue.Empty:
-                        if time.time() - last_activity_time > 10.0:
-                             sc.relax()
-                             # Should we log? Maybe too verbose if checking every 0.1s
-                             # Only log once if needed, but sc.relax() is safe to call repeatedly (idempotent-ish)
+                        if time.time() - last_activity_time > 30.0:
+                             # If we haven't run the idle sequence yet
+                             if not has_idled:
+                                 if not is_moving.is_set():
+                                      logger.info("Idle Sequence: Palp Wiggle -> Relax")
+                                      is_moving.set()
+                                      try:
+                                          anim.palp_wiggle()
+                                      except Exception as e:
+                                          logger.error(f"Idle Anim Error: {e}")
+                                      finally:
+                                          is_moving.clear()
+                                      
+                                      # Wait 5 seconds in neutral before relaxing
+                                      time.sleep(5.0)
+                                      
+                                      # Relax logic
+                                      sc.relax()
+                                      has_idled = True # Mark as done so we don't loop
+                             else:
+                                  # If we accidentally woke up but haven't reset has_idled? 
+                                  # No, has_idled is reset on activity.
+                                  # Just ensure we stay relaxed if valid.
+                                  pass 
                         continue
 
                     volume = np.max(np.abs(chunk))
@@ -393,6 +442,7 @@ def main():
                             
                         if volume > THRESHOLD:
                             last_activity_time = time.time()
+                            has_idled = False
                             logger.info(f"Speech detected (Pre-roll: {len(preroll_buffer)} chunks)...")
                             leds.set_state(LEDState.LISTENING)
                             started = True

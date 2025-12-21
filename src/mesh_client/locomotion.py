@@ -10,7 +10,7 @@ logger = get_logger("mesh_locomotion")
 class LocomotionController:
     def __init__(self, servo_ctrl: ServoController):
         self.servo = servo_ctrl
-        self.body_height = -25
+        self.body_height = -45
         # Body and Leg geometry (from Freenove control.py)
         # Note: These values are specific to the Freenove Big Hexapod
         self.body_points = [
@@ -46,9 +46,9 @@ class LocomotionController:
         
         candidates = [
             os.path.join(cwd, "point.txt"),
-            os.path.join(os.path.dirname(os.path.abspath(__file__)), "point.txt"), # Check where this python file is
+            os.path.join(os.path.dirname(os.path.abspath(__file__)), "point.txt"), # src/mesh_client/
+            os.path.join(os.path.dirname(os.path.abspath(__file__)), "..", "..", "point.txt"), # REPO ROOT (mesh-robot/)
             os.path.join(home, "point.txt"),
-            # Check Freenove default location if user just cloned it
             os.path.join(home, "Freenove_Big_Hexapod_Kit/Code/Server/point.txt")
         ]
 
