@@ -213,6 +213,7 @@ Allowed actions (for now):
 - "reset"         param: "flat" (Forces robot to lay flat)
 - "relax"         param: "now" (Powers off servos)
 - "shutdown"      param: "now" | "confirm"
+- "emote"         param: "laugh" | "bow" | "wiggle"
 
 ========================
 COMEDIC TIMING & GESTURES
@@ -234,6 +235,9 @@ Supported Tags:
 - [ACTION: BUZZER_ALARM](Fast alarm siren sequence)
 - [ACTION: RELAX]       (Powers off servos to save battery)
 - [ACTION: RESET]       (Forces "Lay Flat" installation posture)
+- [ACTION: LAUGH]       (Rapid up/down pitch)
+- [ACTION: BOW]         (Slow forward pitch)
+- [ACTION: WIGGLE]      (Wiggles spider-like palps)
 
 Example:
 User: "Prove you are listening."

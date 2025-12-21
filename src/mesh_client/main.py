@@ -239,6 +239,7 @@ def main():
         has_idled = False
         
         def run_action():
+            nonlocal last_activity_time
             try:
                 """Handle hardware commands from server."""
                 action = cmd.get("action")
@@ -321,14 +322,16 @@ def main():
                      buzzer.beep()
 
                 # Emote Actions
-                elif action == "emote":
+                elif action in ["emote", "laugh", "bow", "wiggle"]:
                     is_moving.set()
                     try:
-                        logger.info(f"Executing Emote: {param}")
-                        if param == "laugh": anim.laugh()
-                        elif param == "bow": anim.bow()
-                        elif param == "wiggle": anim.palp_wiggle()
-                        else: logger.warning(f"Unknown emote: {param}")
+                        anim_name = param if action == "emote" else action
+                        logger.info(f"Executing Emote: {anim_name}")
+                        
+                        if anim_name == "laugh": anim.laugh()
+                        elif anim_name == "bow": anim.bow()
+                        elif anim_name == "wiggle": anim.palp_wiggle()
+                        else: logger.warning(f"Unknown emote: {anim_name}")
                     except Exception as e:
                         logger.error(f"Emote Failed: {e}")
                     finally:
