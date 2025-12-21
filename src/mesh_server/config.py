@@ -304,13 +304,13 @@ You must follow these rules for every user message.
 # WHISPER HALLUCINATION FILTERS
 # Common phrases generated during silence
 PHANTOM_PHRASES = [
-    "thank you", "thanks", "thanks for watching", "watching",
-    "see you in the next one",
-    "please subscribe", "subtitles by", "amara.org", 
-    "copyright", "all rights reserved"
+    "thanks for watching", "see you in the next one", "like and subscribe", 
+    "subtitles by", "amara.org", "copyright", "all rights reserved",
+    "thank you for watching", "visit our website", "buzzsprout",
+    "bye bye", "bye.", "thank you bye"
 ]
 
-
+# AUDIO TAGS - ElevenLabs ONLY - appends to SYSTEM_PROMPT when using ElevenLabs
 AUDIO_TAGS_INSTRUCTIONS = """
 ========================
 AUDIO TAGS (EXPRESSIVE SPEECH)
