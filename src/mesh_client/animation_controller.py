@@ -181,6 +181,73 @@ class AnimationController:
             self.head.look_neutral()
         self.is_animating = False
 
+    def slow_boot_stand(self):
+        """
+        MechWarrior Style Boot: Legs extend one by one.
+        Assumes robot starts FLAT.
+        """
+        if not self.anim_lock.acquire(blocking=False):
+             logger.warning("Animation Busy: Skipping Boot Stand.")
+             return
+             
+        logger.info("Animation: Slow Boot Stand")
+        self.is_animating = True
+        try:
+            # 1. Start from Tucked & Flat State
+            # "Tucked" means legs are pulled in towards body (X/Y scaled down)
+            # "Flat" means legs are lifted relative to body (Z offset)
+            
+            flat_z_offset = 60 # Legs 60mm closer to body (legs up/body down)
+            tuck_scale = 0.6   # Legs retracted to 60% of neutral extension
+            
+            # Get Standard Neutral Points
+            self.loco.reset_posture()
+            neutral_points = copy.deepcopy(self.loco.body_points)
+            
+            # Apply offsets to create "Tucked Start" state
+            current = copy.deepcopy(neutral_points)
+            for i in range(6):
+                current[i][2] += flat_z_offset      # Flat
+                current[i][0] *= tuck_scale         # Tucked X
+                current[i][1] *= tuck_scale         # Tucked Y
+            
+            # Snap to this tucked state first
+            self.loco.transform_coordinates(current)
+            self.loco.set_leg_angles()
+            time.sleep(0.5)
+            
+            # 2. Sequential Expansion
+            # Order: Rear-Right (2), Rear-Left (3), Mid-Right (1), Mid-Left (4), Front-Right (0), Front-Left (5)
+            boot_order = [2, 3, 1, 4, 0, 5] 
+            
+            steps = 25 # Slightly smoother/slower expansion
+            
+            for leg in boot_order:
+                start_x, start_y, start_z = current[leg]
+                target_x, target_y, target_z = neutral_points[leg]
+                
+                for s in range(steps):
+                   progress = (s + 1) / steps
+                   # Linear Interpolation for all 3 axes (Unfurl)
+                   current[leg][0] = start_x + (target_x - start_x) * progress
+                   current[leg][1] = start_y + (target_y - start_y) * progress
+                   current[leg][2] = start_z + (target_z - start_z) * progress
+                   
+                   self.loco.transform_coordinates(current)
+                   self.loco.set_leg_angles()
+                   time.sleep(0.04)
+                
+                # Mechanical settling pause
+                time.sleep(0.15)
+                
+            # Final settle
+            time.sleep(0.5)
+            self.reset_neutral()
+
+        finally:
+            self.is_animating = False
+            self.anim_lock.release()
+
     def laugh(self):
         """Rapid pitch changes."""
         if not self.anim_lock.acquire(blocking=False):

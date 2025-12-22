@@ -223,10 +223,34 @@ def main():
     
     last_activity_time = time.time()
     
-    leds.set_state(LEDState.THINKING)
-    head.look_up(10)
-    # buzzer.beep(0.25) # Startup Beep (Disabled)
     logger.info("Hardware Initialized.")
+
+    def boot_sequence():
+        """Choreographed startup: Audio + Slow Stand"""
+        startup_wav = os.path.join(os.path.dirname(__file__), "startup.wav")
+        if os.path.exists(startup_wav):
+            logger.info("Playing Startup Audio...")
+            try:
+                with open(startup_wav, "rb") as f:
+                    wav_data = f.read()
+                # Play in thread so we can move simultaneously
+                threading.Thread(target=play_wav, args=(wav_data,), daemon=True).start()
+            except Exception as e:
+                logger.error(f"Startup Audio Failed: {e}")
+        
+        # Wait for "Reactor... Online..." (6 seconds)
+        time.sleep(6.0)
+
+        # Trigger the MechWarrior Stand
+        anim.slow_boot_stand()
+
+    # Run Boot Sequence
+    leds.set_state(LEDState.THINKING)
+    # buzzer.beep(0.25) # Startup Beep (Disabled)
+    
+    # Run in thread so the main loop can start listening immediately?
+    # No, we want to block "Listening" until he's up.
+    boot_sequence()
 
     # Movement State Flag
     is_moving = threading.Event()
