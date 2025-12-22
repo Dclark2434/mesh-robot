@@ -65,17 +65,27 @@ async def interact_generator(audio_bytes, telemetry=None):
     # We add it as a system note inside the user message
     if telemetry:
         try:
-            # telemetry is a JSON string "{\"servo_voltage\": ...}"
+            # Parse Telemetry
             t_data = json.loads(telemetry)
-            # Format minimal string for LLM
-            t_str = (
-                f"[SYSTEM DATA: "
-                f"Servo={t_data.get('servo_voltage')}V ({t_data.get('servo_percent')}%), "
-                f"Logic={t_data.get('logic_voltage')}V ({t_data.get('logic_percent')}%)"
-                f"]"
-            )
-            final_prompt = f"{t_str} {final_prompt}"
-            logger.info(f"[CONTEXT] Injected: {t_str}")
+            
+            # Smart Injection: Only inject if LOW or relevant keyword in prompt
+            servo_p = t_data.get('servo_percent', 100)
+            logic_p = t_data.get('logic_percent', 100)
+            
+            is_low = (servo_p < 30) or (logic_p < 30)
+            is_relevant = any(kw in clean_input for kw in ['battery', 'power', 'charge', 'status', 'level', 'voltage'])
+            
+            if is_low or is_relevant:
+                t_str = (
+                    f"[SYSTEM DATA: "
+                    f"Servo={t_data.get('servo_voltage')}V ({servo_p}%), "
+                    f"Logic={t_data.get('logic_voltage')}V ({logic_p}%)"
+                    f"]"
+                )
+                final_prompt = f"{t_str} {final_prompt}"
+                logger.info(f"[CONTEXT] Injected: {t_str}")
+            else:
+                logger.debug("[CONTEXT] Telemetry available but not relevant (Healthy & not asked).")
         except Exception as e:
             logger.warning(f"Telemetry parse error: {e}")
             pass
