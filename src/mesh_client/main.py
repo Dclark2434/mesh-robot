@@ -227,6 +227,17 @@ def main():
 
     def boot_sequence():
         """Choreographed startup: Audio + Slow Stand"""
+        start_time = time.time()
+        
+        # Ensure Yellow "Thinking" State
+        leds.set_state(LEDState.THINKING)
+        
+        # 1. IMMEDIATE: Snap to Tucked State (Before Audio starts)
+        try:
+            anim.assume_tucked_pose()
+        except Exception as e:
+            logger.error(f"Failed to assume tucked pose: {e}")
+
         startup_wav = os.path.join(os.path.dirname(__file__), "startup.wav")
         if os.path.exists(startup_wav):
             logger.info("Playing Startup Audio...")
@@ -238,18 +249,32 @@ def main():
             except Exception as e:
                 logger.error(f"Startup Audio Failed: {e}")
         
-        # Wait for "Reactor... Online..." (6 seconds)
+        # Wait for "Gyro... Online..." (6 seconds)
         time.sleep(6.0)
 
-        # Trigger the MechWarrior Stand
+        # Trigger the MechWarrior Stand (~8.9 seconds)
         anim.slow_boot_stand()
+        
+        # HEAD SYNC: Pilot Quip at 15.25s
+        elapsed_so_far = time.time() - start_time
+        time_to_quip = 15.25 - elapsed_so_far
+        if time_to_quip > 0:
+            time.sleep(time_to_quip)
+        
+        # Look Up (Head Tilt +20 degrees)
+        try:
+            head.look_at(0, 20)
+        except Exception as e:
+            logger.warning(f"Head Lift Failed: {e}")
+
+        # Padding: Block for full 21.0s (Audio Duration ~20.5s)
+        elapsed = time.time() - start_time
+        remaining = 21.0 - elapsed
+        if remaining > 0:
+            logger.info(f"Boot Sequence: Waiting {remaining:.2f}s for audio completion...")
+            time.sleep(remaining)
 
     # Run Boot Sequence
-    leds.set_state(LEDState.THINKING)
-    # buzzer.beep(0.25) # Startup Beep (Disabled)
-    
-    # Run in thread so the main loop can start listening immediately?
-    # No, we want to block "Listening" until he's up.
     boot_sequence()
 
     # Movement State Flag

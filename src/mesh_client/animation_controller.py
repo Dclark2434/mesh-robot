@@ -191,50 +191,101 @@ class AnimationController:
              return
              
         logger.info("Animation: Slow Boot Stand")
-        self.is_animating = True
-        try:
-            # 1. Start from Tucked & Flat State
-            # "Tucked" means legs are pulled in towards body (X/Y scaled down)
-            # "Flat" means legs are lifted relative to body (Z offset)
+    def assume_tucked_pose(self):
+        """Immediately snaps to the 'Tucked/Flat' storage posture."""
+        with self.lock:
+            flat_z_offset = 60 
+            tuck_scale = 0.7   # Retraction scale to ensure clearance during bootng base
             
-            flat_z_offset = 60 # Legs 60mm closer to body (legs up/body down)
-            tuck_scale = 0.6   # Legs retracted to 60% of neutral extension
-            
-            # Get Standard Neutral Points
+            # Reset calculating base
             self.loco.reset_posture()
             neutral_points = copy.deepcopy(self.loco.body_points)
             
-            # Apply offsets to create "Tucked Start" state
+            # Apply offsets
             current = copy.deepcopy(neutral_points)
             for i in range(6):
-                current[i][2] += flat_z_offset      # Flat
-                current[i][0] *= tuck_scale         # Tucked X
-                current[i][1] *= tuck_scale         # Tucked Y
+                current[i][2] += flat_z_offset      
+                current[i][0] *= tuck_scale         
+                current[i][1] *= tuck_scale         
             
-            # Snap to this tucked state first
+            # Snap (Fast)
             self.loco.transform_coordinates(current)
             self.loco.set_leg_angles()
-            time.sleep(0.5)
+            return current, neutral_points # Return state for main loop
+
+    def slow_boot_stand(self):
+        """
+        Animating the MechWarrior Startup sequences.
+        Requires assume_tucked_pose() to be called beforehand for smooth transition.
+        """
+        logger.info("Animation: Slow Boot Stand")
+        self.is_animating = True
+        try:
+            # Re-calculate state (idempotent if already tucked)
+            current, neutral_points = self.assume_tucked_pose()
+            time.sleep(0.5) # Stabilize after snap if it wasn't already done
             
             # 2. Sequential Expansion
-            # Order: Rear-Right (2), Rear-Left (3), Mid-Right (1), Mid-Left (4), Front-Right (0), Front-Left (5)
-            boot_order = [2, 3, 1, 4, 0, 5] 
+            # User Order: Fronts (Faces up) -> Rears -> Mids
+            # Front-Right(0), Front-Left(5), Rear-Right(2), Rear-Left(3), Mid-Right(1), Mid-Left(4)
+            boot_order = [0, 5, 2, 3, 1, 4] 
             
-            steps = 25 # Slightly smoother/slower expansion
+            steps = 30 # Slower, smoother
+            lift_height = 40 # Arc height in mm to avoid dragging
             
             for leg in boot_order:
                 start_x, start_y, start_z = current[leg]
                 target_x, target_y, target_z = neutral_points[leg]
                 
+                # ARC MOVEMENT
                 for s in range(steps):
                    progress = (s + 1) / steps
-                   # Linear Interpolation for all 3 axes (Unfurl)
-                   current[leg][0] = start_x + (target_x - start_x) * progress
-                   current[leg][1] = start_y + (target_y - start_y) * progress
-                   current[leg][2] = start_z + (target_z - start_z) * progress
+                   
+                   # Linear Base
+                   current_x = start_x + (target_x - start_x) * progress
+                   current_y = start_y + (target_y - start_y) * progress
+                   base_z = start_z + (target_z - start_z) * progress
+                   
+                   # Arc interpolation: Sin wave (0 at start, 1 at mid, 0 at end)
+                   arc = math.sin(progress * math.pi) * lift_height
+                   
+                   # Apply lift by subtracting arc value from Z (Moving closer to mounting point)
+                   current_z = base_z - arc 
+
+                   current[leg][0] = current_x
+                   current[leg][1] = current_y
+                   current[leg][2] = current_z
                    
                    self.loco.transform_coordinates(current)
                    self.loco.set_leg_angles()
+                   time.sleep(0.04)
+                
+                # IMPACT / HEAVY SETTLE
+                # Simulate chassis weight compressing the suspension upon landing
+                
+                # 1. LAND
+                # Current loop ends at target (neutral).
+                
+                # 2. COMPRESS (Gravity takes over, leg 'buckles' slightly under weight)
+                # Z increases = Leg moves UP relative to body / Body drops
+                compression_depth = 5 # mm
+                
+                current[leg][2] = target_z + compression_depth
+                self.loco.transform_coordinates(current)
+                self.loco.set_leg_angles()
+                time.sleep(0.05) # Fast 'Thud'
+                
+                # 3. REBOUND (Hydraulics stabilize)
+                # Return to neutral Z
+                current[leg][2] = target_z
+                self.loco.transform_coordinates(current)
+                self.loco.set_leg_angles()
+                time.sleep(0.15) # Smooth settle
+
+        except Exception as e:
+            logger.error(f"Boot Anim Error: {e}")
+        finally:
+            self.is_animating = False
                    time.sleep(0.04)
                 
                 # Mechanical settling pause
