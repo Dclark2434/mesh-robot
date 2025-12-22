@@ -225,7 +225,7 @@ def main():
     
     leds.set_state(LEDState.THINKING)
     head.look_up(10)
-    buzzer.beep(0.25) # Startup Beep
+    # buzzer.beep(0.25) # Startup Beep (Disabled)
     logger.info("Hardware Initialized.")
 
     # Movement State Flag
@@ -518,7 +518,7 @@ def main():
                         except requests.exceptions.Timeout:
                             logger.error("Server Timed Out (10s)")
                             leds.set_state(LEDState.ERROR)
-                            buzzer.warn()
+                            # buzzer.warn() (Disabled)
                             time.sleep(1)
                             leds.set_state(LEDState.IDLE)
                         except Exception as e:
