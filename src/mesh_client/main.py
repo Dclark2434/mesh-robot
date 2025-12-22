@@ -369,7 +369,8 @@ def main():
             # but above the noise floor.
             # 5x was way too aggressive (0.05 -> 0.25).
             # New formula: Noise Floor * 1.5 + 0.02 buffer
-            calculated_threshold = max(0.04, min(noise_floor * 1.5 + 0.02, 0.4))
+            # User Hard Cap: 0.12 (prevents it from ever getting deaf)
+            calculated_threshold = max(0.04, min(noise_floor * 1.5 + 0.02, 0.12))
             
             # If user manually set MESH_THRESHOLD in env, respect it? 
             # Ideally yes, but 0.2 default is problematic. 
