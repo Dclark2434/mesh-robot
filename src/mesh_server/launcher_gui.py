@@ -103,7 +103,8 @@ class MeshLauncher(ctk.CTk):
         
         voice_sel = self.voice_var.get()
         use_eleven = str(voice_sel == "ElevenLabs")
-        use_f5 = str(voice_sel == "F5-TTS")
+        # If ElevenLabs is selected, we default fallback to F5 (User Request)
+        use_f5 = str(voice_sel == "F5-TTS" or voice_sel == "ElevenLabs")
         # XTTS is implied by both being false in current logic, but let's be explicit in saving what drives config.py logic
         
         eleven_key = self.eleven_api_entry.get()
