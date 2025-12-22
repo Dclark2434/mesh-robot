@@ -11,6 +11,7 @@ import uuid
 import re
 import requests
 import json
+import wave 
 
 from mesh_common.logging import get_logger
 from mesh_server import config
@@ -33,37 +34,20 @@ def suppress_output():
             sys.stdout = old_stdout
             sys.stderr = old_stderr
 
-def process_audio_fx(input_file):
-    output_file = input_file.replace(".wav", "_fx.wav")
-    cmd = (
-        f'sox {input_file} -b 16 {output_file} '
-        'overdrive 5 sinc 60-7000 reverb 10 50 20 gain -2'
-    )
-    try:
-        subprocess.run(cmd, shell=True, check=True, stderr=subprocess.DEVNULL)
-        with open(output_file, "rb") as f:
-            audio_data = f.read()
-        return audio_data
-    except Exception as e:
-        logger.error(f"Sound FX processing Error: {e}")
-        return None
-    finally:
-        if os.path.exists(input_file): os.remove(input_file)
-        if os.path.exists(output_file): os.remove(output_file)
-
 def generate_elevenlabs_audio(text, output_file):
     """
     Generates audio using ElevenLabs API.
-    Returns True if successful, False otherwise.
+    Requests raw PCM (16-bit, 24kHz) and wraps it in a WAV container.
     """
     if not config.ELEVENLABS_API_KEY or not config.ELEVENLABS_VOICE_ID:
         logger.error("ElevenLabs API Key or Voice ID missing.")
         return False
 
-    url = f"https://api.elevenlabs.io/v1/text-to-speech/{config.ELEVENLABS_VOICE_ID}"
+    # Request PCM 24kHz to avoid mp3 decoding issues
+    url = f"https://api.elevenlabs.io/v1/text-to-speech/{config.ELEVENLABS_VOICE_ID}?output_format=pcm_24000"
     
     headers = {
-        "Accept": "audio/mpeg",
+        "Accept": "audio/pcm",
         "Content-Type": "application/json",
         "xi-api-key": config.ELEVENLABS_API_KEY
     }
@@ -80,8 +64,12 @@ def generate_elevenlabs_audio(text, output_file):
     try:
         response = requests.post(url, json=data, headers=headers)
         if response.status_code == 200:
-            with open(output_file, 'wb') as f:
-                f.write(response.content)
+            # Wrap Raw PCM in WAV Container
+            with wave.open(output_file, 'wb') as wav_file:
+                wav_file.setnchannels(1)     # Mono
+                wav_file.setsampwidth(2)     # 16-bit (2 bytes)
+                wav_file.setframerate(24000) # 24kHz
+                wav_file.writeframes(response.content)
             return True
         else:
             logger.warning(f"ElevenLabs API Error: {response.status_code} - {response.text}")
@@ -125,17 +113,10 @@ logger.info(f"MESH API Online on {device.upper()}")
 
 def speak_generator(text_to_speak):
     # Clean text
-    # Clean text
     clean_text = text_to_speak.replace("[CUE: GREEN]", "").replace("[CUE: FLASHING]", "").replace("[CUE: ON]", "")
     clean_text = clean_text.replace("*", "").replace('"', '').strip()
     
-    # If NOT using ElevenLabs, or if we need to clean tags for fallback (we'll check config later, but
-    # it's safer to not clean here if we want to support tags.
-    # Actually, we should only clean tags just before sending to local TTS.
-    # But `speak_generator` splits sentences. If we split "[laughs] words", one sentence is "[laughs] words".
-    # ElevenLabs handles that. Local TTS needs it removed.
-    
-    # Let's clean it ONLY if USE_ELEVENLABS is False.
+    # If NOT using ElevenLabs, clean tags (ElevenLabs handles them, local TTS doesn't)
     if not config.USE_ELEVENLABS:
         clean_text = re.sub(r'\[.*?\]', '', clean_text)
     
@@ -168,7 +149,7 @@ def speak_generator(text_to_speak):
             
             # If ElevenLabs was not used or failed, use local engine
             if not use_elevenlabs_success:
-                # Clean tags for local fallback (ElevenLabs uses them, but local engines will read them)
+                # Clean tags for local fallback
                 local_sentence = re.sub(r'\[.*?\]', '', sentence).strip()
                 if not local_sentence: continue # Skip if only tag remained
 
@@ -194,15 +175,23 @@ def speak_generator(text_to_speak):
                             file_path=temp_wav,
                             speed=1.0
                         )
-            processed_bytes = process_audio_fx(temp_wav)
-            if processed_bytes:
+            
+            # Direct Yield (No FX, No SoX)
+            if os.path.exists(temp_wav):
                 if first_chunk_timer:
                     ttfb = time.time() - first_chunk_timer
                     logger.info(f"[LATENCY] TTS (Time to First Byte): {ttfb:.2f}s")
                     first_chunk_timer = None # Only log once
-                yield processed_bytes
+                
+                with open(temp_wav, "rb") as f:
+                    yield f.read()
+                
+                # Cleanup
+                os.remove(temp_wav)
+
         except Exception as e:
             logger.error(f"TTS Error: {e}")
+            if os.path.exists(temp_wav): os.remove(temp_wav)
 
 def transcribe(audio_buffer):
     """Wrapper for STT transcription"""

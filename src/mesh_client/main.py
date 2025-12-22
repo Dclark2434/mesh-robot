@@ -367,9 +367,9 @@ def main():
             # Adaptive Threshold Logic:
             # We want to be sensitive enough to pick up speech (which might be quiet)
             # but above the noise floor.
-            # 0.2 is often too high for standard mics.
-            # Let's use 5x noise floor, bit clamped to a reasonable range [0.08, 0.4]
-            calculated_threshold = max(0.08, min(noise_floor * 5.0, 0.4))
+            # 5x was way too aggressive (0.05 -> 0.25).
+            # New formula: Noise Floor * 1.5 + 0.02 buffer
+            calculated_threshold = max(0.04, min(noise_floor * 1.5 + 0.02, 0.4))
             
             # If user manually set MESH_THRESHOLD in env, respect it? 
             # Ideally yes, but 0.2 default is problematic. 
