@@ -54,7 +54,7 @@ def generate_elevenlabs_audio(text, output_file):
     
     data = {
         "text": text,
-        "model_id": "eleven_turbo_v2_5", # Low latency model
+        "model_id": "eleven_v3",
         "voice_settings": {
             "stability": 0.5,
             "similarity_boost": 0.75
