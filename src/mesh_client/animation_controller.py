@@ -195,7 +195,7 @@ class AnimationController:
         """Immediately snaps to the 'Tucked/Flat' storage posture."""
         with self.lock:
             flat_z_offset = 60 
-            tuck_scale = 0.7   # Retraction scale to ensure clearance during bootng base
+            tuck_scale = 0.7   # Retraction scale to ensure clearance during boot
             
             # Reset calculating base
             self.loco.reset_posture()
@@ -286,18 +286,6 @@ class AnimationController:
             logger.error(f"Boot Anim Error: {e}")
         finally:
             self.is_animating = False
-                   time.sleep(0.04)
-                
-                # Mechanical settling pause
-                time.sleep(0.15)
-                
-            # Final settle
-            time.sleep(0.5)
-            self.reset_neutral()
-
-        finally:
-            self.is_animating = False
-            self.anim_lock.release()
 
     def laugh(self):
         """Rapid pitch changes."""
