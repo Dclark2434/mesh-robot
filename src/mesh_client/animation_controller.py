@@ -233,8 +233,8 @@ class AnimationController:
             # Parameters
             steps = 40
             strike_height = 80          # Lift
-            high_stance_z = -55         # Taller body during boot
-            neutral_stance_z = -35      # Final settle height
+            high_stance_z = -65         # Exaggerated Tall Stance 
+            neutral_stance_z = -30      # Lower Settle (Squat)
             
             # Helper to animate a group
             def animate_group(legs, target_z_base):
