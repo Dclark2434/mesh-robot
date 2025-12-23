@@ -225,112 +225,108 @@ class AnimationController:
             current, neutral_points = self.assume_tucked_pose()
             time.sleep(0.5) # Stabilize after snap if it wasn't already done
             
-            # 2. Fluid Overlapping Expansion
-            # User Order: Fronts -> Rears -> Mids
-            boot_order = [0, 5, 2, 3, 1, 4] 
+            # 2. BATCHED DEPLOYMENT (Outers -> Mids -> Settle)
+            # Groups
+            group_outers = [0, 5, 2, 3] # Front/Rear
+            group_mids = [1, 4]         # Middle
             
-            # ANIMATION PARAMETERS
-            frames_per_leg = 40     # Total frames for one leg (Lift, Hover, Strike, Recoil)
-            stagger = 20            # Start next leg halfway through (Overlap)
-            strike_height = 80      # High menace lift
-            compression_depth = 5   # Recoil depth
-            delay_per_frame = 0.04  # Speed control
+            # Parameters
+            steps = 40
+            strike_height = 80          # Lift
+            high_stance_z = -55         # Taller body during boot
+            neutral_stance_z = -35      # Final settle height
             
-            # Calculate Total Animation Frames
-            # Last leg starts at index 5 * stagger
-            total_frames = (len(boot_order) - 1) * stagger + frames_per_leg + 10 # Buffer
-            
-            # Snapshots for interpolation
-            leg_starts = {}
-            for leg in boot_order:
-                # Store tuple: (start_x, start_y, start_z)
-                leg_starts[leg] = (current[leg][0], current[leg][1], current[leg][2])
-
-            # MAIN ANIMATION LOOP
-            for f in range(total_frames):
-                if not self.is_animating: break
+            # Helper to animate a group
+            def animate_group(legs, target_z_base):
+                # Snapshot starts
+                leg_starts = {}
+                for leg in legs:
+                    leg_starts[leg] = (current[leg][0], current[leg][1], current[leg][2])
                 
-                legs_moved = False
-                
-                for i, leg in enumerate(boot_order):
-                    start_frame = i * stagger
-                    local_f = f - start_frame
+                # Loop
+                for s in range(steps):
+                    if not self.is_animating: break
+                    progress = (s + 1) / steps
                     
-                    # If this leg is active
-                    if 0 <= local_f < frames_per_leg:
-                        legs_moved = True
-                        progress = local_f / (frames_per_leg - 10) # Normalize 0-1 for Movement phase (30 frames)
-                        recoil_phase = False
+                    for leg in legs:
+                        sx, sy, sz = leg_starts[leg]
+                        tx, ty, _ = neutral_points[leg] # Use neutral X/Y
+                        tz_base = target_z_base         # Use Override Z
                         
-                        if progress > 1.0:
-                            # Recoil Phase (Frames 30-40)
-                            recoil_phase = True
-                            recoil_prog = (local_f - 30) / 10.0
+                        # Interpolate X/Y
+                        cx = sx + (tx - sx) * progress
+                        cy = sy + (ty - sy) * progress
                         
-                        start_x, start_y, start_z = leg_starts[leg]
-                        target_x, target_y, target_z = neutral_points[leg]
+                        # Z Trajectory (Spider Strike)
+                        base_z_interp = sz + (tz_base - sz) * progress
                         
-                        if not recoil_phase:
-                            # MOVEMENT PHASE (0-30 frames)
-                            # Clip progress just in case
-                            p = min(1.0, max(0.0, progress))
-                            
-                            # X/Y Linear
-                            curr_x = start_x + (target_x - start_x) * p
-                            curr_y = start_y + (target_y - start_y) * p
-                            
-                            # Z Trajectory (Spider Strike)
-                            base_z = start_z + (target_z - start_z) * p
-                            
-                            z_offset = 0
-                            if p < 0.2: # Rapid Rise
-                                z_offset = strike_height * (p / 0.2) # POSITIVE = UP
-                            elif p < 0.7: # Menacing Hover
-                                z_offset = strike_height
-                            else: # Strike Down (0.7 -> 1.0)
-                                drop_p = (p - 0.7) / 0.3
-                                z_offset = strike_height * (1.0 - drop_p)
-                            
-                            # Hover Override Logic (Ignore dragging start Z)
-                            # We want absolute height during hover
-                            if 0.2 < p < 0.8:
-                                # Target Z is ground (-35). We want Ground + 80 = +45 (High)
-                                curr_z = target_z + z_offset
-                            else:
-                                curr_z = base_z + z_offset
-                                
-                            # Final frame of movement: Set exact target to be sure
-                            if local_f == 29:
-                                curr_x, curr_y, curr_z = target_x, target_y, target_z
-                                
+                        z_offset = 0
+                        if progress < 0.2: # Rapid Rise
+                            z_offset = strike_height * (progress / 0.2)
+                        elif progress < 0.7: # Menacing Hover
+                            z_offset = strike_height
+                        else: # Strike Down
+                            drop_p = (progress - 0.7) / 0.3
+                            z_offset = strike_height * (1.0 - drop_p)
+                        
+                        # Hover Override (Absolute Height relative to target ground)
+                        if 0.2 < progress < 0.8:
+                            cz = tz_base + z_offset
                         else:
-                            # RECOIL PHASE (30-40 frames)
-                            # Compress then Rebound
-                            # 0.0 -> 0.3: Compress
-                            # 0.3 -> 1.0: Rebound
-                            curr_x, curr_y = target_x, target_y
-                            
-                            if recoil_prog < 0.3:
-                                # Compressing (Down/Z+)
-                                factor = recoil_prog / 0.3
-                                curr_z = target_z + (compression_depth * factor)
-                            else:
-                                # Rebounding (Up/Z-)
-                                factor = (recoil_prog - 0.3) / 0.7
-                                curr_z = target_z + (compression_depth * (1.0 - factor))
+                            cz = base_z_interp + z_offset
                         
-                        # Apply
-                        current[leg][0] = curr_x
-                        current[leg][1] = curr_y
-                        current[leg][2] = curr_z
-                
-                # Update Hardware once per frame
-                if legs_moved:
+                        current[leg][0] = cx
+                        current[leg][1] = cy
+                        current[leg][2] = cz
+                    
                     self.loco.transform_coordinates(current)
                     self.loco.set_leg_angles()
+                    time.sleep(0.04)
                 
-                time.sleep(delay_per_frame)
-                
+                # Impact/Recoil Group
+                for i in range(5): # Compressor
+                    comp_depth = 5 * (i+1)/5
+                    for leg in legs:
+                        current[leg][2] = target_z_base + comp_depth
+                    self.loco.transform_coordinates(current)
+                    self.loco.set_leg_angles()
+                    time.sleep(0.02)
+                for i in range(10): # Rebound
+                    d = 5 * (1.0 - (i+1)/10)
+                    for leg in legs:
+                        current[leg][2] = target_z_base + d
+                    self.loco.transform_coordinates(current)
+                    self.loco.set_leg_angles()
+                    time.sleep(0.02)
+
+            # EXECUTE PHASES
+            
+            # Phase 1: Outers to High Stance
+            animate_group(group_outers, high_stance_z)
+            time.sleep(0.2)
+            
+            # Phase 2: Mids to High Stance
+            animate_group(group_mids, high_stance_z)
+            time.sleep(0.5)
+            
+            # Phase 3: Global Settle (High -> Neutral)
+            logger.info("Settle: Dropping to Neutral Stance")
+            for s in range(20):
+                progress = (s + 1) / 20
+                for leg in range(6):
+                    # Interp from High to Neutral
+                    # But wait, current is at High + 0 (recoiled).
+                    # Actually just linear interp current Z to neutral Z
+                    start_z_settle = high_stance_z
+                    target_z_settle = neutral_stance_z
+                    
+                    cz = start_z_settle + (target_z_settle - start_z_settle) * progress
+                    current[leg][2] = cz
+                    
+                self.loco.transform_coordinates(current)
+                self.loco.set_leg_angles()
+                time.sleep(0.05)
+
             # Final Ensure
             self.reset_neutral()
 
