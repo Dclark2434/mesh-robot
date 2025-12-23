@@ -190,6 +190,19 @@ class HeadController:
     def look_right(self, degrees=30):
         self.ctrl.set_angle(self.pan_channel, self.neutral_pan - degrees)
 
+    def look_at(self, pan_offset, tilt_offset):
+        """Moves head to specific offsets from neutral. Positive Tilt = UP, Positive Pan = LEFT."""
+        # Sanity check ranges
+        tilt_target = self.neutral_tilt + tilt_offset
+        pan_target = self.neutral_pan + pan_offset
+        
+        # Clamp loosely (servos usually 0-180)
+        tilt_target = max(30, min(150, tilt_target)) # Don't hit body (30)
+        pan_target = max(0, min(180, pan_target))
+        
+        self.ctrl.set_angle(self.pan_channel, pan_target)
+        self.ctrl.set_angle(self.tilt_channel, tilt_target)
+
 if __name__ == "__main__":
     sc = ServoController()
     hc = HeadController(sc)

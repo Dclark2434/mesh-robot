@@ -193,7 +193,7 @@ class AnimationController:
         logger.info("Animation: Slow Boot Stand")
     def assume_tucked_pose(self):
         """Immediately snaps to the 'Tucked/Flat' storage posture."""
-        with self.lock:
+        with self.anim_lock:
             flat_z_offset = 60 
             tuck_scale = 0.7   # Retraction scale to ensure clearance during boot
             
