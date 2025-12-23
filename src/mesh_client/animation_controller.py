@@ -195,7 +195,7 @@ class AnimationController:
         """Immediately snaps to the 'Tucked/Flat' storage posture."""
         with self.anim_lock:
             flat_z_offset = 60 
-            tuck_scale = 0.7   # Retraction scale to ensure clearance during boot
+            tuck_scale = 0.5   # Tight vertical "Crown" tuck (Safer clearance)
             
             # Reset calculating base
             self.loco.reset_posture()
@@ -225,67 +225,119 @@ class AnimationController:
             current, neutral_points = self.assume_tucked_pose()
             time.sleep(0.5) # Stabilize after snap if it wasn't already done
             
-            # 2. Sequential Expansion
-            # User Order: Fronts (Faces up) -> Rears -> Mids
-            # Front-Right(0), Front-Left(5), Rear-Right(2), Rear-Left(3), Mid-Right(1), Mid-Left(4)
+            # 2. Fluid Overlapping Expansion
+            # User Order: Fronts -> Rears -> Mids
             boot_order = [0, 5, 2, 3, 1, 4] 
             
-            steps = 30 # Slower, smoother
-            lift_height = 40 # Arc height in mm to avoid dragging
+            # ANIMATION PARAMETERS
+            frames_per_leg = 40     # Total frames for one leg (Lift, Hover, Strike, Recoil)
+            stagger = 20            # Start next leg halfway through (Overlap)
+            strike_height = 80      # High menace lift
+            compression_depth = 5   # Recoil depth
+            delay_per_frame = 0.04  # Speed control
             
+            # Calculate Total Animation Frames
+            # Last leg starts at index 5 * stagger
+            total_frames = (len(boot_order) - 1) * stagger + frames_per_leg + 10 # Buffer
+            
+            # Snapshots for interpolation
+            leg_starts = {}
             for leg in boot_order:
-                start_x, start_y, start_z = current[leg]
-                target_x, target_y, target_z = neutral_points[leg]
-                
-                # ARC MOVEMENT
-                for s in range(steps):
-                   progress = (s + 1) / steps
-                   
-                   # Linear Base
-                   current_x = start_x + (target_x - start_x) * progress
-                   current_y = start_y + (target_y - start_y) * progress
-                   base_z = start_z + (target_z - start_z) * progress
-                   
-                   # Arc interpolation: Sin wave (0 at start, 1 at mid, 0 at end)
-                   arc = math.sin(progress * math.pi) * lift_height
-                   
-                   # Apply lift by subtracting arc value from Z (Moving closer to mounting point)
-                   current_z = base_z - arc 
+                # Store tuple: (start_x, start_y, start_z)
+                leg_starts[leg] = (current[leg][0], current[leg][1], current[leg][2])
 
-                   current[leg][0] = current_x
-                   current[leg][1] = current_y
-                   current[leg][2] = current_z
-                   
-                   self.loco.transform_coordinates(current)
-                   self.loco.set_leg_angles()
-                   time.sleep(0.04)
+            # MAIN ANIMATION LOOP
+            for f in range(total_frames):
+                if not self.is_animating: break
                 
-                # IMPACT / HEAVY SETTLE
-                # Simulate chassis weight compressing the suspension upon landing
+                legs_moved = False
                 
-                # 1. LAND
-                # Current loop ends at target (neutral).
+                for i, leg in enumerate(boot_order):
+                    start_frame = i * stagger
+                    local_f = f - start_frame
+                    
+                    # If this leg is active
+                    if 0 <= local_f < frames_per_leg:
+                        legs_moved = True
+                        progress = local_f / (frames_per_leg - 10) # Normalize 0-1 for Movement phase (30 frames)
+                        recoil_phase = False
+                        
+                        if progress > 1.0:
+                            # Recoil Phase (Frames 30-40)
+                            recoil_phase = True
+                            recoil_prog = (local_f - 30) / 10.0
+                        
+                        start_x, start_y, start_z = leg_starts[leg]
+                        target_x, target_y, target_z = neutral_points[leg]
+                        
+                        if not recoil_phase:
+                            # MOVEMENT PHASE (0-30 frames)
+                            # Clip progress just in case
+                            p = min(1.0, max(0.0, progress))
+                            
+                            # X/Y Linear
+                            curr_x = start_x + (target_x - start_x) * p
+                            curr_y = start_y + (target_y - start_y) * p
+                            
+                            # Z Trajectory (Spider Strike)
+                            base_z = start_z + (target_z - start_z) * p
+                            
+                            z_offset = 0
+                            if p < 0.2: # Rapid Rise
+                                z_offset = -strike_height * (p / 0.2)
+                            elif p < 0.7: # Menacing Hover
+                                z_offset = -strike_height
+                            else: # Strike Down (0.7 -> 1.0)
+                                drop_p = (p - 0.7) / 0.3
+                                z_offset = -strike_height * (1.0 - drop_p)
+                            
+                            # Hover Override Logic (Ignore dragging start Z)
+                            if 0.2 < p < 0.8:
+                                curr_z = target_z + z_offset
+                            else:
+                                curr_z = base_z + z_offset
+                                
+                            # Final frame of movement: Set exact target to be sure
+                            if local_f == 29:
+                                curr_x, curr_y, curr_z = target_x, target_y, target_z
+                                
+                        else:
+                            # RECOIL PHASE (30-40 frames)
+                            # Compress then Rebound
+                            # 0.0 -> 0.3: Compress
+                            # 0.3 -> 1.0: Rebound
+                            curr_x, curr_y = target_x, target_y
+                            
+                            if recoil_prog < 0.3:
+                                # Compressing (Down/Z+)
+                                factor = recoil_prog / 0.3
+                                curr_z = target_z + (compression_depth * factor)
+                            else:
+                                # Rebounding (Up/Z-)
+                                factor = (recoil_prog - 0.3) / 0.7
+                                curr_z = target_z + (compression_depth * (1.0 - factor))
+                        
+                        # Apply
+                        current[leg][0] = curr_x
+                        current[leg][1] = curr_y
+                        current[leg][2] = curr_z
                 
-                # 2. COMPRESS (Gravity takes over, leg 'buckles' slightly under weight)
-                # Z increases = Leg moves UP relative to body / Body drops
-                compression_depth = 5 # mm
+                # Update Hardware once per frame
+                if legs_moved:
+                    self.loco.transform_coordinates(current)
+                    self.loco.set_leg_angles()
                 
-                current[leg][2] = target_z + compression_depth
-                self.loco.transform_coordinates(current)
-                self.loco.set_leg_angles()
-                time.sleep(0.05) # Fast 'Thud'
+                time.sleep(delay_per_frame)
                 
-                # 3. REBOUND (Hydraulics stabilize)
-                # Return to neutral Z
-                current[leg][2] = target_z
-                self.loco.transform_coordinates(current)
-                self.loco.set_leg_angles()
-                time.sleep(0.15) # Smooth settle
+            # Final Ensure
+            self.reset_neutral()
 
         except Exception as e:
             logger.error(f"Boot Anim Error: {e}")
         finally:
             self.is_animating = False
+
+
 
     def laugh(self):
         """Rapid pitch changes."""
