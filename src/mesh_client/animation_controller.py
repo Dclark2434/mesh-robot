@@ -284,15 +284,17 @@ class AnimationController:
                             
                             z_offset = 0
                             if p < 0.2: # Rapid Rise
-                                z_offset = -strike_height * (p / 0.2)
+                                z_offset = strike_height * (p / 0.2) # POSITIVE = UP
                             elif p < 0.7: # Menacing Hover
-                                z_offset = -strike_height
+                                z_offset = strike_height
                             else: # Strike Down (0.7 -> 1.0)
                                 drop_p = (p - 0.7) / 0.3
-                                z_offset = -strike_height * (1.0 - drop_p)
+                                z_offset = strike_height * (1.0 - drop_p)
                             
                             # Hover Override Logic (Ignore dragging start Z)
+                            # We want absolute height during hover
                             if 0.2 < p < 0.8:
+                                # Target Z is ground (-35). We want Ground + 80 = +45 (High)
                                 curr_z = target_z + z_offset
                             else:
                                 curr_z = base_z + z_offset
