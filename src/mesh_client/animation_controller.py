@@ -25,23 +25,14 @@ class AnimationController:
         duration: time in seconds.
         """
         start_points = copy.deepcopy(self.loco.body_points)
-        # Calculate target absolute points based on offsets relative to NEUTRAL
-        # Neutral is defined in Loco as standard body_points
-        # But wait, Loco stores CURRENT state in body_points.
-        # So we drift FROM current TO target? 
-        # Safety: We should probably interpolate relative to the CURRENT state.
-        
-        # Actually, simpler: Let's define animations as sequences of BODY POSTURES.
-        # But Loco.body_points are the coord system.
+        # Calculate target absolute points based on offsets relative to the neutral stance.
+        # The neutral stance is defined in the LocomotionController.
         
         delay = duration / steps
         
         for i in range(steps):
             progress = (i + 1) / steps
-            # Create a blended frame?
-            # This is complex to do generically for all 6 legs without a target state.
-            # Simplified approach: Just execute small incremental moves if we had a move_to(x,y,z).
-            # But Loco doesn't have a clean move_to_absolute yet.
+            # Implementation pending: requiring a robust move_to_absolute method in LocomotionController.
             pass
         
     def reset_neutral(self):
@@ -55,7 +46,6 @@ class AnimationController:
     def palp_wiggle(self):
         """
         Idle Animation: Sequential Spider Display.
-        See walkthrough.md for sequence details.
         """
         # Non-blocking acquire: If busy, SKIP the wiggle to avoid collision/spazzing.
         if not self.anim_lock.acquire(blocking=False):
@@ -181,16 +171,6 @@ class AnimationController:
             self.head.look_neutral()
         self.is_animating = False
 
-    def slow_boot_stand(self):
-        """
-        MechWarrior Style Boot: Legs extend one by one.
-        Assumes robot starts FLAT.
-        """
-        if not self.anim_lock.acquire(blocking=False):
-             logger.warning("Animation Busy: Skipping Boot Stand.")
-             return
-             
-        logger.info("Animation: Slow Boot Stand")
     def assume_tucked_pose(self):
         """Immediately snaps to the 'Tucked/Flat' storage posture."""
         with self.anim_lock:
@@ -314,9 +294,7 @@ class AnimationController:
             for s in range(20):
                 progress = (s + 1) / 20
                 for leg in range(6):
-                    # Interp from High to Neutral
-                    # But wait, current is at High + 0 (recoiled).
-                    # Actually just linear interp current Z to neutral Z
+                    # Interpolate from High to Neutral stance.
                     start_z_settle = high_stance_z
                     target_z_settle = neutral_stance_z
                     

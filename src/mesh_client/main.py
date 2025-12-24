@@ -130,7 +130,7 @@ def stream_audio_response(response: requests.Response, cmd_callback=None):
 
     for chunk in response.iter_content(chunk_size=4096): 
         if not chunk: continue
-        # logger.debug(f"Received stream chunk: {len(chunk)} bytes") # excessively verbose if working, but needed now
+        # logger.debug(f"Received stream chunk: {len(chunk)} bytes")
         buffer += chunk
         
         # 1. Scan for Commands manually (Regex can be flaky on binary)
@@ -414,17 +414,10 @@ def main():
             sd.wait()
             noise_floor = np.max(np.abs(rec)) * 2.0
             # Adaptive Threshold Logic:
-            # We want to be sensitive enough to pick up speech (which might be quiet)
-            # but above the noise floor.
-            # 5x was way too aggressive (0.05 -> 0.25).
-            # New formula: Noise Floor * 1.5 + 0.02 buffer
-            # User Hard Cap: 0.12 (prevents it from ever getting deaf)
+            # Set threshold relative to noise floor with a safety buffer: 1.5x Multiplier + 0.02 Offset.
+            # Hard Cap: 0.12 to ensure sensitivity.
+            # Prefer calibrated value unless it is critically low.
             calculated_threshold = max(0.04, min(noise_floor * 1.5 + 0.02, 0.12))
-            
-            # If user manually set MESH_THRESHOLD in env, respect it? 
-            # Ideally yes, but 0.2 default is problematic. 
-            # Let's only respect env var if it was explicitly set (hard to tell here easily without re-reading os.environ).
-            # For now, let's prefer our calibrated value UNLESS it's dangerously low.
             
             THRESHOLD = calculated_threshold
             logger.info(f"Calibration captured noise floor: {noise_floor:.4f}. Setting Threshold: {THRESHOLD:.4f}")
@@ -485,9 +478,6 @@ def main():
                                       sc.relax()
                                       has_idled = True # Mark as done so we don't loop
                              else:
-                                  # If we accidentally woke up but haven't reset has_idled? 
-                                  # No, has_idled is reset on activity.
-                                  # Just ensure we stay relaxed if valid.
                                   pass 
                         continue
 

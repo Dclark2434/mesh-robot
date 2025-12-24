@@ -105,8 +105,8 @@ def summarize_context(context_tokens, user_id):
     Used when context exceeds threshold to compress older history.
     """
     try:
-        # Use a character-consistent summarization prompt
-        # CRITICAL: Keep this factual, not conversational
+        # Use a character-consistent summarization prompt.
+        # Critical: Keep this factual, not conversational.
         summarize_prompt = (
             "Create a brief mission log entry. Facts only. "
             "What did Dustin ask about? What did we decide? "
@@ -141,8 +141,7 @@ def summarize_context(context_tokens, user_id):
 def think_gemini(prompt, user_id="dustin"):
     """
     Gemini implementation of the brain.
-    - Has massive context window (1M+ tokens), so we don't need complex summarization/pruning yet.
-    - We just persist the simple chat history.
+    Leverages large context window to persist full chat history without immediate pruning.
     """
     # Get memory
     if user_id not in SESSION_MEMORY:

@@ -68,7 +68,7 @@ class LocomotionController:
                 if "point.txt" in files:
                     found_path = os.path.join(root, "point.txt")
                     # Sanity check: is it the default one (all 140s)?
-                    # We'll take it anyway, better than nothing.
+                    # Proceeding with auto-discovered calibration file.
                     logger.info(f"Auto-discovered calibration file: {found_path}")
                     break
         
