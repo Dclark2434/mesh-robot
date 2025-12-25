@@ -7,6 +7,7 @@
 > [!WARNING]
 > **Status: Active Development**
 > This project provides the "Brain" and "Senses" for a physical hexapod robot. It is an evolving architecture, not a finished product.
+<img width="1024" height="1536" alt="edited hexapod" src="https://github.com/user-attachments/assets/cacb2021-0fb4-4f09-95fc-123475b88816" />
 
 M.E.S.H. is a "Brain" for Freenove Big Hexapod robots. It features a custom speech-to-speech pipeline, on-the-fly voice cloning, and a modular architecture designed for high-performance inference. This will only work with a Freenove Big Hexapod robot with the following components:
 
@@ -197,5 +198,6 @@ bash scripts/setup-autostart.sh
 ## License
 
 Distributed under the MIT License. See `LICENSE` for more information.
+
 
 
