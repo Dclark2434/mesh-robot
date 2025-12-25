@@ -36,6 +36,46 @@ async def add_process_time_header(request, call_next):
 # --- STATE ---
 USER_STATES = {}
 
+# Session Statistics
+SESSION_STATS = {
+    "stt": [],
+    "llm": [],
+    "ttfb": [],
+    "tts_tot": [],
+    "total": []
+}
+
+@app.on_event("shutdown")
+def print_latency_report():
+    """Prints a statistical report of session latency upon exit."""
+    from statistics import mean
+    
+    print("\n" + "="*60)
+    print(f"   M.E.S.H. SESSION LATENCY REPORT   ")
+    print("="*60)
+    
+    headers = ["Metric", "Count", "Avg (s)", "Min (s)", "Max (s)"]
+    row_fmt = "{:<15} | {:<5} | {:<7} | {:<7} | {:<7}"
+    print(row_fmt.format(*headers))
+    print("-" * 60)
+    
+    # Updated metric list with TTS Total
+    for metric in ["stt", "llm", "ttfb", "tts_tot", "total"]:
+        data = SESSION_STATS[metric]
+        if data:
+            row = [
+                metric.upper(),
+                len(data),
+                f"{mean(data):.2f}",
+                f"{min(data):.2f}",
+                f"{max(data):.2f}"
+            ]
+            print(row_fmt.format(*row))
+        else:
+            print(f"{metric.upper():<15} | 0     | N/A     | N/A     | N/A")
+            
+    print("="*60 + "\n")
+
 # --- STREAM LOGIC ---
 
 async def interact_generator(audio_bytes, telemetry=None):
@@ -43,10 +83,13 @@ async def interact_generator(audio_bytes, telemetry=None):
     audio_buffer = io.BytesIO(audio_bytes)
     
     # 1. Transcribe (In background thread!)
+    stt_start = time.time()
     user_text = await asyncio.to_thread(voice_engine.transcribe, audio_buffer)
+    stt_duration = time.time() - stt_start
     
     if user_text:
         logger.info(f"[HEARD] '{user_text}'")
+        SESSION_STATS["stt"].append(stt_duration)
 
     if not user_text:
         yield json.dumps({"status": "no_speech"}).encode()
@@ -66,7 +109,7 @@ async def interact_generator(audio_bytes, telemetry=None):
         parts = clean_input.partition(trigger_word)
         remaining_command = parts[2].strip(" .,?!")
         final_prompt = remaining_command
-
+        
     # INJECT TELEMETRY INTO PROMPT
     # We add it as a system note inside the user message
     if telemetry:
@@ -132,8 +175,12 @@ async def interact_generator(audio_bytes, telemetry=None):
         chunks = await asyncio.to_thread(get_all_chunks, "Powering down. Goodnight.")
         for chunk in chunks: yield chunk
         return
-
+    
+    llm_start = time.time()
     raw_response = await asyncio.to_thread(brain.think, final_prompt, user_id)
+    llm_duration = time.time() - llm_start
+    SESSION_STATS["llm"].append(llm_duration)
+    
     parsed = brain.robust_json_parse(raw_response)
     spoken_text = parsed.get("response", "Data error.")
     hardware_command = parsed.get("action", "none")
@@ -151,6 +198,9 @@ async def interact_generator(audio_bytes, telemetry=None):
     # Regex: (\[ACTION: [A-Z_]+\]) capturing group keeps the delimiter
     parts = re.split(r'(\[ACTION: [A-Z_]+\])', spoken_text)
     
+    ttfb_captured = False
+    tts_start_time = time.time()
+    
     for part in parts:
         if not part.strip(): continue
         
@@ -165,17 +215,24 @@ async def interact_generator(audio_bytes, telemetry=None):
             yield (cmd_payload + "\n").encode("utf-8")
         else:
             # It's speech
+            # We only track TTFB for the first speech chunk of the response
             for chunk in voice_engine.speak_generator(part):
+                if not ttfb_captured:
+                    ttfb = time.time() - tts_start_time
+                    SESSION_STATS["ttfb"].append(ttfb)
+                    ttfb_captured = True
                 yield chunk
+    
+    # Record Total TTS generation time (if we spoke)
+    if ttfb_captured:
+        tts_total_duration = time.time() - tts_start_time
+        SESSION_STATS["tts_tot"].append(tts_total_duration)
         
     # Reset attention span timer AFTER he finishes speaking/acting
     USER_STATES[user_id] = time.time()
-    logger.info(f"[LATENCY] Total Interaction Time: {time.time() - start_total:.2f}s")
-
-def vision_interaction_stream(image_bytes, prompt):
-    logger.info(f"User (Vision): {prompt}")
-    vision_response = brain.look(prompt, image_bytes)
-    yield from voice_engine.speak_generator(vision_response)
+    total_duration = time.time() - start_total
+    logger.info(f"[LATENCY] Total Interaction Time: {total_duration:.2f}s")
+    SESSION_STATS["total"].append(total_duration)
 
 # --- API ENDPOINTS ---
 

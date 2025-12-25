@@ -431,6 +431,10 @@ def main():
 
     logger.info("Listening... (Ctrl+C to exit)")
 
+    # Idle State Tracking
+    last_activity_time = time.time()
+    has_idled = False
+
     try:
         with sd.InputStream(samplerate=SAMPLE_RATE, channels=CHANNELS, callback=audio_callback):
             while True:
@@ -441,7 +445,31 @@ def main():
                         try: audio_queue.get_nowait()
                         except queue.Empty: break
                     time.sleep(0.1)
+                    # Update activity to prevent immediate idle trigger after move
+                    last_activity_time = time.time()
                     continue
+
+                # IDLE CHECK (Runs every loop)
+                # If no activity for 120s and we haven't idled yet
+                if (time.time() - last_activity_time > 120.0) and not has_idled:
+                    logger.info("Idle limit reached (120s). Triggering Palp Wiggle -> Relax.")
+                    is_moving.set()
+                    try:
+                        anim.palp_wiggle()
+                        # Wait 5 seconds in neutral before relaxing
+                        time.sleep(5.0)
+                        
+                        logger.info("Auto-Relaxing...")
+                        head.look_neutral()
+                        time.sleep(0.5)
+                        sc.relax()
+                        has_idled = True
+                    except Exception as e:
+                        logger.error(f"Idle Anim Error: {e}")
+                    finally:
+                        is_moving.clear()
+                        # Reset activity so we don't loop immediately (though has_idled prevents it)
+                        last_activity_time = time.time() 
 
                 audio_buffer = []
                 silence_counter = 0
@@ -455,31 +483,7 @@ def main():
                     try:
                         chunk = audio_queue.get(timeout=0.1)
                     except queue.Empty:
-                        if time.time() - last_activity_time > 30.0:
-                             # If we haven't run the idle sequence yet
-                             if not has_idled:
-                                 if not is_moving.is_set():
-                                      logger.info("Idle Sequence: Palp Wiggle -> Relax")
-                                      is_moving.set()
-                                      try:
-                                          anim.palp_wiggle()
-                                      except Exception as e:
-                                          logger.error(f"Idle Anim Error: {e}")
-                                      finally:
-                                          is_moving.clear()
-                                      
-                                      # Wait 5 seconds in neutral before relaxing
-                                      time.sleep(5.0)
-                                      
-                                      # Relax logic
-                                      logger.info("Auto-Relaxing...")
-                                      head.look_neutral()
-                                      time.sleep(0.5)
-                                      sc.relax()
-                                      has_idled = True # Mark as done so we don't loop
-                             else:
-                                  pass 
-                        continue
+                        continue 
 
                     volume = np.max(np.abs(chunk))
                     

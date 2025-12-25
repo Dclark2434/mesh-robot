@@ -29,12 +29,14 @@ M.E.S.H. is a "Brain" for Freenove Big Hexapod robots. It features a custom spee
 
 ### Voice Engine Comparison
 
-| Engine | Type | Speed | Quality | Expressive | Requirement |
-|:-------|:-----|:------|:--------|:-----------|:------------|
-| **ElevenLabs** | Cloud | Fast | ⭐⭐⭐⭐⭐ (Pro) | ✅ Yes | `ELEVENLABS_API_KEY` |
-| **F5-TTS** | Local | Slow | ⭐⭐⭐⭐ (High) | ❌ No | None (Open Source) |
-| **Chatterbox Turbo** | Local | **Fast** | ⭐⭐⭐ (Good) | ✅ Yes | `HF_TOKEN` (Free) |
-| **Chatterbox 100m** | Local | Fast | ⭐⭐ (Base) | ❌ No | `HF_TOKEN` (Free) |
+| Engine | Type | TTFB (Avg) | Total (Avg)* | Quality | Expressive | Requirement |
+|:-------|:-----|:-----------|:-------------|:--------|:-----------|:------------|
+| **Chatterbox Turbo** | Local | **1.45s** | **4.19s** | ⭐⭐⭐ (Good) | ✅ Yes | `HF_TOKEN` (Free) |
+| **F5-TTS** | Local | 1.88s | 4.90s | ⭐⭐⭐⭐ (High) | ❌ No | None (Open Source) |
+| **ElevenLabs** | Cloud | 1.51s | 6.00s | ⭐⭐⭐⭐⭐ (Pro) | ✅ Yes | `ELEVENLABS_API_KEY` |
+| **Chatterbox 100m** | Local | 3.26s | 8.66s | ⭐⭐ (Base) | ❌ No | `HF_TOKEN` (Free) |
+
+_*Benchmarks measured on NVIDIA 4070 Super GPU (Avg over ~12 sessions). Total time captures full generation duration._
 
 ---
 
