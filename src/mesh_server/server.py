@@ -145,7 +145,8 @@ async def interact_generator(audio_bytes, telemetry=None):
 
     if trigger_word:
         logger.info(f"[TRIGGER] {trigger_word}")
-        USER_STATES[user_id] = time.time()
+        # Add buffer (2.0s) to account for 'Ack' sound playback and reaction time
+        USER_STATES[user_id] = time.time() + 2.0
         
         # Feedback on trigger
         ack_bytes = voice_engine.get_prebaked_sound(ack_type)
@@ -200,6 +201,7 @@ async def interact_generator(audio_bytes, telemetry=None):
     
     ttfb_captured = False
     tts_start_time = time.time()
+    bytes_sent = 0
     
     for part in parts:
         if not part.strip(): continue
@@ -221,6 +223,9 @@ async def interact_generator(audio_bytes, telemetry=None):
                     ttfb = time.time() - tts_start_time
                     SESSION_STATS["ttfb"].append(ttfb)
                     ttfb_captured = True
+                
+                valid_chunk = chunk if isinstance(chunk, bytes) else b"" # Safety
+                bytes_sent += len(valid_chunk)
                 yield chunk
     
     # Record Total TTS generation time (if we spoke)
@@ -229,10 +234,13 @@ async def interact_generator(audio_bytes, telemetry=None):
         SESSION_STATS["tts_tot"].append(tts_total_duration)
         
     # Reset attention span timer AFTER he finishes speaking/acting
-    USER_STATES[user_id] = time.time()
-    total_duration = time.time() - start_total
-    logger.info(f"[LATENCY] Total Interaction Time: {total_duration:.2f}s")
-    SESSION_STATS["total"].append(total_duration)
+    # CRITICAL FIX: Server generates faster than realtime. 
+    # We must add the audio duration to the timestamp so the timeout counts from when he FINISHES speaking.
+    # Format: 24kHz, 16-bit, Mono = 48000 bytes/sec
+    audio_duration = bytes_sent / 48000.0
+    USER_STATES[user_id] = time.time() + audio_duration
+    logger.info(f"[LATENCY] Total Interaction Time: {time.time() - start_total:.2f}s (Audio Duration: {audio_duration:.2f}s)")
+    SESSION_STATS["total"].append(time.time() - start_total)
 
 # --- API ENDPOINTS ---
 
