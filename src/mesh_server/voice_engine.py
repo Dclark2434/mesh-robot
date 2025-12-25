@@ -103,21 +103,124 @@ if config.USE_F5_TTS:
     from f5_tts.api import F5TTS
     tts_engine = F5TTS()
     logger.info("F5-TTS Engine Loaded.")
+    logger.info("F5-TTS Engine Loaded.")
+    logger.info("F5-TTS Engine Loaded.")
+elif config.TTS_ENGINE == "chatterbox":
+    logger.info(f"Initializing Chatterbox TTS...")
+    
+    desired_model = config.CHATTERBOX_MODEL.lower()
+    
+    if "turbo" in desired_model:
+        logger.info("Detected Turbo model configuration.")
+        
+        # Ensure HF_TOKEN is set for snapshot_download
+        if config.HF_TOKEN:
+            os.environ["HF_TOKEN"] = config.HF_TOKEN
+            
+        try:
+            from chatterbox.tts_turbo import ChatterboxTurboTTS
+            # ChatterboxTurboTTS has the correct REPO_ID hardcoded ("ResembleAI/chatterbox-turbo")
+            tts_engine = ChatterboxTurboTTS.from_pretrained(device)
+            logger.info("ChatterboxTurboTTS Engine Loaded.")
+        except ImportError:
+            logger.error("Could not import ChatterboxTurboTTS. Ensure chatterbox-tts is installed correctly.")
+            tts_engine = None
+        except Exception as e:
+            logger.error(f"Failed to load Chatterbox Turbo: {e}")
+            tts_engine = None
+    else:
+        # Base Model (Legacy)
+        from chatterbox import ChatterboxTTS
+        import chatterbox.tts
+        
+        hf_repo = "ResembleAI/chatterbox"
+        hf_repo = "ResembleAI/chatterbox"
+        # Removing multilingual logic as repo ID is invalid/unknown
+             
+        logger.info(f"Patching Chatterbox REPO_ID to: {hf_repo}")
+        chatterbox.tts.REPO_ID = hf_repo
+        
+        try:
+            tts_engine = ChatterboxTTS.from_pretrained(device)
+            logger.info("Chatterbox Engine (Base) Loaded.")
+        except Exception as e:
+             logger.error(f"Failed to load Chatterbox: {e}")
+             tts_engine = None
 else:
-    logger.info("Initializing XTTS v2...")
-    from TTS.api import TTS
-    tts_engine = TTS("tts_models/multilingual/multi-dataset/xtts_v2").to(device)
-    logger.info("XTTS v2 Engine Loaded.")
+    logger.warning(f"Unknown TTS Engine: {config.TTS_ENGINE}. Defaulting to Chatterbox logic (if compatible).")
 
 logger.info(f"MESH API Online on {device.upper()}")
+
+def warmup():
+    """Runs a dummy inference to load model/CUDA kernels."""
+    if tts_engine:
+        logger.info("Warming up TTS Engine...")
+        try:
+            with suppress_output():
+                if config.USE_F5_TTS:
+                    # Warmup F5
+                    tts_engine.infer(
+                        ref_file=config.REFERENCE_AUDIO, ref_text="", gen_text="Warmup.",
+                        remove_silence=False
+                    )
+                elif config.TTS_ENGINE == "chatterbox":
+                    # Warmup Chatterbox
+                    kwargs = {"temperature": 0.8}
+                    if "turbo" not in config.CHATTERBOX_MODEL.lower():
+                         kwargs["cfg_weight"] = 0.6
+                         kwargs["exaggeration"] = 0.45
+                         
+                    if os.path.exists(config.REFERENCE_AUDIO):
+                         kwargs["audio_prompt_path"] = config.REFERENCE_AUDIO
+                         
+                    tts_engine.generate("Ready.", **kwargs)
+            logger.info("TTS Engine Warmed Up.")
+        except Exception as e:
+            logger.warning(f"TTS Warmup failed: {e}")
+
+# Trigger warmup if not imported as module (or called explicitly)
+# proper place is likely server.py call
 
 def speak_generator(text_to_speak):
     # Clean text
     clean_text = text_to_speak.replace("[CUE: GREEN]", "").replace("[CUE: FLASHING]", "").replace("[CUE: ON]", "")
     clean_text = clean_text.replace("*", "").replace('"', '').strip()
     
-    # If NOT using ElevenLabs, clean tags (ElevenLabs handles them, local TTS doesn't)
-    if not config.USE_ELEVENLABS:
+    # Mapping for Chatterbox Compatibility
+    # Chatterbox expects: [laugh], [chuckle], [sigh], [cough], [clear throat], [groan], [sniff], [gasp], [sush]
+    # LLM produces: [laughing], [chuckles], [sighs], etc.
+    # NOTE: Base 100m model reads these tags out loud, so we restrict this to Turbo only.
+    if config.TTS_ENGINE == "chatterbox" and "turbo" in config.CHATTERBOX_MODEL.lower() and not config.USE_ELEVENLABS:
+        tag_map = {
+            r"\[laughing\]": "[laugh]",
+            r"\[long laugh\]": "[laugh]",
+            r"\[chuckles\]": "[chuckle]",
+            r"\[giggles\]": "[chuckle]",
+            r"\[sighs\]": "[sigh]",
+            r"\[exhales\]": "[sigh]",
+            r"\[clears throat\]": "[clear throat]",
+            r"\[groans\]": "[groan]",
+            r"\[gasps\]": "[gasp]",
+            r"\[coughs\]": "[cough]"
+        }
+        
+        for p, r in tag_map.items():
+            clean_text = re.sub(p, r, clean_text, flags=re.IGNORECASE)
+            
+        # Strip unsupported tags so they aren't read out loud
+        # Supported: laugh, chuckle, sigh, cough, clear throat, groan, sniff, gasp, sush
+        # Strip: whispers, shouting, etc.
+        # Regex explanation: Match [tag] where tag is NOT in the allowed list
+        all_tags = re.findall(r'\[.*?\]', clean_text)
+        allowed_tags = ["[laugh]", "[chuckle]", "[sigh]", "[cough]", "[clear throat]", "[groan]", "[sniff]", "[gasp]", "[sush]"]
+        
+        for tag in all_tags:
+            if tag.lower() not in allowed_tags:
+                clean_text = clean_text.replace(tag, "")
+    
+    # If NOT using ElevenLabs OR Chatterbox, clean tags (local fallback generally doesn't handle them)
+    # Chatterbox and ElevenLabs both support [laughing] etc. (mapped above for Chatterbox)
+    elif not config.USE_ELEVENLABS:
         clean_text = re.sub(r'\[.*?\]', '', clean_text)
     
     logger.info(f"M.E.S.H.: {clean_text}")
@@ -149,9 +252,13 @@ def speak_generator(text_to_speak):
             
             # If ElevenLabs was not used or failed, use local engine
             if not use_elevenlabs_success:
-                # Clean tags for local fallback
-                local_sentence = re.sub(r'\[.*?\]', '', sentence).strip()
-                if not local_sentence: continue # Skip if only tag remained
+                # Clean tags for local fallback (UNLESS it's Chatterbox, which supports them)
+                if config.TTS_ENGINE == "chatterbox":
+                     local_sentence = sentence
+                else:
+                     local_sentence = re.sub(r'\[.*?\]', '', sentence).strip()
+                
+                if not local_sentence and config.TTS_ENGINE != "chatterbox": continue # Skip if only tag remained (legacy)
 
                 if config.USE_F5_TTS:
                     # F5-TTS Logic
@@ -166,28 +273,71 @@ def speak_generator(text_to_speak):
                         )
                     sf.write(temp_wav, wav, sample_rate)
                 else:
-                    # XTTS v2 Logic
+                    # Chatterbox Logic
                     with suppress_output():
-                        tts_engine.tts_to_file(
-                            text=local_sentence, 
-                            speaker_wav=config.REFERENCE_AUDIO, 
-                            language="en", 
-                            file_path=temp_wav,
-                            speed=1.0
-                        )
+                        # Chatterbox usage
+                        # Default Params
+                        kwargs = {
+                            "temperature": 0.8,
+                        }
+                        
+                        # TURBO Tuning
+                        if "turbo" in config.CHATTERBOX_MODEL.lower():
+                            # Turbo typically warns about these, but internal code inspection shows
+                            # it *does* use exaggeration for emotion_adv in T3Cond.
+                            # We disable internal loudness normalization (-27 LUFS) to preserve reference dynamics.
+                            kwargs["norm_loudness"] = False
+                            kwargs["exaggeration"] = 0.35 # Fix "depressed" tone
+                        else:
+                            # Base Model Logic
+                            kwargs["cfg_weight"] = 0.6
+                            kwargs["exaggeration"] = 0.45
+                        
+                        if os.path.exists(config.REFERENCE_AUDIO):
+                            # Correct argument is audio_prompt_path
+                            logger.debug(f"Using Reference Audio: {config.REFERENCE_AUDIO}")
+                            kwargs["audio_prompt_path"] = config.REFERENCE_AUDIO
+                        else:
+                            logger.warning(f"Reference Audio NOT FOUND at: {config.REFERENCE_AUDIO}")
+                        
+                        # Generate returns a tensor (1, samples)
+                        import logging as pylogging # Avoid conflict with local logger var
+                        cb_logger = pylogging.getLogger("chatterbox.tts_turbo")
+                        old_level = cb_logger.level
+                        cb_logger.setLevel(pylogging.ERROR)
+                        try:
+                            audio_tensor = tts_engine.generate(local_sentence, **kwargs)
+                        finally:
+                            cb_logger.setLevel(old_level)
+                        
+                        # Convert to numpy
+                        if hasattr(audio_tensor, "cpu"):
+                            wav = audio_tensor.squeeze().cpu().numpy()
+                        else:
+                            wav = audio_tensor # Fallback
+                        
+                        # POST-PROCESS: Volume Boost
+                        # Normalization is now disabled for Turbo, so native volume should be fine.
+                        # No extra gain needed.
+                        
+                        sample_rate = 24000 # Chatterbox default
+                    
+                    sf.write(temp_wav, wav, sample_rate)
             
             # Direct Yield (No FX, No SoX)
-            if os.path.exists(temp_wav):
-                if first_chunk_timer:
-                    ttfb = time.time() - first_chunk_timer
-                    logger.info(f"[LATENCY] TTS (Time to First Byte): {ttfb:.2f}s")
-                    first_chunk_timer = None # Only log once
-                
-                with open(temp_wav, "rb") as f:
-                    yield f.read()
-                
-                # Cleanup
-                os.remove(temp_wav)
+            try:
+                if os.path.exists(temp_wav):
+                    if first_chunk_timer:
+                        ttfb = time.time() - first_chunk_timer
+                        logger.info(f"[LATENCY] TTS (Time to First Byte): {ttfb:.2f}s")
+                        first_chunk_timer = None # Only log once
+                    
+                    with open(temp_wav, "rb") as f:
+                        yield f.read()
+            finally:
+                # Cleanup MUST happen even if generator is closed by client
+                if os.path.exists(temp_wav):
+                    os.remove(temp_wav)
 
         except Exception as e:
             logger.error(f"TTS Error: {e}")

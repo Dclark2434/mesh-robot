@@ -27,6 +27,15 @@ M.E.S.H. is a "Brain" for Freenove Big Hexapod robots. It features a custom spee
 - **Custom Identity**: Configurable cynical, dry, and military-aware persona.
 - **Command Engine**: Integrated stubs for hardware control (walking, scanning, etc.).
 
+### Voice Engine Comparison
+
+| Engine | Type | Speed | Quality | Expressive | Requirement |
+|:-------|:-----|:------|:--------|:-----------|:------------|
+| **ElevenLabs** | Cloud | Fast | ⭐⭐⭐⭐⭐ (Pro) | ✅ Yes | `ELEVENLABS_API_KEY` |
+| **F5-TTS** | Local | Slow | ⭐⭐⭐⭐ (High) | ❌ No | None (Open Source) |
+| **Chatterbox Turbo** | Local | **Fast** | ⭐⭐⭐ (Good) | ✅ Yes | `HF_TOKEN` (Free) |
+| **Chatterbox 100m** | Local | Fast | ⭐⭐ (Base) | ❌ No | `HF_TOKEN` (Free) |
+
 ---
 
 ## Command Manual & Capabilities

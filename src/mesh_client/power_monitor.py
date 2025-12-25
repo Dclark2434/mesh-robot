@@ -1,4 +1,6 @@
 import time
+import os
+import sys
 from mesh_common.logging import get_logger
 
 try:
@@ -59,6 +61,22 @@ class PowerMonitor:
 
     def get_status(self):
         """Returns dict with voltage and percentage for Servo and Logic rails."""
+        if not self.enabled:
+            # Check for generic dev environments (Windows or likely WSL)
+            is_dev = (sys.platform == "win32") or ("WSL_DISTRO_NAME" in os.environ) or ("microsoft" in os.uname().release.lower() if hasattr(os, "uname") else False)
+            
+            if is_dev:
+                 # Return healthy fake data to avoid LLM panic during debugging
+                 return {
+                    "servo_voltage": 7.4,
+                    "servo_percent": 100,
+                    "logic_voltage": 5.0,
+                    "logic_percent": 100
+                }
+            # If on native Linux (Pi) and disabled, likely a hardware error, so 0 is appropriate.
+            return {"servo_voltage": 0.0, "servo_percent": 0, "logic_voltage": 0.0, "logic_percent": 0}
+
+        # User said: 1st number = Servo, 2nd number = Pi
         # User said: 1st number = Servo, 2nd number = Pi
         # Freenove: ch0 and ch4
         servo_v = self._read_adc(0)

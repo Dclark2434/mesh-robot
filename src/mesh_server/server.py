@@ -1,6 +1,9 @@
 import warnings
 # Silence noisy 3rd-party FutureWarnings (transformers, torch, etc.) before imports
 warnings.filterwarnings("ignore", category=FutureWarning)
+# Silence specific Transformers warnings about Llama attention and cache
+warnings.filterwarnings("ignore", message=".*LlamaModel is using LlamaSdpaAttention.*")
+warnings.filterwarnings("ignore", message=".*passing `past_key_values` as a tuple.*")
 
 import asyncio
 import uvicorn
@@ -17,6 +20,9 @@ from mesh_common.config import SAMPLE_RATE
 from mesh_server import brain
 from mesh_server import voice_engine
 from mesh_server import config
+
+# Warmup Neural Engine
+voice_engine.warmup()
 
 logger = get_logger("mesh_server")
 app = FastAPI(title="M.E.S.H. Server")

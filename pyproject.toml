@@ -27,7 +27,7 @@ server = [
     "faster-whisper",
     "google-genai",
     "f5-tts",
-    "TTS",
+    "chatterbox-tts",
     "torch",
     "torchaudio",
     "torchvision",

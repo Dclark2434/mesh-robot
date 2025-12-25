@@ -542,7 +542,8 @@ def main():
                         
                         start_time = time.time()
                         try:
-                            with requests.post(SERVER_URL, files=files, data=data, stream=True, timeout=10) as r:
+                            # Timeout increased to 30s to handle first-run TTS loading latency
+                            with requests.post(SERVER_URL, files=files, data=data, stream=True, timeout=30) as r:
                                 if r.status_code == 200:
                                     leds.set_state(LEDState.SPEAKING)
                                     head.look_up(20)

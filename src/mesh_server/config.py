@@ -10,7 +10,11 @@ load_dotenv(os.path.join(BASE_DIR, ".env"), override=True)
 # BRAIN TOGGLE: Set to True for Gemini, False for Ollama
 # ========================================
 USE_GEMINI = os.getenv("USE_GEMINI", "True") == "True"  # <-- Brain Toggle
-USE_F5_TTS = os.getenv("USE_F5_TTS", "True") == "True"  # <-- Voice Toggle (True for F5, False for XTTSv2)
+TTS_ENGINE = os.getenv("TTS_ENGINE", "chatterbox") # "chatterbox", "f5", or "elevenlabs" (though elevenlabs logic is separate, it can be integrated here if we clean up config)
+USE_F5_TTS = (TTS_ENGINE == "f5") # Legacy compat if needed, but better to use engine check
+
+# Chatterbox Config
+CHATTERBOX_MODEL = os.getenv("CHATTERBOX_MODEL", "resemble-ai/chatterbox-100m") # or "resemble-ai/chatterbox-turbo"
 
 # Ollama Config (used when USE_GEMINI = False)
 OLLAMA_URL = "http://127.0.0.1:11434/api/generate"
@@ -33,6 +37,9 @@ GEMINI_API_KEY = os.getenv("GEMINI_API_KEY")
 USE_ELEVENLABS = os.getenv("USE_ELEVENLABS", "False") == "True"
 ELEVENLABS_API_KEY = os.getenv("ELEVENLABS_API_KEY")
 ELEVENLABS_VOICE_ID = os.getenv("ELEVENLABS_VOICE_ID", "21m00Tcm4TlvDq8ikWAM") # Default placeholder
+
+# Hugging Face Config (Needed for Chatterbox Turbo)
+HF_TOKEN = os.getenv("HF_TOKEN")
 
 WAKE_WORDS = [
     "hey mesh", "hey, mesh", "hey mech", 

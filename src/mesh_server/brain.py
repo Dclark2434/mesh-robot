@@ -28,7 +28,8 @@ if config.USE_GEMINI:
 def get_effective_system_prompt():
     """Returns the base system prompt, appending audio tags if ElevenLabs is enabled."""
     prompt = config.SYSTEM_PROMPT
-    if config.USE_ELEVENLABS:
+    # Enable tags for ElevenLabs OR Chatterbox
+    if config.USE_ELEVENLABS or config.TTS_ENGINE == "chatterbox":
         # Check if attribute exists to avoid crashes if config isn't reloaded yet
         if hasattr(config, 'AUDIO_TAGS_INSTRUCTIONS'):
             prompt += config.AUDIO_TAGS_INSTRUCTIONS

@@ -13,7 +13,7 @@ class MeshLauncher(ctk.CTk):
     def __init__(self):
         super().__init__()
 
-        self.title("M.E.S.H. System Launcher")
+        self.title("M.E.S.H. System Launcher v1.1")
         self.geometry("500x650")
 
         # Load existing env vars
@@ -39,14 +39,36 @@ class MeshLauncher(ctk.CTk):
         
         ctk.CTkLabel(self.brain_frame, text="Neural Brain", font=("Arial", 16, "bold")).pack(pady=5)
         
+        # 1. Initialize Variables
         self.brain_var = ctk.StringVar(value="Gemini" if os.getenv("USE_GEMINI", "True") == "True" else "Ollama")
-        self.brain_seg = ctk.CTkSegmentedButton(self.brain_frame, values=["Gemini", "Ollama"], variable=self.brain_var, command=self.toggle_brain_inputs)
-        self.brain_seg.pack(pady=5)
+        
+        engine_env = os.getenv("TTS_ENGINE", "chatterbox")
+        start_voice = "Chatterbox"
+        if os.getenv("USE_ELEVENLABS", "False") == "True":
+             start_voice = "ElevenLabs"
+        elif engine_env == "f5":
+             start_voice = "F5-TTS"
 
+        self.voice_var = ctk.StringVar(value=start_voice)
+        start_model = os.getenv("CHATTERBOX_MODEL", "resemble-ai/chatterbox-100m")
+        
+        # Mapping for UI
+        self.model_map = {
+            "100m": "resemble-ai/chatterbox-100m",
+            "Turbo": "resemble-ai/chatterbox-turbo"
+        }
+        # Reverse map for init
+        inv_map = {v: k for k, v in self.model_map.items()}
+        short_start = inv_map.get(start_model, "100m")
+        
+        self.chatterbox_model_var = ctk.StringVar(value=short_start)
+
+        # 2. Create Input Widgets (Hidden by default or managed later)
+        
+        # Brain Inputs
         self.gemini_key_entry = ctk.CTkEntry(self.brain_frame, placeholder_text="Gemini API Key", width=300)
         start_gemini_key = os.getenv("GEMINI_API_KEY", "")
         if start_gemini_key: self.gemini_key_entry.insert(0, start_gemini_key)
-        # Pack strictly in toggle_brain_inputs
 
         # Voice Section
         self.voice_frame = ctk.CTkFrame(self)
@@ -54,27 +76,34 @@ class MeshLauncher(ctk.CTk):
 
         ctk.CTkLabel(self.voice_frame, text="Vocal Synthesis", font=("Arial", 16, "bold")).pack(pady=5)
 
-        # Determine start value for voice
-        start_voice = "XTTS v2"
-        if os.getenv("USE_ELEVENLABS", "False") == "True":
-            start_voice = "ElevenLabs"
-        elif os.getenv("USE_F5_TTS", "True") == "True":
-            start_voice = "F5-TTS"
+        # Voice Inputs: Chatterbox
+        self.chatterbox_label = ctk.CTkLabel(self.voice_frame, text="Chatterbox Settings", font=("Arial", 14, "bold"))
+        self.chatterbox_model_seg = ctk.CTkSegmentedButton(self.voice_frame, variable=self.chatterbox_model_var, 
+                                                           values=["100m", "Turbo"])
+        
+        # Explicit HF Token Label and Entry
+        self.hf_token_label = ctk.CTkLabel(self.voice_frame, text="Hugging Face Token (Required for Turbo):")
+        self.hf_token_entry = ctk.CTkEntry(self.voice_frame, placeholder_text="hf_xxxxxxxx", width=300)
+        start_hf_token = os.getenv("HF_TOKEN", "")
+        if start_hf_token: self.hf_token_entry.insert(0, start_hf_token)
 
-        self.voice_var = ctk.StringVar(value=start_voice)
-        self.voice_seg = ctk.CTkSegmentedButton(self.voice_frame, values=["ElevenLabs", "F5-TTS", "XTTS v2"], variable=self.voice_var, command=self.toggle_voice_inputs)
-        self.voice_seg.pack(pady=5)
-
-        # ElevenLabs Inputs
+        # Voice Inputs: ElevenLabs
         self.eleven_api_entry = ctk.CTkEntry(self.voice_frame, placeholder_text="ElevenLabs API Key", width=300)
         start_eleven_key = os.getenv("ELEVENLABS_API_KEY", "")
         if start_eleven_key: self.eleven_api_entry.insert(0, start_eleven_key)
-
+        
         self.eleven_voice_entry = ctk.CTkEntry(self.voice_frame, placeholder_text="Voice ID", width=300)
         start_eleven_voice = os.getenv("ELEVENLABS_VOICE_ID", "")
         if start_eleven_voice: self.eleven_voice_entry.insert(0, start_eleven_voice)
 
-        # Initialize visibility
+        # 3. Create Controllers (Now safe to trigger callbacks)
+        self.brain_seg = ctk.CTkSegmentedButton(self.brain_frame, values=["Gemini", "Ollama"], variable=self.brain_var, command=self.toggle_brain_inputs)
+        self.brain_seg.pack(pady=5)
+        
+        self.voice_seg = ctk.CTkSegmentedButton(self.voice_frame, values=["ElevenLabs", "Chatterbox", "F5-TTS"], variable=self.voice_var, command=self.toggle_voice_inputs)
+        self.voice_seg.pack(pady=5)
+
+        # 4. Initialize Visibility
         self.toggle_brain_inputs(self.brain_var.get())
         self.toggle_voice_inputs(self.voice_var.get())
 
@@ -89,12 +118,23 @@ class MeshLauncher(ctk.CTk):
             self.gemini_key_entry.pack_forget()
 
     def toggle_voice_inputs(self, value):
+        # Helper to hide all specific frames first
+        self.eleven_api_entry.pack_forget()
+        self.eleven_voice_entry.pack_forget()
+        self.chatterbox_label.pack_forget()
+        self.chatterbox_model_seg.pack_forget()
+        self.hf_token_label.pack_forget()
+        self.hf_token_entry.pack_forget()
+
         if value == "ElevenLabs":
             self.eleven_api_entry.pack(pady=5)
             self.eleven_voice_entry.pack(pady=5)
-        else:
-            self.eleven_api_entry.pack_forget()
-            self.eleven_voice_entry.pack_forget()
+        elif value == "Chatterbox":
+            self.chatterbox_label.pack(pady=5)
+            self.chatterbox_model_seg.pack(pady=5)
+            # Layout spacing
+            self.hf_token_label.pack(pady=(10, 0))
+            self.hf_token_entry.pack(pady=5)
 
     def save_env(self):
         # 1. Read current UI state
@@ -103,12 +143,20 @@ class MeshLauncher(ctk.CTk):
         
         voice_sel = self.voice_var.get()
         use_eleven = str(voice_sel == "ElevenLabs")
-        # If ElevenLabs is selected, we default fallback to F5 (User Request)
-        use_f5 = str(voice_sel == "F5-TTS" or voice_sel == "ElevenLabs")
-        # XTTS is implied by both being false in current logic, but let's be explicit in saving what drives config.py logic
+        
+        tts_engine = "chatterbox"
+        if voice_sel == "F5-TTS":
+             tts_engine = "f5"
+        elif voice_sel == "Chatterbox":
+             tts_engine = "chatterbox"
         
         eleven_key = self.eleven_api_entry.get()
         eleven_voice = self.eleven_voice_entry.get()
+        hf_token = self.hf_token_entry.get()
+        
+        # Map short label back to full model string
+        short_model = self.chatterbox_model_var.get()
+        chatterbox_model = self.model_map.get(short_model, "resemble-ai/chatterbox-100m")
 
         # 2. Construct file content (simple key=value)
         # We read other keys if we want to preserve them, but for now we just overwrite these specific ones or append.
@@ -130,10 +178,14 @@ class MeshLauncher(ctk.CTk):
         env_dict["GEMINI_API_KEY"] = gemini_key
         
         env_dict["USE_ELEVENLABS"] = use_eleven
-        env_dict["USE_F5_TTS"] = use_f5
+        env_dict["TTS_ENGINE"] = tts_engine
+        # Remove legacy keys if present
+        if "USE_F5_TTS" in env_dict: pop_keys = ["USE_F5_TTS"] 
         
         env_dict["ELEVENLABS_API_KEY"] = eleven_key
         env_dict["ELEVENLABS_VOICE_ID"] = eleven_voice
+        env_dict["CHATTERBOX_MODEL"] = chatterbox_model
+        env_dict["HF_TOKEN"] = hf_token
 
         # Write back
         with open(self.env_path, "w") as f:
