@@ -75,7 +75,7 @@ The robot can "act" while speaking by embedding Action Tags in its response.
 - "Look at this mess. [ACTION: LOOK_DOWN] Disappointing."
 - "Power management engaged. [ACTION: RELAX] Don't wake me."
 
-### Expressive Audio (ElevenLabs Only)
+### Expressive Audio (ElevenLabs and Chatterbox Turbo Only)
 When using the elevenlabs voice engine, the robot uses audio tags to add emotion.
 - `[laughing]`, `[sighs]`, `[clears throat]`, `[whispers]`.
 - *Note: These are automatically stripped if the system falls back to local TTS.*
@@ -197,4 +197,5 @@ bash scripts/setup-autostart.sh
 ## License
 
 Distributed under the MIT License. See `LICENSE` for more information.
+
 
