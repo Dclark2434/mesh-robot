@@ -29,7 +29,7 @@ The "MechWarrior" batched boot sequence uses specific override values to create 
 *   **Tuck Scale (`0.5`)**: Multiplier for X/Y. Pulls legs in to 50% extension. Creates a "Vertical/Crown" storage pose.
 *   **Strike Lift (`+80mm`)**: The legs lift +80mm *above* their base trajectory during deployment.
     *   Target Z: `-75` (High Stance) + `80` (Lift) = `+5mm` (Foot is effectively above the hip joint during the arc!).
-*   **Settling Drop**: The anim transitions from `-75` (High) to `-25` (Low), creating a **50mm** visible drop.
+*   **Settling Drop**: The anim transitions from `-75` (High) to `-25` (Low), creating a visible drop.
 
 ## 4. Leg Groups
 *   **Outers**: Legs 0, 2, 3, 5 (Front-Right, Rear-Right, Rear-Left, Front-Left).
