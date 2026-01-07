@@ -145,8 +145,8 @@ sudo apt update && sudo apt install python3.11-venv python3.11-tk sox libsox-fmt
 # Setup and install
 python3.11 -m venv venv
 source venv/bin/activate
-pip install torch torchaudio torchvision --index-url https://download.pytorch.org/whl/cu121
-pip install -e .[server]
+pip install -e .[server] --index-url https://download.pytorch.org/whl/cu121 --extra-index-url https://pypi.org/simple
+
 ```
 > [!TIP]
 > If you replace `src/mesh_server/reference.wav`, you MUST re-run `bake_sounds.py` to regenerate the system sounds in the new voice. Otherwise your robot will have split personality.
@@ -167,10 +167,11 @@ Runs on the robot (Pi) or a debug machine (Windows).
 # 1. Setup environment
 python -m venv venv-client
 # Windows (PowerShell): .\venv-client\Scripts\Activate.ps1
-# Linux/Pi (Bash): source venv-client/bin/activate
+source venv-client/bin/activate
 
 # 2. Install client-side dependencies (including hardware drivers)
 pip install -e ".[client]"
+# pip install -e ".[robot]" if on raspberry pi. This includes special hardware drivers!
 
 # 3. Configure Connection (Replace <SERVER_IP> with the IP of your Brain/PC)
 # Windows (PowerShell):

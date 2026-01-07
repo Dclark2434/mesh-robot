@@ -406,7 +406,9 @@ def main():
 
 
     # Calibration
+    audio_input_available = True
     logger.info("Calibrating noise floor...")
+    calibration_attempts = 0
     while True:
         try:
             leds.set_state(LEDState.THINKING) # Yellow/Blue pulse to indicate initializing
@@ -425,9 +427,15 @@ def main():
             head.look_neutral()
             break
         except Exception as e:
+            calibration_attempts += 1
             leds.set_state(LEDState.ERROR) # Flash Red
-            logger.warning(f"Audio device not ready, retrying in 5s... Error: {e}")
-            time.sleep(5)
+            logger.warning(f"Audio device not ready ({calibration_attempts}/3)... Error: {e}")
+            if calibration_attempts >= 3:
+                logger.error("No microphone detected. Disabling audio input.")
+                audio_input_available = False
+                leds.set_state(LEDState.IDLE)
+                break
+            time.sleep(2)
 
     logger.info("Listening... (Ctrl+C to exit)")
 
@@ -436,29 +444,160 @@ def main():
     has_idled = False
 
     try:
-        with sd.InputStream(samplerate=SAMPLE_RATE, channels=CHANNELS, callback=audio_callback):
-            while True:
-                # MUTE during movement to prevent self-triggering
-                if is_moving.is_set():
-                    # Drain queue to discard servo noise
-                    while not audio_queue.empty():
-                        try: audio_queue.get_nowait()
-                        except queue.Empty: break
-                    time.sleep(0.1)
-                    # Update activity to prevent immediate idle trigger after move
-                    last_activity_time = time.time()
-                    continue
+        if audio_input_available:
+            with sd.InputStream(samplerate=SAMPLE_RATE, channels=CHANNELS, callback=audio_callback):
+                while True:
+                    # MUTE during movement to prevent self-triggering
+                    if is_moving.is_set():
+                        # Drain queue to discard servo noise
+                        while not audio_queue.empty():
+                            try: audio_queue.get_nowait()
+                            except queue.Empty: break
+                        time.sleep(0.1)
+                        # Update activity to prevent immediate idle trigger after move
+                        last_activity_time = time.time()
+                        continue
 
-                # IDLE CHECK (Runs every loop)
-                # If no activity for 120s and we haven't idled yet
+                    # IDLE CHECK (Runs every loop)
+                    # If no activity for 120s and we haven't idled yet
+                    if (time.time() - last_activity_time > 120.0) and not has_idled:
+                        logger.info("Idle limit reached (120s). Triggering Palp Wiggle -> Relax.")
+                        is_moving.set()
+                        try:
+                            anim.palp_wiggle()
+                            # Wait 5 seconds in neutral before relaxing
+                            time.sleep(5.0)
+                            
+                            logger.info("Auto-Relaxing...")
+                            head.look_neutral()
+                            time.sleep(0.5)
+                            sc.relax()
+                            has_idled = True
+                        except Exception as e:
+                            logger.error(f"Idle Anim Error: {e}")
+                        finally:
+                            is_moving.clear()
+                            # Reset activity so we don't loop immediately (though has_idled prevents it)
+                            last_activity_time = time.time() 
+
+                    audio_buffer = []
+                    silence_counter = 0
+                    started = False
+                    
+                    # Pre-roll buffer to capture audio before threshold trigger
+                    # Using a list of chunks, aimed at roughly 0.5s duration
+                    preroll_buffer = []
+                    
+                    while True:
+                        try:
+                            chunk = audio_queue.get(timeout=0.1)
+                        except queue.Empty:
+                            continue 
+
+                        volume = np.max(np.abs(chunk))
+                        
+                        if not started:
+                            # Append to pre-roll
+                            preroll_buffer.append(chunk)
+                            
+                            # Maintain roughly 0.5s of audio in pre-roll
+                            # Heuristic: Total samples in buffer should be ~ SAMPLE_RATE * 0.5
+                            current_samples = sum(len(c) for c in preroll_buffer)
+                            while current_samples > int(SAMPLE_RATE * 0.5):
+                                removed = preroll_buffer.pop(0)
+                                current_samples -= len(removed)
+                                
+                            if volume > THRESHOLD:
+                                last_activity_time = time.time()
+                                has_idled = False
+                                logger.info(f"Speech detected (Pre-roll: {len(preroll_buffer)} chunks)...")
+                                leds.set_state(LEDState.LISTENING)
+                                started = True
+                                
+                                # Move pre-roll to main buffer
+                                audio_buffer.extend(preroll_buffer)
+                                preroll_buffer = [] # Clear logic
+                        else:
+                            audio_buffer.append(chunk)
+                            if volume < THRESHOLD:
+                                silence_counter += 1
+                            else:
+                                silence_counter = 0
+                            
+                            # Stop if silence limit reached
+                            if silence_counter > (SILENCE_LIMIT * (SAMPLE_RATE / len(chunk))):
+                                leds.set_state(LEDState.THINKING)
+                                time.sleep(0.2) # Ensure thinking state is visible
+                                break
+                    
+                    if audio_buffer:
+                        recording = np.concatenate(audio_buffer, axis=0)
+                        if len(recording) > SAMPLE_RATE * 0.5: # Min 0.5s
+                            logger.info(f"Sending audio ({len(recording)/SAMPLE_RATE:.2f}s)...")
+                            
+                            wav_io = io.BytesIO()
+                            write(wav_io, SAMPLE_RATE, recording)
+                            wav_io.seek(0) # Important: reset stream position to beginning
+                            
+                            # Send to server
+                            leds.set_state(LEDState.THINKING)
+                            
+                            # 1. Gather Telemetry
+                            telemetry = power.get_status()
+                            telemetry_json = json.dumps(telemetry)
+
+                            files = {
+                                'audio_file': ('audio.wav', wav_io, 'audio/wav')
+                            }
+                            data = {
+                                'telemetry': telemetry_json
+                            }
+                            
+                            start_time = time.time()
+                            try:
+                                # Timeout increased to 30s to handle first-run TTS loading latency
+                                with requests.post(SERVER_URL, files=files, data=data, stream=True, timeout=30) as r:
+                                    if r.status_code == 200:
+                                        leds.set_state(LEDState.SPEAKING)
+                                        head.look_up(20)
+                                        stream_audio_response(r, on_server_command)
+                                        logger.info(f"[LATENCY] Round-trip: {time.time() - start_time:.2f}s")
+                                        leds.set_state(LEDState.IDLE)
+                                        head.look_neutral()
+                                    else:
+                                        leds.set_state(LEDState.ERROR)
+                                        logger.error(f"Server error: {r.status_code}")
+                                        time.sleep(1) # Show error state briefly
+                                        leds.set_state(LEDState.IDLE)
+                            except requests.exceptions.Timeout:
+                                logger.error("Server Timed Out (10s)")
+                                leds.set_state(LEDState.ERROR)
+                                # buzzer.warn() (Disabled)
+                                time.sleep(1)
+                                leds.set_state(LEDState.IDLE)
+                            except Exception as e:
+                                logger.error(f"Network Error: {e}")
+                                leds.set_state(LEDState.ERROR)
+                                time.sleep(1)
+                                leds.set_state(LEDState.IDLE)
+
+                        else:
+                            logger.debug("Captured audio too short, ignoring.")
+                    
+                    # Clear queue to avoid echoes
+                    with audio_queue.mutex:
+                        audio_queue.queue.clear()
+        else:
+            # Fallback loop (No Audio Input)
+            logger.info("Entering Audio-Less Mode (Idle Only).")
+            while True:
+                # Still process idle animations
                 if (time.time() - last_activity_time > 120.0) and not has_idled:
                     logger.info("Idle limit reached (120s). Triggering Palp Wiggle -> Relax.")
                     is_moving.set()
                     try:
                         anim.palp_wiggle()
-                        # Wait 5 seconds in neutral before relaxing
                         time.sleep(5.0)
-                        
                         logger.info("Auto-Relaxing...")
                         head.look_neutral()
                         time.sleep(0.5)
@@ -468,116 +607,9 @@ def main():
                         logger.error(f"Idle Anim Error: {e}")
                     finally:
                         is_moving.clear()
-                        # Reset activity so we don't loop immediately (though has_idled prevents it)
-                        last_activity_time = time.time() 
-
-                audio_buffer = []
-                silence_counter = 0
-                started = False
+                        last_activity_time = time.time()
                 
-                # Pre-roll buffer to capture audio before threshold trigger
-                # Using a list of chunks, aimed at roughly 0.5s duration
-                preroll_buffer = []
-                
-                while True:
-                    try:
-                        chunk = audio_queue.get(timeout=0.1)
-                    except queue.Empty:
-                        continue 
-
-                    volume = np.max(np.abs(chunk))
-                    
-                    if not started:
-                        # Append to pre-roll
-                        preroll_buffer.append(chunk)
-                        
-                        # Maintain roughly 0.5s of audio in pre-roll
-                        # Heuristic: Total samples in buffer should be ~ SAMPLE_RATE * 0.5
-                        current_samples = sum(len(c) for c in preroll_buffer)
-                        while current_samples > int(SAMPLE_RATE * 0.5):
-                            removed = preroll_buffer.pop(0)
-                            current_samples -= len(removed)
-                            
-                        if volume > THRESHOLD:
-                            last_activity_time = time.time()
-                            has_idled = False
-                            logger.info(f"Speech detected (Pre-roll: {len(preroll_buffer)} chunks)...")
-                            leds.set_state(LEDState.LISTENING)
-                            started = True
-                            
-                            # Move pre-roll to main buffer
-                            audio_buffer.extend(preroll_buffer)
-                            preroll_buffer = [] # Clear logic
-                    else:
-                        audio_buffer.append(chunk)
-                        if volume < THRESHOLD:
-                            silence_counter += 1
-                        else:
-                            silence_counter = 0
-                        
-                        # Stop if silence limit reached
-                        if silence_counter > (SILENCE_LIMIT * (SAMPLE_RATE / len(chunk))):
-                            leds.set_state(LEDState.THINKING)
-                            time.sleep(0.2) # Ensure thinking state is visible
-                            break
-                
-                if audio_buffer:
-                    recording = np.concatenate(audio_buffer, axis=0)
-                    if len(recording) > SAMPLE_RATE * 0.5: # Min 0.5s
-                        logger.info(f"Sending audio ({len(recording)/SAMPLE_RATE:.2f}s)...")
-                        
-                        wav_io = io.BytesIO()
-                        write(wav_io, SAMPLE_RATE, recording)
-                        wav_io.seek(0) # Important: reset stream position to beginning
-                        
-                        # Send to server
-                        leds.set_state(LEDState.THINKING)
-                        
-                        # 1. Gather Telemetry
-                        telemetry = power.get_status()
-                        telemetry_json = json.dumps(telemetry)
-
-                        files = {
-                            'audio_file': ('audio.wav', wav_io, 'audio/wav')
-                        }
-                        data = {
-                            'telemetry': telemetry_json
-                        }
-                        
-                        start_time = time.time()
-                        try:
-                            # Timeout increased to 30s to handle first-run TTS loading latency
-                            with requests.post(SERVER_URL, files=files, data=data, stream=True, timeout=30) as r:
-                                if r.status_code == 200:
-                                    leds.set_state(LEDState.SPEAKING)
-                                    head.look_up(20)
-                                    stream_audio_response(r, on_server_command)
-                                    logger.info(f"[LATENCY] Round-trip: {time.time() - start_time:.2f}s")
-                                    leds.set_state(LEDState.IDLE)
-                                    head.look_neutral()
-                                else:
-                                    leds.set_state(LEDState.ERROR)
-                                    logger.error(f"Server error: {r.status_code}")
-                                    time.sleep(1) # Show error state briefly
-                                    leds.set_state(LEDState.IDLE)
-                        except requests.exceptions.Timeout:
-                            logger.error("Server Timed Out (10s)")
-                            leds.set_state(LEDState.ERROR)
-                            # buzzer.warn() (Disabled)
-                            time.sleep(1)
-                            leds.set_state(LEDState.IDLE)
-                        except Exception as e:
-                            logger.error(f"Network Error: {e}")
-                            leds.set_state(LEDState.ERROR)
-                            time.sleep(1)
-                            leds.set_state(LEDState.IDLE)
-
-                    else:
-                        logger.debug("Captured audio too short, ignoring.")
-                
-                # Clear queue to avoid echoes
-                with audio_queue.mutex:
-                    audio_queue.queue.clear()
+                time.sleep(0.1)
 
     except KeyboardInterrupt:
         logger.info("Exiting...")

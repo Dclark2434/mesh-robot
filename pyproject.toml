@@ -34,7 +34,12 @@ server = [
     "customtkinter",
     "python-dotenv"
 ]
+
 client = [
+    "sounddevice",
+]
+
+robot = [
     "sounddevice",
     "rpi-ws281x",
     "spidev",
