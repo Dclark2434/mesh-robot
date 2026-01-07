@@ -160,6 +160,19 @@ export GEMINI_API_KEY="your_api_key_here"
 python -m mesh_server.server
 ```
 
+### 1.1 External Access (Windows 11 WSL)
+If you are running the server on Windows 11 via WSL and want to access it from another device, you have two options:
+
+**Run this PowerShell script as Administrator:**
+
+```powershell
+powershell -ExecutionPolicy Bypass -File scripts/setup_network.ps1
+```
+
+The script will offer two modes:
+1.  **Standard Setup (Port Proxy)**: Works on all Windows versions. Manually forwards port 8000.
+2.  **Mirrored Mode (Recommended for Win11 22H2+)**: Configuring WSL to share the host IP address. Simpler and more robust.
+
 ### 2. Client Installation (The Interface)
 Runs on the robot (Pi) or a debug machine (Windows).
 
