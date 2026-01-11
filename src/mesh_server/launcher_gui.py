@@ -197,20 +197,23 @@ class MeshLauncher(ctk.CTk):
     def launch_system(self):
         self.save_env()
         print("Sanity Check: System Initializing...")
-        self.destroy() # Close GUI
-        
-        # Launch server.py in the current process/terminal
-        server_path = os.path.join(os.path.dirname(os.path.abspath(__file__)), "server.py")
-        
-        # We use subprocess.call or run to replace execution or run it blocking.
-        # Since we want to see output in the terminal that ran this script:
-        try:
-            subprocess.run([sys.executable, server_path], check=True)
-        except KeyboardInterrupt:
-            print("\nSystem Shutdown.")
-        except Exception as e:
-            print(f"Error launching server: {e}")
+        self.should_launch = True
+        self.quit() # Stop mainloop
+        self.destroy() # Destroy window
 
 if __name__ == "__main__":
     app = MeshLauncher()
     app.mainloop()
+    
+    # Process Launch Logic (Runs after GUI finishes)
+    if getattr(app, 'should_launch', False):
+        server_path = os.path.join(os.path.dirname(os.path.abspath(__file__)), "server.py")
+        print("\n[LAUNCHER] Starting Server...")
+        try:
+            # We use call/run here because we are now in the main thread (no GUI to freeze)
+            subprocess.run([sys.executable, server_path], check=True)
+        except KeyboardInterrupt:
+            print("\n[LAUNCHER] System Shutdown.")
+        except Exception as e:
+            print(f"\n[LAUNCHER] Error: {e}")
+            input("Press Enter to exit...")
