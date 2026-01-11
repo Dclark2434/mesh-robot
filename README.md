@@ -27,7 +27,7 @@ M.E.S.H. is a "Brain" for Freenove Big Hexapod robots. It features a custom spee
 - **Pro-Grade Voice**: ElevenLabs integration for expressive speech (laughs, sighs) with seamless fallback to F5-TTS (Local and free).
 - **Advanced TTS**: State-of-the-art voice cloning via F5-TTS or Chatterbox.
 - **Real-time Senses**: Whisper-powered STT for hands-free interaction.
-- **Vision System**: Image analysis and commentary via the `/see` endpoint.
+- **Vision System**: Image analysis and commentary via the `/see` endpoint. - Active development...
 - **Custom Identity**: Configurable cynical, dry, and military-aware persona.
 - **Command Engine**: Integrated stubs for hardware control (walking, scanning, etc.).
 - **Server Launcher GUI**: Launching server includes a GUI to help guide users through launching server with correct environment variables and api keys.
@@ -43,7 +43,7 @@ M.E.S.H. is a "Brain" for Freenove Big Hexapod robots. It features a custom spee
 
 _*Benchmarks measured on NVIDIA 4070 Super GPU (Avg over ~12 sessions). Total time captures full generation duration._
 * ElevenLabs requires a subscription.
-* Chatterbox requires a free huggingface token. ([hu](https://huggingface.co/))
+* Chatterbox requires a free huggingface token. ([huggingface.co](https://huggingface.co/))
 ---
 
 ## Command Manual & Capabilities
