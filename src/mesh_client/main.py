@@ -499,7 +499,7 @@ def main():
                             if not started:
                                 check_idle_timeout()
                             continue 
-
+                        
                         volume = np.max(np.abs(chunk))
                         
                         if not started:
