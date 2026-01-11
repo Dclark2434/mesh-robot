@@ -396,3 +396,44 @@ class AnimationController:
         finally:
             self.is_animating = False
             self.anim_lock.release()
+    def simple_idle_step(self):
+        """
+        Subtle Idle: Lifts each leg briefly and puts it down.
+        """
+        if not self.anim_lock.acquire(blocking=False):
+            return
+
+        logger.info("Animation: Simple Idle Step")
+        self.is_animating = True
+        try:
+            current = copy.deepcopy(self.loco.body_points)
+            # Order: Back-Right, Back-Left, Mid-Right, Mid-Left, Front-Right, Front-Left
+            # (2, 3, 1, 4, 0, 5)
+            sequence = [2, 3, 1, 4, 0, 5]
+            
+            lift_height = 30 # mm
+            
+            for leg in sequence:
+                # Lift
+                steps = 5
+                for _ in range(steps):
+                    current[leg][2] += (lift_height / steps)
+                    self.loco.transform_coordinates(current)
+                    self.loco.set_leg_angles()
+                    time.sleep(0.02)
+                
+                time.sleep(0.05)
+                
+                # Drop
+                for _ in range(steps):
+                    current[leg][2] -= (lift_height / steps)
+                    self.loco.transform_coordinates(current)
+                    self.loco.set_leg_angles()
+                    time.sleep(0.02)
+                
+                time.sleep(0.1)
+
+            self.reset_neutral()
+        finally:
+            self.is_animating = False
+            self.anim_lock.release()

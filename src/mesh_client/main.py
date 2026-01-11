@@ -458,27 +458,46 @@ def main():
                         last_activity_time = time.time()
                         continue
 
-                    # IDLE CHECK (Runs every loop)
-                    # If no activity for 120s and we haven't idled yet
-                    if (time.time() - last_activity_time > 120.0) and not has_idled:
-                        logger.info("Idle limit reached (120s). Triggering Palp Wiggle -> Relax.")
-                        is_moving.set()
-                        try:
-                            anim.palp_wiggle()
-                            # Wait 5 seconds in neutral before relaxing
-                            time.sleep(5.0)
-                            
-                            logger.info("Auto-Relaxing...")
-                            head.look_neutral()
-                            time.sleep(0.5)
-                            sc.relax()
-                            has_idled = True
-                        except Exception as e:
-                            logger.error(f"Idle Anim Error: {e}")
-                        finally:
-                            is_moving.clear()
-                            # Reset activity so we don't loop immediately (though has_idled prevents it)
-                            last_activity_time = time.time() 
+    # Idle Logic Closure
+    def check_idle_timeout():
+        nonlocal last_activity_time, has_idled
+        if (time.time() - last_activity_time > 120.0) and not has_idled:
+            logger.info("Idle limit reached (120s). Triggering Palp Wiggle -> Relax.")
+            is_moving.set()
+            try:
+                anim.simple_idle_step()
+                # Wait 5 seconds in neutral before relaxing
+                time.sleep(5.0)
+                
+                logger.info("Auto-Relaxing...")
+                head.look_neutral()
+                time.sleep(0.5)
+                sc.relax()
+                has_idled = True
+            except Exception as e:
+                logger.error(f"Idle Anim Error: {e}")
+            finally:
+                is_moving.clear()
+                # Reset activity so we don't loop immediately (though has_idled prevents it)
+                last_activity_time = time.time()
+
+    try:
+        if audio_input_available:
+            with sd.InputStream(samplerate=SAMPLE_RATE, channels=CHANNELS, callback=audio_callback):
+                while True:
+                    # MUTE during movement to prevent self-triggering
+                    if is_moving.is_set():
+                        # Drain queue to discard servo noise
+                        while not audio_queue.empty():
+                            try: audio_queue.get_nowait()
+                            except queue.Empty: break
+                        time.sleep(0.1)
+                        # Update activity to prevent immediate idle trigger after move
+                        last_activity_time = time.time()
+                        continue
+
+                    # Outer Loop Idle Check
+                    check_idle_timeout() 
 
                     audio_buffer = []
                     silence_counter = 0
@@ -492,6 +511,8 @@ def main():
                         try:
                             chunk = audio_queue.get(timeout=0.1)
                         except queue.Empty:
+                            if not started:
+                                check_idle_timeout()
                             continue 
 
                         volume = np.max(np.abs(chunk))
