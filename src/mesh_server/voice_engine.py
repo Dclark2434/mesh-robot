@@ -271,7 +271,7 @@ def speak_generator(text_to_speak):
                             nfe_step=32,
                             remove_silence=False
                         )
-                    sf.write(temp_wav, wav, sample_rate)
+                    sf.write(temp_wav, wav, sample_rate, subtype='PCM_16')
                 else:
                     # Chatterbox Logic
                     with suppress_output():
@@ -322,7 +322,7 @@ def speak_generator(text_to_speak):
                         
                         sample_rate = 24000 # Chatterbox default
                     
-                    sf.write(temp_wav, wav, sample_rate)
+                    sf.write(temp_wav, wav, sample_rate, subtype='PCM_16')
             
             # Direct Yield (No FX, No SoX)
             try:

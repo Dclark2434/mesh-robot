@@ -239,7 +239,7 @@ async def interact_generator(audio_bytes, telemetry=None):
     # Format: 24kHz, 16-bit, Mono = 48000 bytes/sec
     audio_duration = bytes_sent / 48000.0
     USER_STATES[user_id] = time.time() + audio_duration
-    logger.info(f"[LATENCY] Total Interaction Time: {time.time() - start_total:.2f}s (Audio Duration: {audio_duration:.2f}s)")
+    logger.info(f"[LATENCY] Total Interaction Time: {time.time() - start_total:.2f}s (Audio Duration: {audio_duration:.2f}s, Bytes: {bytes_sent})")
     SESSION_STATS["total"].append(time.time() - start_total)
 
 # --- API ENDPOINTS ---

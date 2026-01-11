@@ -52,7 +52,7 @@ WAKE_WORDS = [
     "hey, ash", "hey man", "hey, man", 
     "hamish"
     ]
-ATTENTION_SPAN = 6 
+ATTENTION_SPAN = 10 
 
 # --- PERSISTENT IDENTITY (THE SOUL) ---
 SYSTEM_PROMPT = """
