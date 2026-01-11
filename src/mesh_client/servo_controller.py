@@ -105,7 +105,23 @@ class ServoController(RobotHardware):
         # Always initialize angles map
         self.angles = {}
 
+    def _ensure_power(self):
+        """Checks if servo power is enabled, and enables if not."""
+        # Using a simple attribute to track state to avoid excessive GPIO calls
+        # Assuming power is enabled on init.
+        # But we can just force it ON if we recently relaxed.
+        if hasattr(self, 'power_pin') and self.power_pin:
+             # If we are using gpiozero, check value? 
+             # OutputDevice.value is 1 if on, 0 if off.
+             # Logic: off() -> Enable (Low Active). on() -> Disable (High Active).
+             if self.power_pin.value == 1: # It is currently High (OFF)
+                 logger.info("Auto-Enabling Servo Power...")
+                 self.power_pin.off() # Enable
+                 time.sleep(0.05) # Stabilize
+
     def set_angle(self, channel, angle):
+        self._ensure_power() # Wake up if needed
+        
         angle = max(0, min(180, angle))
         
         # Determine which board to use based on Freenove logic
@@ -124,8 +140,6 @@ class ServoController(RobotHardware):
         duty_cycle = map_value(angle, 0, 180, 500, 2500)
         off_count = int(map_value(duty_cycle, 0, 20000, 0, 4095))
         
-        # Debug Log (Sample few channels to avoid spam)
-        # CHANGED TO INFO FOR DEBUGGING
         if channel in [0, 8, 16] or logger.level <= 10: 
              logger.info(f"[SERVO] Ch {channel} -> {angle} deg -> PWM {off_count}")
              
@@ -134,12 +148,18 @@ class ServoController(RobotHardware):
 
     def relax(self):
         # Relax both boards
+        logger.info("Relaxing Servos (Cutting PWM & Power)...")
         for board in [self.pwm41, self.pwm40]:
             if isinstance(board, DummyServo):
                 board.relax()
             else:
                 for i in range(16):
-                    board.set_pwm(i, 4096, 4096)
+                    board.set_pwm(i, 0, 4096)
+        
+        # Cut Power Rail (GPIO 4 High)
+        if hasattr(self, 'power_pin') and self.power_pin:
+            self.power_pin.on() # Disable Power
+            logger.info("Servo Power Rail Disabled.")
 
 class HeadController:
     """Specialized controller for the Hexapod head servos."""
@@ -167,6 +187,19 @@ class HeadController:
 
     def look_right(self, degrees=30):
         self.ctrl.set_angle(self.pan_channel, self.neutral_pan - degrees)
+
+    def look_at(self, pan_offset, tilt_offset):
+        """Moves head to specific offsets from neutral. Positive Tilt = UP, Positive Pan = LEFT."""
+        # Sanity check ranges
+        tilt_target = self.neutral_tilt + tilt_offset
+        pan_target = self.neutral_pan + pan_offset
+        
+        # Clamp loosely (servos usually 0-180)
+        tilt_target = max(30, min(150, tilt_target)) # Don't hit body (30)
+        pan_target = max(0, min(180, pan_target))
+        
+        self.ctrl.set_angle(self.pan_channel, pan_target)
+        self.ctrl.set_angle(self.tilt_channel, tilt_target)
 
 if __name__ == "__main__":
     sc = ServoController()

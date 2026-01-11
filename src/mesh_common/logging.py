@@ -31,6 +31,7 @@ class MeshFormatter(logging.Formatter):
 
 def get_logger(name: str) -> logging.Logger:
     logger = logging.getLogger(name)
+    logger.propagate = False
     if not logger.handlers:
         handler = logging.StreamHandler(sys.stdout)
         handler.setFormatter(MeshFormatter())

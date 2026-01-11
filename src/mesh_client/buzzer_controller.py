@@ -27,8 +27,8 @@ class BuzzerController:
     def off(self):
         if self.device: self.device.off()
 
-    def beep(self, duration=1.0):
-        """Standard beep. Default 1s, Max 2s."""
+    def beep(self, duration=0.1):
+        """Standard beep. Default 0.1s, Max 2s."""
         # Enforce limits
         duration = min(duration, 2.0)
         
@@ -42,9 +42,9 @@ class BuzzerController:
     def warn(self):
         """Double beep sequence."""
         if self.device:
-            self.beep(0.5)
+            self.beep(0.15)
             time.sleep(0.1)
-            self.beep(0.5)
+            self.beep(0.15)
         else:
             logger.info("[SIMULATION] *BEEP* *BEEP*")
 

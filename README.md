@@ -8,6 +8,10 @@
 > **Status: Active Development**
 > This project provides the "Brain" and "Senses" for a physical hexapod robot. It is an evolving architecture, not a finished product.
 
+<p align="center">
+  <img width="256" height="384" alt="edited hexapod" src="https://github.com/user-attachments/assets/cacb2021-0fb4-4f09-95fc-123475b88816" />
+</p>
+
 M.E.S.H. is a "Brain" for Freenove Big Hexapod robots. It features a custom speech-to-speech pipeline, on-the-fly voice cloning, and a modular architecture designed for high-performance inference. This will only work with a Freenove Big Hexapod robot with the following components:
 
 - Raspberry Pi 3/4/5
@@ -20,12 +24,26 @@ M.E.S.H. is a "Brain" for Freenove Big Hexapod robots. It features a custom spee
 ## Key Features
 
 - **Dual Brain Core**: Seamlessly toggle between Google Gemini (Cloud) and Ollama (Local).
-- **Advanced TTS**: State-of-the-art voice cloning via F5-TTS or legacy XTTS v2.
+- **Pro-Grade Voice**: ElevenLabs integration for expressive speech (laughs, sighs) with seamless fallback to F5-TTS (Local and free).
+- **Advanced TTS**: State-of-the-art voice cloning via F5-TTS or Chatterbox.
 - **Real-time Senses**: Whisper-powered STT for hands-free interaction.
 - **Vision System**: Image analysis and commentary via the `/see` endpoint.
 - **Custom Identity**: Configurable cynical, dry, and military-aware persona.
 - **Command Engine**: Integrated stubs for hardware control (walking, scanning, etc.).
+- **Server Launcher GUI**: Launching server includes a GUI to help guide users through launching server with correct environment variables and api keys.
 
+### Voice Engine Comparison
+
+| Engine | Type | TTFB (Avg) | Total (Avg)* | Quality | Expressive | Requirement |
+|:-------|:-----|:-----------|:-------------|:--------|:-----------|:------------|
+| **Chatterbox Turbo** | Local | **1.45s** | **4.19s** | ⭐⭐⭐ (Good) | ✅ Yes | `HF_TOKEN` (Free) |
+| **F5-TTS** | Local | 1.88s | 4.90s | ⭐⭐⭐⭐ (High) | ❌ No | None (Open Source) |
+| **ElevenLabs** | Cloud | 1.51s | 6.00s | ⭐⭐⭐⭐⭐ (Pro) | ✅ Yes | `ELEVENLABS_API_KEY` |
+| **Chatterbox 100m** | Local | 3.26s | 8.66s | ⭐⭐ (Base) | ❌ No | `HF_TOKEN` (Free) |
+
+_*Benchmarks measured on NVIDIA 4070 Super GPU (Avg over ~12 sessions). Total time captures full generation duration._
+* ElevenLabs requires a subscription.
+* Chatterbox requires a free huggingface token. ([hu](https://huggingface.co/))
 ---
 
 ## Command Manual & Capabilities
@@ -61,6 +79,11 @@ The robot can "act" while speaking by embedding Action Tags in its response.
 - "Look at this mess. [ACTION: LOOK_DOWN] Disappointing."
 - "Power management engaged. [ACTION: RELAX] Don't wake me."
 
+### Expressive Audio (ElevenLabs and Chatterbox Turbo Only)
+When using the elevenlabs voice engine, the robot uses audio tags to add emotion.
+- `[laughing]`, `[sighs]`, `[clears throat]`, `[whispers]`.
+- *Note: These are automatically stripped if the system falls back to local TTS.*
+
 ---
 
 ## Project Structure
@@ -88,11 +111,15 @@ Control M.E.S.H. via environment variables.
 | Variable | Default | Description |
 |----------|---------|-------------|
 | `USE_GEMINI` | `True` | Use Google Gemini Flash (Cloud). `False` for local Ollama. |
-| `USE_F5_TTS` | `True` | Use F5-TTS (SOTA). `False` for XTTS v2. |
+| `USE_ELEVENLABS` | `False` | Use ElevenLabs API. `False` for local F5/XTTS. |
+| `USE_F5_TTS` | `True` | Use F5-TTS (SOTA). `False` for XTTS v2 (Legacy). |
 | `GEMINI_API_KEY`| - | **Required** for Cloud Brain. |
+| `ELEVENLABS_API_KEY`| - | **Required** for Cloud Voice. |
+| `ELEVENLABS_VOICE_ID`| - | Voice ID for ElevenLabs. |
 
 > [!IMPORTANT]
 > Ensure `GEMINI_API_KEY` is set in your environment if `USE_GEMINI` is enabled.
+> Ensure `ELEVENLABS_API_KEY` is set in your environment if `USE_ELEVENLABS` is enabled.
 
 ---
 
@@ -102,7 +129,7 @@ Control M.E.S.H. via environment variables.
 - **OS**: Linux (WSL2 recommended for Windows users).
 - **Python**: 3.11 (3.12+ currently incompatible with TTS libraries).
 - **GPU**: NVIDIA GPU with CUDA 12.1 (8GB+ VRAM recommended).
-- **Dependencies**: `ffmpeg`, `sox`, `libsox-fmt-all`.
+- **Dependencies**: `ffmpeg`, `sox`, `libsox-fmt-all`, `python3.11-tk` (for GUI).
 
 ### 1. Server Installation (The Brain)
 Runs on your high-end workstation or server.
@@ -113,21 +140,38 @@ git clone https://github.com/Dclark2434/mesh-robot.git
 cd mesh-robot
 
 # Install system deps
-sudo apt update && sudo apt install python3.11-venv sox libsox-fmt-all ffmpeg -y
+sudo apt update && sudo apt install python3.11-venv python3.11-tk sox libsox-fmt-all ffmpeg -y
 
 # Setup and install
 python3.11 -m venv venv
 source venv/bin/activate
-pip install torch torchaudio torchvision --index-url https://download.pytorch.org/whl/cu121
-pip install -e .[server]
+pip install -e .[server] --index-url https://download.pytorch.org/whl/cu121 --extra-index-url https://pypi.org/simple
 
-# Generate soundboard
-python src/mesh_server/bake_sounds.py
+```
+> [!TIP]
+> If you replace `src/mesh_server/reference.wav`, you MUST re-run `bake_sounds.py` to regenerate the system sounds in the new voice. Otherwise your robot will have split personality.
 
-# Start the brain
+```bash
+# Start the brain (GUI Launcher)
+python src/mesh_server/launcher_gui.py
+
+# OR Start via Command Line
 export GEMINI_API_KEY="your_api_key_here"
 python -m mesh_server.server
 ```
+
+### 1.1 External Access (Windows 11 WSL)
+If you are running the server on Windows 11 via WSL and want to access it from another device, you have two options:
+
+**Run this PowerShell script as Administrator:**
+
+```powershell
+powershell -ExecutionPolicy Bypass -File scripts/setup_network.ps1
+```
+
+The script will offer two modes:
+1.  **Standard Setup (Port Proxy)**: Works on all Windows versions. Manually forwards port 8000.
+2.  **Mirrored Mode (Recommended for Win11 22H2+)**: Configuring WSL to share the host IP address. Simpler and more robust.
 
 ### 2. Client Installation (The Interface)
 Runs on the robot (Pi) or a debug machine (Windows).
@@ -136,10 +180,11 @@ Runs on the robot (Pi) or a debug machine (Windows).
 # 1. Setup environment
 python -m venv venv-client
 # Windows (PowerShell): .\venv-client\Scripts\Activate.ps1
-# Linux/Pi (Bash): source venv-client/bin/activate
+source venv-client/bin/activate
 
 # 2. Install client-side dependencies (including hardware drivers)
 pip install -e ".[client]"
+# pip install -e ".[robot]" if on raspberry pi. This includes special hardware drivers!
 
 # 3. Configure Connection (Replace <SERVER_IP> with the IP of your Brain/PC)
 # Windows (PowerShell):
@@ -170,3 +215,10 @@ bash scripts/setup-autostart.sh
 ## License
 
 Distributed under the MIT License. See `LICENSE` for more information.
+
+
+
+
+
+
+

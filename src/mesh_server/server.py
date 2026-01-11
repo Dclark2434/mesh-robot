@@ -1,6 +1,9 @@
 import warnings
 # Silence noisy 3rd-party FutureWarnings (transformers, torch, etc.) before imports
 warnings.filterwarnings("ignore", category=FutureWarning)
+# Silence specific Transformers warnings about Llama attention and cache
+warnings.filterwarnings("ignore", message=".*LlamaModel is using LlamaSdpaAttention.*")
+warnings.filterwarnings("ignore", message=".*passing `past_key_values` as a tuple.*")
 
 import asyncio
 import uvicorn
@@ -18,6 +21,9 @@ from mesh_server import brain
 from mesh_server import voice_engine
 from mesh_server import config
 
+# Warmup Neural Engine
+voice_engine.warmup()
+
 logger = get_logger("mesh_server")
 app = FastAPI(title="M.E.S.H. Server")
 
@@ -30,17 +36,60 @@ async def add_process_time_header(request, call_next):
 # --- STATE ---
 USER_STATES = {}
 
+# Session Statistics
+SESSION_STATS = {
+    "stt": [],
+    "llm": [],
+    "ttfb": [],
+    "tts_tot": [],
+    "total": []
+}
+
+@app.on_event("shutdown")
+def print_latency_report():
+    """Prints a statistical report of session latency upon exit."""
+    from statistics import mean
+    
+    print("\n" + "="*60)
+    print(f"   M.E.S.H. SESSION LATENCY REPORT   ")
+    print("="*60)
+    
+    headers = ["Metric", "Count", "Avg (s)", "Min (s)", "Max (s)"]
+    row_fmt = "{:<15} | {:<5} | {:<7} | {:<7} | {:<7}"
+    print(row_fmt.format(*headers))
+    print("-" * 60)
+    
+    # Updated metric list with TTS Total
+    for metric in ["stt", "llm", "ttfb", "tts_tot", "total"]:
+        data = SESSION_STATS[metric]
+        if data:
+            row = [
+                metric.upper(),
+                len(data),
+                f"{mean(data):.2f}",
+                f"{min(data):.2f}",
+                f"{max(data):.2f}"
+            ]
+            print(row_fmt.format(*row))
+        else:
+            print(f"{metric.upper():<15} | 0     | N/A     | N/A     | N/A")
+            
+    print("="*60 + "\n")
+
 # --- STREAM LOGIC ---
 
-async def interact_generator(audio_bytes):
+async def interact_generator(audio_bytes, telemetry=None):
     start_total = time.time()
     audio_buffer = io.BytesIO(audio_bytes)
     
     # 1. Transcribe (In background thread!)
+    stt_start = time.time()
     user_text = await asyncio.to_thread(voice_engine.transcribe, audio_buffer)
+    stt_duration = time.time() - stt_start
     
     if user_text:
         logger.info(f"[HEARD] '{user_text}'")
+        SESSION_STATS["stt"].append(stt_duration)
 
     if not user_text:
         yield json.dumps({"status": "no_speech"}).encode()
@@ -60,6 +109,35 @@ async def interact_generator(audio_bytes):
         parts = clean_input.partition(trigger_word)
         remaining_command = parts[2].strip(" .,?!")
         final_prompt = remaining_command
+        
+    # INJECT TELEMETRY INTO PROMPT
+    # We add it as a system note inside the user message
+    if telemetry:
+        try:
+            # Parse Telemetry
+            t_data = json.loads(telemetry)
+            
+            # Smart Injection: Only inject if LOW or relevant keyword in prompt
+            servo_p = t_data.get('servo_percent', 100)
+            logic_p = t_data.get('logic_percent', 100)
+            
+            is_low = (servo_p < 30) or (logic_p < 30)
+            is_relevant = any(kw in clean_input for kw in ['battery', 'power', 'charge', 'status', 'level', 'voltage'])
+            
+            if is_low or is_relevant:
+                t_str = (
+                    f"[SYSTEM DATA: "
+                    f"Servo={t_data.get('servo_voltage')}V ({servo_p}%), "
+                    f"Logic={t_data.get('logic_voltage')}V ({logic_p}%)"
+                    f"]"
+                )
+                final_prompt = f"{t_str} {final_prompt}"
+                logger.info(f"[CONTEXT] Injected: {t_str}")
+            else:
+                logger.debug("[CONTEXT] Telemetry available but not relevant (Healthy & not asked).")
+        except Exception as e:
+            logger.warning(f"Telemetry parse error: {e}")
+            pass
 
     # Determine feedback sound: 'ack' for pokes, 'processing' for logic
     is_poke = len(final_prompt) < 2
@@ -67,7 +145,8 @@ async def interact_generator(audio_bytes):
 
     if trigger_word:
         logger.info(f"[TRIGGER] {trigger_word}")
-        USER_STATES[user_id] = time.time()
+        # Add buffer (2.0s) to account for 'Ack' sound playback and reaction time
+        USER_STATES[user_id] = time.time() + 2.0
         
         # Feedback on trigger
         ack_bytes = voice_engine.get_prebaked_sound(ack_type)
@@ -97,8 +176,12 @@ async def interact_generator(audio_bytes):
         chunks = await asyncio.to_thread(get_all_chunks, "Powering down. Goodnight.")
         for chunk in chunks: yield chunk
         return
-
+    
+    llm_start = time.time()
     raw_response = await asyncio.to_thread(brain.think, final_prompt, user_id)
+    llm_duration = time.time() - llm_start
+    SESSION_STATS["llm"].append(llm_duration)
+    
     parsed = brain.robust_json_parse(raw_response)
     spoken_text = parsed.get("response", "Data error.")
     hardware_command = parsed.get("action", "none")
@@ -116,6 +199,10 @@ async def interact_generator(audio_bytes):
     # Regex: (\[ACTION: [A-Z_]+\]) capturing group keeps the delimiter
     parts = re.split(r'(\[ACTION: [A-Z_]+\])', spoken_text)
     
+    ttfb_captured = False
+    tts_start_time = time.time()
+    bytes_sent = 0
+    
     for part in parts:
         if not part.strip(): continue
         
@@ -130,20 +217,35 @@ async def interact_generator(audio_bytes):
             yield (cmd_payload + "\n").encode("utf-8")
         else:
             # It's speech
+            # We only track TTFB for the first speech chunk of the response
             for chunk in voice_engine.speak_generator(part):
+                if not ttfb_captured:
+                    ttfb = time.time() - tts_start_time
+                    SESSION_STATS["ttfb"].append(ttfb)
+                    ttfb_captured = True
+                
+                valid_chunk = chunk if isinstance(chunk, bytes) else b"" # Safety
+                bytes_sent += len(valid_chunk)
                 yield chunk
+    
+    # Record Total TTS generation time (if we spoke)
+    if ttfb_captured:
+        tts_total_duration = time.time() - tts_start_time
+        SESSION_STATS["tts_tot"].append(tts_total_duration)
         
-    logger.info(f"[LATENCY] Total Interaction Time: {time.time() - start_total:.2f}s")
-
-def vision_interaction_stream(image_bytes, prompt):
-    logger.info(f"User (Vision): {prompt}")
-    vision_response = brain.look(prompt, image_bytes)
-    yield from voice_engine.speak_generator(vision_response)
+    # Reset attention span timer AFTER he finishes speaking/acting
+    # CRITICAL FIX: Server generates faster than realtime. 
+    # We must add the audio duration to the timestamp so the timeout counts from when he FINISHES speaking.
+    # Format: 24kHz, 16-bit, Mono = 48000 bytes/sec
+    audio_duration = bytes_sent / 48000.0
+    USER_STATES[user_id] = time.time() + audio_duration
+    logger.info(f"[LATENCY] Total Interaction Time: {time.time() - start_total:.2f}s (Audio Duration: {audio_duration:.2f}s, Bytes: {bytes_sent})")
+    SESSION_STATS["total"].append(time.time() - start_total)
 
 # --- API ENDPOINTS ---
 
 @app.post("/interact")
-async def interact_endpoint(request: Request, audio_file: UploadFile = File(...)):
+async def interact_endpoint(request: Request, audio_file: UploadFile = File(...), telemetry: str = Form(None)):
     start_time = getattr(request.state, "start_time", time.time())
     overhead = time.time() - start_time
     logger.info(f"[LATENCY] Request Overhead: {overhead:.2f}s")
@@ -153,7 +255,7 @@ async def interact_endpoint(request: Request, audio_file: UploadFile = File(...)
     logger.info(f"[LATENCY] Server File Read: {time.time() - read_start:.2f}s")
     
     return StreamingResponse(
-        interact_generator(audio_bytes),
+        interact_generator(audio_bytes, telemetry),
         media_type="audio/wav"
     )
 
