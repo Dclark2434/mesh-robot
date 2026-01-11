@@ -342,7 +342,7 @@ PHANTOM_PHRASES = [
     "thanks for watching", "see you in the next one", "like and subscribe", 
     "subtitles by", "amara.org", "copyright", "all rights reserved",
     "thank you for watching", "visit our website", "buzzsprout",
-    "bye bye", "bye.", "thank you bye"
+    "bye bye", "bye.", "thank you bye", "thank you very much", "thank you very much bye"
 ]
 
 # AUDIO TAGS - ElevenLabs ONLY - appends to SYSTEM_PROMPT when using ElevenLabs
