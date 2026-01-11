@@ -446,6 +446,12 @@ def main():
     # Idle Logic Closure
     def check_idle_timeout():
         nonlocal last_activity_time, has_idled
+        
+        # DEBUG: Print idle status every 2s to verify loop execution
+        idle_dur = time.time() - last_activity_time
+        if int(idle_dur) % 2 == 0 and int(idle_dur) > 0:
+             print(f"DEBUG: Idle Duration: {idle_dur:.1f}s / 120.0s   ", end='\r')
+
         if (time.time() - last_activity_time > 120.0) and not has_idled:
             logger.info("Idle limit reached (120s). Triggering Simple Step -> Relax.")
             is_moving.set()
@@ -509,6 +515,9 @@ def main():
                         volume = np.max(np.abs(chunk))
                         
                         if not started:
+                            # Check idle while listening to silence
+                            check_idle_timeout()
+
                             # Append to pre-roll
                             preroll_buffer.append(chunk)
                             
