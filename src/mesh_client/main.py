@@ -443,26 +443,11 @@ def main():
     last_activity_time = time.time()
     has_idled = False
 
-    try:
-        if audio_input_available:
-            with sd.InputStream(samplerate=SAMPLE_RATE, channels=CHANNELS, callback=audio_callback):
-                while True:
-                    # MUTE during movement to prevent self-triggering
-                    if is_moving.is_set():
-                        # Drain queue to discard servo noise
-                        while not audio_queue.empty():
-                            try: audio_queue.get_nowait()
-                            except queue.Empty: break
-                        time.sleep(0.1)
-                        # Update activity to prevent immediate idle trigger after move
-                        last_activity_time = time.time()
-                        continue
-
     # Idle Logic Closure
     def check_idle_timeout():
         nonlocal last_activity_time, has_idled
         if (time.time() - last_activity_time > 120.0) and not has_idled:
-            logger.info("Idle limit reached (120s). Triggering Palp Wiggle -> Relax.")
+            logger.info("Idle limit reached (120s). Triggering Simple Step -> Relax.")
             is_moving.set()
             try:
                 anim.simple_idle_step()
@@ -613,22 +598,7 @@ def main():
             logger.info("Entering Audio-Less Mode (Idle Only).")
             while True:
                 # Still process idle animations
-                if (time.time() - last_activity_time > 120.0) and not has_idled:
-                    logger.info("Idle limit reached (120s). Triggering Palp Wiggle -> Relax.")
-                    is_moving.set()
-                    try:
-                        anim.palp_wiggle()
-                        time.sleep(5.0)
-                        logger.info("Auto-Relaxing...")
-                        head.look_neutral()
-                        time.sleep(0.5)
-                        sc.relax()
-                        has_idled = True
-                    except Exception as e:
-                        logger.error(f"Idle Anim Error: {e}")
-                    finally:
-                        is_moving.clear()
-                        last_activity_time = time.time()
+                check_idle_timeout()
                 
                 time.sleep(0.1)
 
