@@ -484,6 +484,12 @@ def main():
                     # Outer Loop Idle Check
                     check_idle_timeout() 
 
+                    # DEBUG: Print idle status every 5s
+                    idle_dur = time.time() - last_activity_time
+                    if int(idle_dur) % 5 == 0 and int(idle_dur) > 0:
+                         # Use \r to overwrite line for a cleaner "dashboard" effect in terminal
+                         print(f"DEBUG: Idle Duration: {idle_dur:.1f}s / 120.0s   ", end='\r') 
+
                     audio_buffer = []
                     silence_counter = 0
                     started = False
