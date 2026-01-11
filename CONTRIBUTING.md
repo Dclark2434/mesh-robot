@@ -23,6 +23,3 @@ First off, thanks for taking the time to contribute!
 2. Create a virtual environment: `python -m venv venv`.
 3. Install dependencies: `pip install -r src/mesh_server/requirements.txt`.
 4. Run tests: `pytest`.
-
----
-*Stay Cynical.*

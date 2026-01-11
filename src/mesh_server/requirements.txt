@@ -153,3 +153,7 @@ wrapt==2.0.1
 yarl==1.22.0
 google-genai
 f5-tts
+customtkinter
+python-dotenv
+requests
+Pillow

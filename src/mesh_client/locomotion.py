@@ -10,7 +10,7 @@ logger = get_logger("mesh_locomotion")
 class LocomotionController:
     def __init__(self, servo_ctrl: ServoController):
         self.servo = servo_ctrl
-        self.body_height = -25
+        self.body_height = -25 # Adjusted lower for "Heavy Settle" (was -30, orig -45)
         # Body and Leg geometry (from Freenove control.py)
         # Note: These values are specific to the Freenove Big Hexapod
         self.body_points = [
@@ -46,11 +46,18 @@ class LocomotionController:
         
         candidates = [
             os.path.join(cwd, "point.txt"),
-            os.path.join(os.path.dirname(os.path.abspath(__file__)), "point.txt"), # Check where this python file is
+            os.path.join(os.path.dirname(os.path.abspath(__file__)), "point.txt"), # src/mesh_client/
+            os.path.join(os.path.dirname(os.path.abspath(__file__)), "..", "..", "point.txt"), # REPO ROOT (mesh-robot/)
             os.path.join(home, "point.txt"),
-            # Check Freenove default location if user just cloned it
             os.path.join(home, "Freenove_Big_Hexapod_Kit/Code/Server/point.txt")
         ]
+
+
+        found_path = None
+        for candidate in candidates:
+            if os.path.exists(candidate):
+                found_path = candidate
+                break
 
         if found_path:
             logger.info(f"Loading calibration from: {found_path}")
@@ -61,7 +68,7 @@ class LocomotionController:
                 if "point.txt" in files:
                     found_path = os.path.join(root, "point.txt")
                     # Sanity check: is it the default one (all 140s)?
-                    # We'll take it anyway, better than nothing.
+                    # Proceeding with auto-discovered calibration file.
                     logger.info(f"Auto-discovered calibration file: {found_path}")
                     break
         

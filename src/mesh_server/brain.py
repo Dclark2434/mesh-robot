@@ -25,10 +25,20 @@ if config.USE_GEMINI:
          raise ValueError("GEMINI_API_KEY environment variable not set. Set USE_GEMINI=False to use Ollama instead.")
     client = genai.Client(api_key=config.GEMINI_API_KEY)
 
+def get_effective_system_prompt():
+    """Returns the base system prompt, appending audio tags if ElevenLabs is enabled."""
+    prompt = config.SYSTEM_PROMPT
+    # Enable tags for ElevenLabs OR Chatterbox
+    if config.USE_ELEVENLABS or config.TTS_ENGINE == "chatterbox":
+        # Check if attribute exists to avoid crashes if config isn't reloaded yet
+        if hasattr(config, 'AUDIO_TAGS_INSTRUCTIONS'):
+            prompt += config.AUDIO_TAGS_INSTRUCTIONS
+    return prompt
+
 def get_gemini_config():
     """Returns the standard configuration for Gemini model calls."""
     return types.GenerateContentConfig(
-        system_instruction=config.SYSTEM_PROMPT,
+        system_instruction=get_effective_system_prompt(),
         response_mime_type="application/json",
         response_schema={
             "type": "OBJECT",
@@ -96,8 +106,8 @@ def summarize_context(context_tokens, user_id):
     Used when context exceeds threshold to compress older history.
     """
     try:
-        # Use a character-consistent summarization prompt
-        # CRITICAL: Keep this factual, not conversational
+        # Use a character-consistent summarization prompt.
+        # Critical: Keep this factual, not conversational.
         summarize_prompt = (
             "Create a brief mission log entry. Facts only. "
             "What did Dustin ask about? What did we decide? "
@@ -132,8 +142,7 @@ def summarize_context(context_tokens, user_id):
 def think_gemini(prompt, user_id="dustin"):
     """
     Gemini implementation of the brain.
-    - Has massive context window (1M+ tokens), so we don't need complex summarization/pruning yet.
-    - We just persist the simple chat history.
+    Leverages large context window to persist full chat history without immediate pruning.
     """
     # Get memory
     if user_id not in SESSION_MEMORY:
@@ -226,7 +235,7 @@ def think(prompt, user_id="dustin"):
     # 2. Build System Prompt with Summary
     # Prepend conversation history if we have a summary
     # CRITICAL: Reinforce personality after summary to prevent drift
-    effective_system = config.SYSTEM_PROMPT
+    effective_system = get_effective_system_prompt()
     if existing_summary:
         summary_header = (
             "MISSION LOG (Previous Conversations):\n"

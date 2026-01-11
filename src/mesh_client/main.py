@@ -1,4 +1,5 @@
 import sounddevice as sd
+import threading
 import json
 import numpy as np
 import requests
@@ -9,7 +10,7 @@ import subprocess
 import os
 import sys
 import struct
-from scipy.io.wavfile import write
+from scipy.io.wavfile import write, read
 from typing import Optional, Generator
 import re
 
@@ -20,14 +21,16 @@ from mesh_common.config import SAMPLE_RATE, CHANNELS, DEFAULT_SERVER_PORT
 from mesh_client.led_controller import LEDManager, LEDState
 from mesh_client.servo_controller import ServoController, HeadController
 from mesh_client.locomotion import LocomotionController
+from mesh_client.animation_controller import AnimationController
 from mesh_client.buzzer_controller import BuzzerController
+from mesh_client.power_monitor import PowerMonitor
 
 logger = get_logger("mesh_client")
 
 # --- CONFIGURATION ---
 SERVER_URL = os.environ.get("MESH_SERVER_URL", f"http://127.0.0.1:{DEFAULT_SERVER_PORT}/interact")
 THRESHOLD = float(os.environ.get("MESH_THRESHOLD", 0.2))
-SILENCE_LIMIT = float(os.environ.get("MESH_SILENCE_LIMIT", 1.0))
+SILENCE_LIMIT = float(os.environ.get("MESH_SILENCE_LIMIT", 2.5))
 ALSA_DEVICE = os.environ.get("MESH_ALSA_DEVICE")
 
 def print_banner():
@@ -47,22 +50,21 @@ def print_banner():
 # --- PLAYBACK ENGINES ---
 
 def play_wav_windows(wav_data: bytes):
-    """Utility to play a single WAV buffer on Windows via PowerShell."""
+    """Utility to play a single WAV buffer on Windows via SoundDevice (Avoids PowerShell overhead)."""
     if not wav_data.startswith(b"RIFF"): return
-    temp_filename = f"temp_recv_{int(time.time() * 1000)}.wav"
-    abs_filepath = os.path.abspath(temp_filename)
     try:
-        with open(temp_filename, "wb") as f:
-            f.write(wav_data)
-        cmd = [
-            "powershell", "-NoProfile", "-ExecutionPolicy", "Bypass", 
-            "-Command", f"(New-Object Media.SoundPlayer '{abs_filepath}').PlaySync()"
-        ]
-        subprocess.call(cmd, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
-    finally:
-        if os.path.exists(temp_filename):
-            try: os.remove(temp_filename)
-            except: pass
+        # Use scipy to read the in-memory WAV bytes
+        # read returns (sample_rate, data)
+        rate, data = read(io.BytesIO(wav_data))
+        
+        # Determine device (optional, uses default if None)
+        sd.play(data, samplerate=rate)
+        sd.wait() # Block until playback finishes to maintain sync
+        
+    except Exception as e:
+        logger.error(f"SoundDevice Playback Error: {e}")
+        # Fallback to PowerShell if SD fails?
+        # For now, let's assume SD works since we are using it for Input.
 
 def play_wav_linux(wav_data: bytes, alsa_device: Optional[str] = None):
     """Utility to play a single WAV buffer on Linux via pw-play (Primary) or aplay (Fallback)."""
@@ -124,11 +126,11 @@ def stream_audio_response(response: requests.Response, cmd_callback=None):
     buffer = b""
     expected_size = 0
     # Match JSON commands: {"action":...} with optional newline
-    command_pattern = re.compile(b'(\{"action":.*?\})(\\n)?')
+    command_pattern = re.compile(rb'(\{"action":.*?\})(\n)?')
 
     for chunk in response.iter_content(chunk_size=4096): 
         if not chunk: continue
-        # logger.debug(f"Received stream chunk: {len(chunk)} bytes") # excessively verbose if working, but needed now
+        # logger.debug(f"Received stream chunk: {len(chunk)} bytes")
         buffer += chunk
         
         # 1. Scan for Commands manually (Regex can be flaky on binary)
@@ -214,202 +216,401 @@ def main():
     leds = LEDManager()
     sc = ServoController()
     head = HeadController(sc)
-    head = HeadController(sc)
     locomotion = LocomotionController(sc)
+    anim = AnimationController(locomotion, head)
     buzzer = BuzzerController()
+    power = PowerMonitor()
     
     last_activity_time = time.time()
     
-    leds.set_state(LEDState.THINKING)
-    head.look_up(10)
+    logger.info("Hardware Initialized.")
+
+    def boot_sequence():
+        """Choreographed startup: Audio + Slow Stand"""
+        start_time = time.time()
+        
+        # Ensure Yellow "Thinking" State
+        leds.set_state(LEDState.THINKING)
+        
+        # 1. IMMEDIATE: Snap to Tucked State (Before Audio starts)
+        try:
+            anim.assume_tucked_pose()
+        except Exception as e:
+            logger.error(f"Failed to assume tucked pose: {e}")
+
+        startup_wav = os.path.join(os.path.dirname(__file__), "startup.wav")
+        if os.path.exists(startup_wav):
+            logger.info("Playing Startup Audio...")
+            try:
+                with open(startup_wav, "rb") as f:
+                    wav_data = f.read()
+                # Play in thread so we can move simultaneously
+                threading.Thread(target=play_wav, args=(wav_data,), daemon=True).start()
+            except Exception as e:
+                logger.error(f"Startup Audio Failed: {e}")
+        
+        # Wait for "Gyro... Online..." (6 seconds)
+        time.sleep(6.0)
+
+        # Trigger the MechWarrior Stand (~8.9 seconds)
+        anim.slow_boot_stand()
+        
+        # HEAD SYNC: Pilot Quip at 15.25s
+        elapsed_so_far = time.time() - start_time
+        time_to_quip = 15.25 - elapsed_so_far
+        if time_to_quip > 0:
+            time.sleep(time_to_quip)
+        
+        # Look Up (Head Tilt +20 degrees)
+        try:
+            head.look_at(0, 20)
+        except Exception as e:
+            logger.warning(f"Head Lift Failed: {e}")
+
+        # Padding: Block for full 21.0s (Audio Duration ~20.5s)
+        elapsed = time.time() - start_time
+        remaining = 21.0 - elapsed
+        if remaining > 0:
+            logger.info(f"Boot Sequence: Waiting {remaining:.2f}s for audio completion...")
+            time.sleep(remaining)
+
+    # Run Boot Sequence
+    boot_sequence()
+
+    # Movement State Flag
+    is_moving = threading.Event()
+    has_idled = False # Flag to prevent repeating idle anim
 
     def on_server_command(cmd):
         nonlocal last_activity_time
+        nonlocal has_idled
         last_activity_time = time.time()
+        has_idled = False
         
-        """Handle hardware commands from server."""
-        action = cmd.get("action")
-        param = cmd.get("param")
-        
-        # Normalize action
-        steps = 4
-        if param:
-            match = re.search(r'\d+', str(param))
-            if match:
-                val = int(match.group())
-                steps = min(val, 10) # Cap at 10
+        def run_action():
+            nonlocal last_activity_time
+            try:
+                """Handle hardware commands from server."""
+                action = cmd.get("action")
+                param = cmd.get("param")
+                
+                # Normalize action
+                steps = 4
+                if param:
+                    match = re.search(r'\d+', str(param))
+                    if match:
+                        val = int(match.group())
+                        steps = min(val, 10) # Cap at 10
 
-        logger.info(f"Executing {action}: {steps} steps")
-        
-        # Determine if we should resume speaking animation after action
-        resume_speaking = True
+                logger.info(f"Command Received: {action} (Param: {param})")
+                
+                if action in ["walk", "walk_forward", "move_forward", "move_backward", "turn_left", "turn_right"]:
+                     logger.info(f"Movement Action: {action} for {steps} steps")
+                     
+                     # MUTE MICROPHONE
+                     is_moving.set()
+                     try:
+                         if action in ["walk", "walk_forward", "move_forward"]:
+                              locomotion.move_forward(steps)
+                         elif action == "move_backward":
+                              locomotion.move_backward(steps)
+                         elif action == "turn_left":
+                              locomotion.turn_left(steps)
+                         elif action == "turn_right":
+                              locomotion.turn_right(steps)
+                     finally:
+                         # Brief cool-down to let servos settle silence
+                         time.sleep(0.2)
+                         is_moving.clear()
+                     
+                     return # Movement handled
+                
+                # IDLE CHECK
+                if time.time() - last_activity_time > 30.0: # 30s of silence
+                     # Trigger idle animation if not already moving
+                     if not is_moving.is_set():
+                          logger.info("Auto-Idle: Palp Wiggle")
+                          is_moving.set()
+                          try:
+                              anim.palp_wiggle()
+                          finally:
+                              is_moving.clear()
+                          last_activity_time = time.time()
 
-        if action in ["walk", "walk_forward", "move_forward"]:
-             locomotion.move_forward(steps)
-        elif action == "move_backward":
-             locomotion.move_backward(steps)
-        elif action == "turn_left":
-             locomotion.turn_left(steps)
-        elif action == "turn_right":
-             locomotion.turn_right(steps)
-        
-        # Head Actions
-        elif action == "look_left":
-             head.look_left()
-        elif action == "look_right":
-             head.look_right()
-        elif action == "look_down":
-             head.look_down()
-        elif action == "look_up":
-             head.look_up()
-        elif action == "look_center":
-             head.look_neutral()
-        
-        # LED Actions
-        elif action == "led_on":
-             leds.set_state(LEDState.LISTENING) # Use white/listening for ON
-             resume_speaking = False # Keep it ON
-        elif action == "led_off":
-             leds.set_state(LEDState.IDLE)
-             resume_speaking = False # Keep it OFF
-        elif action == "led_flash":
-             for _ in range(3):
-                 leds.set_state(LEDState.SPEAKING)
-                 time.sleep(0.1)
-                 leds.set_state(LEDState.IDLE)
-                 time.sleep(0.1)
-             # Resume speaking after flash
+                time.sleep(0.05)
+                
+                # Non-movement actions
+                if action == "null": return
+                
+                # Head Actions
+                elif action == "look_left":
+                     head.look_left()
+                elif action == "look_right":
+                     head.look_right()
+                elif action == "look_down":
+                     head.look_down()
+                elif action == "look_up":
+                     head.look_up()
+                elif action == "look_center":
+                     head.look_neutral()
+                
+                # LED Actions
+                elif action == "led_on":
+                     leds.set_state(LEDState.LISTENING) # Use white/listening for ON
+                elif action == "led_off":
+                     leds.set_state(LEDState.IDLE)
+                elif action == "led_flash":
+                     for _ in range(3):
+                         leds.set_state(LEDState.SPEAKING)
+                         time.sleep(0.1)
+                         leds.set_state(LEDState.IDLE)
+                         time.sleep(0.1)
 
-        # Buzzer Actions
-        elif action == "buzzer_beep":
-             buzzer.beep()
-        elif action == "buzzer_warn":
-             buzzer.warn()
-        elif action == "buzzer_alarm":
-             buzzer.alarm()
-        elif action in ["relax", "stand_by"]:
-             sc.relax()
-        elif action in ["reset", "lay_flat"]:
-             locomotion.reset_posture_flat()
+                # Buzzer Actions
+                elif action == "buzzer_beep":
+                     buzzer.beep()
 
-        # Resume "Speaking" state only if not overridden
-        if resume_speaking:
-            leds.set_state(LEDState.SPEAKING)
+                # Emote Actions
+                elif action in ["emote", "laugh", "bow", "wiggle"]:
+                    is_moving.set()
+                    try:
+                        anim_name = param if action == "emote" else action
+                        logger.info(f"Executing Emote: {anim_name}")
+                        
+                        if anim_name == "laugh": anim.laugh()
+                        elif anim_name == "bow": anim.bow()
+                        elif anim_name == "wiggle": anim.palp_wiggle()
+                        else: logger.warning(f"Unknown emote: {anim_name}")
+                    except Exception as e:
+                        logger.error(f"Emote Failed: {e}")
+                    finally:
+                        is_moving.clear()
+
+                elif action == "buzzer_warn":
+                     buzzer.warn()
+                elif action == "buzzer_alarm":
+                     buzzer.alarm()
+                elif action in ["relax", "stand_by"]:
+                     head.look_neutral()
+                     time.sleep(0.5)
+                     sc.relax()
+                elif action in ["reset", "lay_flat"]:
+                     locomotion.reset_posture_flat()
+                     
+            except Exception as e:
+                logger.error(f"Command execution error: {e}")
+                is_moving.clear() # Ensure cleared on error
+
+        # Start execution in background
+        threading.Thread(target=run_action, daemon=True).start()
 
 
     # Calibration
+    audio_input_available = True
     logger.info("Calibrating noise floor...")
+    calibration_attempts = 0
     while True:
         try:
             leds.set_state(LEDState.THINKING) # Yellow/Blue pulse to indicate initializing
             rec = sd.rec(int(2 * SAMPLE_RATE), samplerate=SAMPLE_RATE, channels=CHANNELS)
             sd.wait()
             noise_floor = np.max(np.abs(rec)) * 2.0
-            # Only overwrite THRESHOLD if it wasn't set by environment variable (optional logic)
-            # THRESHOLD = max(THRESHOLD, noise_floor) 
-            logger.info(f"Calibration captured noise floor: {noise_floor:.4f}. Using current Threshold: {THRESHOLD:.4f}")
+            # Adaptive Threshold Logic:
+            # Set threshold relative to noise floor with a safety buffer: 1.5x Multiplier + 0.02 Offset.
+            # Hard Cap: 0.12 to ensure sensitivity.
+            # Prefer calibrated value unless it is critically low.
+            calculated_threshold = max(0.04, min(noise_floor * 1.5 + 0.02, 0.12))
+            
+            THRESHOLD = calculated_threshold
+            logger.info(f"Calibration captured noise floor: {noise_floor:.4f}. Setting Threshold: {THRESHOLD:.4f}")
             leds.set_state(LEDState.IDLE)
             head.look_neutral()
             break
         except Exception as e:
+            calibration_attempts += 1
             leds.set_state(LEDState.ERROR) # Flash Red
-            logger.warning(f"Audio device not ready, retrying in 5s... Error: {e}")
-            time.sleep(5)
+            logger.warning(f"Audio device not ready ({calibration_attempts}/3)... Error: {e}")
+            if calibration_attempts >= 3:
+                logger.error("No microphone detected. Disabling audio input.")
+                audio_input_available = False
+                leds.set_state(LEDState.IDLE)
+                break
+            time.sleep(2)
 
     logger.info("Listening... (Ctrl+C to exit)")
 
+    # Idle State Tracking
+    last_activity_time = time.time()
+    has_idled = False
+
+    # Idle Logic Closure
+    def check_idle_timeout():
+        nonlocal last_activity_time, has_idled
+        
+        if (time.time() - last_activity_time > 45.0) and not has_idled:
+            logger.info("Idle limit reached (45s). Triggering Simple Step -> Relax.")
+            is_moving.set()
+            try:
+                anim.simple_idle_step()
+                # Wait 5 seconds in neutral before relaxing
+                time.sleep(5.0)
+                
+                logger.info("Auto-Relaxing...")
+                head.look_neutral()
+                time.sleep(0.5)
+                sc.relax()
+                has_idled = True
+            except Exception as e:
+                logger.error(f"Idle Anim Error: {e}")
+            finally:
+                is_moving.clear()
+                # Reset activity so we don't loop immediately (though has_idled prevents it)
+                last_activity_time = time.time()
+
     try:
-        with sd.InputStream(samplerate=SAMPLE_RATE, channels=CHANNELS, callback=audio_callback):
-            while True:
-                audio_buffer = []
-                silence_counter = 0
-                started = False
-                
-                # Pre-roll buffer to capture audio before threshold trigger
-                # Using a list of chunks, aimed at roughly 0.5s duration
-                preroll_buffer = []
-                
+        if audio_input_available:
+            with sd.InputStream(samplerate=SAMPLE_RATE, channels=CHANNELS, callback=audio_callback):
                 while True:
-                    try:
-                        chunk = audio_queue.get(timeout=0.1)
-                    except queue.Empty:
-                        if time.time() - last_activity_time > 10.0:
-                             sc.relax()
-                             # Should we log? Maybe too verbose if checking every 0.1s
-                             # Only log once if needed, but sc.relax() is safe to call repeatedly (idempotent-ish)
+                    # MUTE during movement to prevent self-triggering
+                    if is_moving.is_set():
+                        # Drain queue to discard servo noise
+                        while not audio_queue.empty():
+                            try: audio_queue.get_nowait()
+                            except queue.Empty: break
+                        time.sleep(0.1)
+                        # Update activity to prevent immediate idle trigger after move
+                        last_activity_time = time.time()
                         continue
 
-                    volume = np.max(np.abs(chunk))
+                    # Outer Loop Idle Check
+                    check_idle_timeout() 
+
+                    # DEBUG: Print idle status every 5s
+                    idle_dur = time.time() - last_activity_time
+                    if int(idle_dur) % 5 == 0 and int(idle_dur) > 0:
+                         # Use \r to overwrite line for a cleaner "dashboard" effect in terminal
+                         print(f"DEBUG: Idle Duration: {idle_dur:.1f}s / 120.0s   ", end='\r') 
+
+                    audio_buffer = []
+                    silence_counter = 0
+                    started = False
                     
-                    if not started:
-                        # Append to pre-roll
-                        preroll_buffer.append(chunk)
-                        
-                        # Maintain roughly 0.5s of audio in pre-roll
-                        # Heuristic: Total samples in buffer should be ~ SAMPLE_RATE * 0.5
-                        current_samples = sum(len(c) for c in preroll_buffer)
-                        while current_samples > int(SAMPLE_RATE * 0.5):
-                            removed = preroll_buffer.pop(0)
-                            current_samples -= len(removed)
-                            
-                        if volume > THRESHOLD:
-                            last_activity_time = time.time()
-                            logger.info(f"Speech detected (Pre-roll: {len(preroll_buffer)} chunks)...")
-                            leds.set_state(LEDState.LISTENING)
-                            started = True
-                            
-                            # Move pre-roll to main buffer
-                            audio_buffer.extend(preroll_buffer)
-                            preroll_buffer = [] # Clear logic
-                    else:
-                        audio_buffer.append(chunk)
-                        if volume < THRESHOLD:
-                            silence_counter += 1
-                        else:
-                            silence_counter = 0
-                        
-                        # Stop if silence limit reached
-                        if silence_counter > (SILENCE_LIMIT * (SAMPLE_RATE / len(chunk))):
-                            leds.set_state(LEDState.THINKING)
-                            time.sleep(0.2) # Ensure thinking state is visible
-                            break
-                
-                if audio_buffer:
-                    recording = np.concatenate(audio_buffer, axis=0)
-                    if len(recording) > SAMPLE_RATE * 0.5: # Min 0.5s
-                        logger.info(f"Sending audio ({len(recording)/SAMPLE_RATE:.2f}s)...")
-                        
-                        wav_io = io.BytesIO()
-                        write(wav_io, SAMPLE_RATE, recording)
-                        wav_io.seek(0)
-                        
+                    # Pre-roll buffer to capture audio before threshold trigger
+                    # Using a list of chunks, aimed at roughly 0.5s duration
+                    preroll_buffer = []
+                    
+                    while True:
                         try:
-                            files = {'audio_file': ('cmd.wav', wav_io, 'audio/wav')}
+                            chunk = audio_queue.get(timeout=0.1)
+                        except queue.Empty:
+                            if not started:
+                                check_idle_timeout()
+                            continue 
+                        
+                        volume = np.max(np.abs(chunk))
+                        
+                        if not started:
+                            # Check idle while listening to silence
+                            check_idle_timeout()
+
+                            # Append to pre-roll
+                            preroll_buffer.append(chunk)
+                            
+                            # Maintain roughly 0.5s of audio in pre-roll
+                            # Heuristic: Total samples in buffer should be ~ SAMPLE_RATE * 0.5
+                            current_samples = sum(len(c) for c in preroll_buffer)
+                            while current_samples > int(SAMPLE_RATE * 0.5):
+                                removed = preroll_buffer.pop(0)
+                                current_samples -= len(removed)
+                                
+                            if volume > THRESHOLD:
+                                last_activity_time = time.time()
+                                has_idled = False
+                                logger.info(f"Speech detected (Pre-roll: {len(preroll_buffer)} chunks)...")
+                                leds.set_state(LEDState.LISTENING)
+                                started = True
+                                
+                                # Move pre-roll to main buffer
+                                audio_buffer.extend(preroll_buffer)
+                                preroll_buffer = [] # Clear logic
+                        else:
+                            audio_buffer.append(chunk)
+                            if volume < THRESHOLD:
+                                silence_counter += 1
+                            else:
+                                silence_counter = 0
+                            
+                            # Stop if silence limit reached
+                            if silence_counter > (SILENCE_LIMIT * (SAMPLE_RATE / len(chunk))):
+                                leds.set_state(LEDState.THINKING)
+                                time.sleep(0.2) # Ensure thinking state is visible
+                                break
+                    
+                    if audio_buffer:
+                        recording = np.concatenate(audio_buffer, axis=0)
+                        if len(recording) > SAMPLE_RATE * 0.5: # Min 0.5s
+                            logger.info(f"Sending audio ({len(recording)/SAMPLE_RATE:.2f}s)...")
+                            
+                            wav_io = io.BytesIO()
+                            write(wav_io, SAMPLE_RATE, recording)
+                            wav_io.seek(0) # Important: reset stream position to beginning
+                            
+                            # Send to server
+                            leds.set_state(LEDState.THINKING)
+                            
+                            # 1. Gather Telemetry
+                            telemetry = power.get_status()
+                            telemetry_json = json.dumps(telemetry)
+
+                            files = {
+                                'audio_file': ('audio.wav', wav_io, 'audio/wav')
+                            }
+                            data = {
+                                'telemetry': telemetry_json
+                            }
+                            
                             start_time = time.time()
-                            with requests.post(SERVER_URL, files=files, stream=True) as r:
-                                if r.status_code == 200:
-                                    leds.set_state(LEDState.SPEAKING)
-                                    head.look_up(20)
-                                    leds.set_state(LEDState.SPEAKING)
-                                    head.look_up(20)
-                                    stream_audio_response(r, on_server_command)
-                                    logger.info(f"[LATENCY] Round-trip: {time.time() - start_time:.2f}s")
-                                    leds.set_state(LEDState.IDLE)
-                                    head.look_neutral()
-                                else:
-                                    leds.set_state(LEDState.ERROR)
-                                    logger.error(f"Server error: {r.status_code}")
-                                    time.sleep(1) # Show error for a bit
-                                    leds.set_state(LEDState.IDLE)
-                                    head.look_neutral()
-                        except Exception as e:
-                            logger.error(f"Network error: {e}")
-                    else:
-                         logger.debug("Captured audio too short, ignoring.")
+                            try:
+                                # Timeout increased to 30s to handle first-run TTS loading latency
+                                with requests.post(SERVER_URL, files=files, data=data, stream=True, timeout=30) as r:
+                                    if r.status_code == 200:
+                                        leds.set_state(LEDState.SPEAKING)
+                                        head.look_up(20)
+                                        stream_audio_response(r, on_server_command)
+                                        logger.info(f"[LATENCY] Round-trip: {time.time() - start_time:.2f}s")
+                                        leds.set_state(LEDState.IDLE)
+                                        head.look_neutral()
+                                    else:
+                                        leds.set_state(LEDState.ERROR)
+                                        logger.error(f"Server error: {r.status_code}")
+                                        time.sleep(1) # Show error state briefly
+                                        leds.set_state(LEDState.IDLE)
+                            except requests.exceptions.Timeout:
+                                logger.error("Server Timed Out (10s)")
+                                leds.set_state(LEDState.ERROR)
+                                # buzzer.warn() (Disabled)
+                                time.sleep(1)
+                                leds.set_state(LEDState.IDLE)
+                            except Exception as e:
+                                logger.error(f"Network Error: {e}")
+                                leds.set_state(LEDState.ERROR)
+                                time.sleep(1)
+                                leds.set_state(LEDState.IDLE)
+
+                        else:
+                            logger.debug("Captured audio too short, ignoring.")
+                    
+                    # Clear queue to avoid echoes
+                    with audio_queue.mutex:
+                        audio_queue.queue.clear()
+        else:
+            # Fallback loop (No Audio Input)
+            logger.info("Entering Audio-Less Mode (Idle Only).")
+            while True:
+                # Still process idle animations
+                check_idle_timeout()
                 
-                # Clear queue to avoid echoes
-                with audio_queue.mutex:
-                    audio_queue.queue.clear()
+                time.sleep(0.1)
 
     except KeyboardInterrupt:
         logger.info("Exiting...")

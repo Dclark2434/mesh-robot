@@ -27,12 +27,19 @@ server = [
     "faster-whisper",
     "google-genai",
     "f5-tts",
-    "TTS",
+    "chatterbox-tts",
     "torch",
     "torchaudio",
-    "torchvision"
+    "torchvision",
+    "customtkinter",
+    "python-dotenv"
 ]
+
 client = [
+    "sounddevice",
+]
+
+robot = [
     "sounddevice",
     "rpi-ws281x",
     "spidev",
