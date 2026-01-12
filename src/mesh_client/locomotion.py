@@ -23,6 +23,9 @@ class LocomotionController:
         self.calibration_angles = [[0, 0, 0] for _ in range(6)]
         self.current_angles = [[90, 0, 0] for _ in range(6)]
         
+        # Dynamic Gait Parameters (Traction Control)
+        self.body_pitch = 0.0 # Lean Forward/Back (Degrees)
+        
         # Geometry constants
         self.l1 = 33
         self.l2 = 90
@@ -215,7 +218,7 @@ class LocomotionController:
     def execute_gait(self, x, y, angle, steps=4, speed=1.0, hip_swing=0.0):
         """Generic gait execution wrapper."""
         z_step = 50 # High Knees for sprint clearance
-        f_steps = 12 # Lower resolution for higher speed (Sprint Mode)
+        f_steps = 16 # Tuned: 12 was frantic, 16 is Fast/Controlled
         
         logger.info(f"Gait Cycle: x={x}, y={y}, angle={angle}, steps={steps}, speed={speed}, swing={hip_swing}")
         self.reset_posture()
@@ -307,6 +310,27 @@ class LocomotionController:
                      y = current_points[i][1]
                      current_points[i][0] = x * cos_a - y * sin_a
                      current_points[i][1] = x * sin_a + y * cos_a
+
+            # Apply Dynamic Body Pitch (Lean)
+            # Rotating Y,Z around X-axis
+            if abs(self.body_pitch) > 0.1:
+                pitch_rad = math.radians(self.body_pitch)
+                cos_p = math.cos(pitch_rad)
+                sin_p = math.sin(pitch_rad)
+                for i in range(6):
+                    y = current_points[i][1]
+                    z = current_points[i][2]
+                    # Pitch Forward (+Angle) -> Nose Down (-Z Front, +Z Back)?
+                    # Standard Pitch: +Angle usually Nose Up.
+                    # We want "Lean Forward" -> Nose DOWN.
+                    # If Pitch is + (Nose Up), front legs extend (lower body relative to foot?), back legs retract.
+                    # Wait. If body tilts +Pitch (Up), Front Z increases (Body lifts), Rear Z decreases.
+                    # We want Lean Into Walk (Forward).
+                    # Effectively we want to ROTATE the BODY FRAME.
+                    # If Body rotates +Pitch, Feet must rotate -Pitch relative to Body to stay on ground.
+                    # So we apply Rotation Matrix to Feet Coordinates.
+                    current_points[i][1] = y * cos_p - z * sin_p
+                    current_points[i][2] = y * sin_p + z * cos_p
 
             for i in range(3):
                 # Leg pair operations

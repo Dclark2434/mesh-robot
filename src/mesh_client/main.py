@@ -26,6 +26,7 @@ from mesh_client.locomotion import LocomotionController
 from mesh_client.animation_controller import AnimationController
 from mesh_client.buzzer_controller import BuzzerController
 from mesh_client.power_monitor import PowerMonitor
+from mesh_client.imu_wrapper import IMUWrapper
 
 logger = get_logger("mesh_client")
 
@@ -252,9 +253,15 @@ def main():
     locomotion = LocomotionController(sc)
     anim = AnimationController(locomotion, head)
     buzzer = BuzzerController()
+    buzzer = BuzzerController()
     power = PowerMonitor()
+    imu = IMUWrapper()
     
     last_activity_time = time.time()
+    
+    # Traction State
+    last_accel = {'x':0, 'y':0, 'z':0}
+    traction_slip_quota = 0
     
     logger.info("Hardware Initialized.")
 
@@ -373,6 +380,51 @@ def main():
                           last_activity_time = time.time()
 
                 time.sleep(0.05)
+                
+                # --- TRACTION CONTROL & DYNAMICS LOOP ---
+                # 1. Active Lean (Anti-Wheelie / Dig-In)
+                # If moving forward, lean forward (-Pitch? Or +Pitch depending on frame)
+                # Locomotion logic: +Pitch rotates feet (y*cos - z*sin).
+                # If Feet rotate +Pitch relative to Body, Body rotates -Pitch relative to Ground.
+                # We want Body to Nose Down. 
+                # Let's try +5 deg for Forward, -5 for Backward.
+                target_pitch = 0
+                if action in ["walk", "walk_forward", "move_forward"]:
+                     target_pitch = 5.0 
+                elif action == "move_backward":
+                     target_pitch = -5.0
+                
+                # Smoothly update locomotion pitch
+                locomotion.body_pitch = locomotion.body_pitch * 0.8 + target_pitch * 0.2
+                
+                # 2. Slip Detection (Jerk Monitor)
+                # Only check if moving
+                if is_moving.is_set():
+                     accel = imu.read_accel_raw()
+                     # Calculate Jerk (Delta Accel)
+                     dx = accel['x'] - last_accel['x']
+                     dy = accel['y'] - last_accel['y']
+                     dz = accel['z'] - last_accel['z']
+                     jerk = (dx**2 + dy**2 + dz**2)**0.5
+                     
+                     # Update historical
+                     last_accel = accel
+                     
+                     # Threshold: High G impact (slip/catch)
+                     # Typical walk noise ~ 0.2G?
+                     # Slip/Catch spike ~ 0.8G?
+                     if jerk > 0.8: # Tune this!
+                          logger.warning(f"TRACTION LOSS DETECTED (Jerk={jerk:.2f}). Throttle back!")
+                          traction_slip_quota += 1
+                          if traction_slip_quota > 3:
+                               # Persistent slip
+                               logger.error("Excessive Slip! Aborting move.")
+                               # How to abort? locomotion doesn't support async abort yet. 
+                               # We can warn via LED.
+                               leds.set_state(LEDState.ERROR)
+                     else:
+                          traction_slip_quota = max(0, traction_slip_quota - 1)
+
                 
                 # Non-movement actions
                 if action == "null": return
