@@ -211,6 +211,13 @@ async def interact_generator(audio_bytes, image_bytes=None, text_prompt=None, te
         logger.info(f"[COMMAND] {hardware_command} -> {hardware_param}")
         cmd_payload = json.dumps({"action": hardware_command, "param": hardware_param})
         yield (cmd_payload + "\n").encode("utf-8")
+        
+        # Anti-Redundancy: If we already sent the command via JSON, remove the tag from speech
+        # to prevent double-execution (e.g. if LLM outputs {"action":"see"} AND "[ACTION: SEE]")
+        cmd_tag = f"[ACTION: {hardware_command.upper()}]"
+        if cmd_tag in spoken_text:
+             logger.info(f"[FILTER] Removing redundant tag {cmd_tag} from speech.")
+             spoken_text = spoken_text.replace(cmd_tag, "")
 
     import re
 

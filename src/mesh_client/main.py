@@ -280,6 +280,7 @@ def main():
 
     # Movement State Flag
     is_moving = threading.Event()
+    is_speaking = threading.Event()
     has_idled = False # Flag to prevent repeating idle anim
 
     def on_server_command(cmd):
@@ -564,9 +565,9 @@ def main():
         if audio_input_available:
             with sd.InputStream(samplerate=SAMPLE_RATE, channels=CHANNELS, callback=audio_callback):
                 while True:
-                    # MUTE during movement to prevent self-triggering
-                    if is_moving.is_set():
-                        # Drain queue to discard servo noise
+                    # MUTE during movement or speaking to prevent self-triggering
+                    if is_moving.is_set() or is_speaking.is_set():
+                        # Drain queue to discard servo noise and self-speech
                         while not audio_queue.empty():
                             try: audio_queue.get_nowait()
                             except queue.Empty: break
