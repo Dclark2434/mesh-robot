@@ -330,7 +330,7 @@ def main():
             time.sleep(remaining)
 
     # Run Boot Sequence
-    boot_sequence()
+    # boot_sequence()
 
     # Movement State Flag
     is_moving = threading.Event()
