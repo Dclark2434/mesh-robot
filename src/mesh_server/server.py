@@ -178,11 +178,15 @@ async def interact_generator(audio_bytes, image_bytes=None, text_prompt=None, te
     elif is_focused:
         # If already focused, only say "Checking..." for longer commands
         USER_STATES[user_id] = time.time()
-        if not is_poke:
-            ack_bytes = voice_engine.get_prebaked_sound("processing")
-            if ack_bytes:
-                logger.info(f"[FEEDBACK] Yielding processing sound (Focused mode)...")
-                yield ack_bytes
+        ack_bytes = voice_engine.get_prebaked_sound("processing")
+        
+        # Suppress feedback for automated vision requests
+        # Why? Because the robot just clicked the camera, no need to beep again.
+        is_automated_vision = "describe what you see" in clean_input and "image" in clean_input
+        
+        if ack_bytes and not is_poke and not is_automated_vision:
+             logger.info(f"[FEEDBACK] Yielding processing sound (Focused mode)...")
+             yield ack_bytes
     else:
         logger.debug(f"[IGNORED] {clean_input}")
         yield json.dumps({"status": "ignored"}).encode()
