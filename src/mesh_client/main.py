@@ -67,6 +67,9 @@ def play_wav_windows(wav_data: bytes):
         # Fallback to PowerShell if SD fails?
         # For now, let's assume SD works since we are using it for Input.
 
+# Global State Flags
+is_speaking = threading.Event()
+
 def play_wav_linux(wav_data: bytes, alsa_device: Optional[str] = None):
     """Utility to play a single WAV buffer on Linux via pw-play (Primary) or aplay (Fallback)."""
     logger.info(f"play_wav_linux called with {len(wav_data)} bytes")
@@ -299,7 +302,7 @@ def main():
 
     # Movement State Flag
     is_moving = threading.Event()
-    is_speaking = threading.Event()
+    # is_speaking moved to global scope
     has_idled = False # Flag to prevent repeating idle anim
 
     def on_server_command(cmd):
