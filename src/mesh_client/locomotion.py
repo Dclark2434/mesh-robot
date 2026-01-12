@@ -350,14 +350,15 @@ class LocomotionController:
         self.az_history.pop(0)
         self.az_history.append(az)
         avg_az = sum(self.az_history) / len(self.az_history)
-        vibration = sum([(x - avg_az)**2 for x in self.az_history]) ** 0.5 # RMS-ish
+        # FIXED MATH: Divide by N before Sqrt for std dev
+        vibration = (sum([(x - avg_az)**2 for x in self.az_history]) / len(self.az_history)) ** 0.5
         
         # 3. Calculate Slip Score
         current_slip = 0
         
         # Check thresholds
         YAW_THRESH = 10.0 # deg/sec (tuned high to ignore normal sway)
-        VIBE_THRESH = 0.15 # G (chatter)
+        VIBE_THRESH = 0.2 # G (Moderate chatter check)
         
         if abs(yaw_rate) > YAW_THRESH:
              current_slip += 1
@@ -384,7 +385,8 @@ class LocomotionController:
             logger.info(f"SLIP: Score={self.slip_score} Cur={current_slip} | Ax={measured_ax:.3f} YawRate={yaw_rate:.1f} Vibe={vibration:.2f} | Gov: {self.traction_governors['stride']:.2f}")
              
         # 4. Active Response (Traction Control)
-        if self.slip_score >= 2:
+        # SENSITIVITY INCREASE: Trigger on 1 check (Instant reaction)
+        if self.slip_score >= 1:
              # SLIP DETECTED -> THROTTLE DOWN
              self.traction_governors['stride'] = max(0.5, self.traction_governors['stride'] * 0.85)
              self.traction_governors['speed'] = max(0.5, self.traction_governors['speed'] * 0.8) # Slower gait
