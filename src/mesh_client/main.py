@@ -547,24 +547,18 @@ def main():
         nonlocal last_activity_time, has_idled
         
         if (time.time() - last_activity_time > 45.0) and not has_idled:
-            logger.info("Idle limit reached (45s). Triggering Simple Step -> Relax.")
-            is_moving.set()
+            logger.info("Idle limit reached (45s). Auto-Relaxing...")
+            # No animation, just cut power to sit still/silent
             try:
-                anim.simple_idle_step()
-                # Wait 5 seconds in neutral before relaxing
-                time.sleep(5.0)
-                
-                logger.info("Auto-Relaxing...")
                 head.look_neutral()
                 time.sleep(0.5)
                 sc.relax()
                 has_idled = True
             except Exception as e:
-                logger.error(f"Idle Anim Error: {e}")
+                logger.error(f"Idle Relax Error: {e}")
             finally:
-                is_moving.clear()
-                # Reset activity so we don't loop immediately (though has_idled prevents it)
-                last_activity_time = time.time()
+                # We don't need to set is_moving here since we aren't animating
+                pass
 
     try:
         if audio_input_available:
