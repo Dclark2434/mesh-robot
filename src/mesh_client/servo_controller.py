@@ -124,19 +124,11 @@ class ServoController(RobotHardware):
         
         angle = max(0, min(180, angle))
         
-        # TUNE #3: Cap per-update angle delta (Torque Limiter)
-        # Slower commands -> Faster robot (prevents stalling)
-        MAX_DELTA = 2.5
+        # Optimization: Skip redundant writes (Bandwidth Saver)
+        # If angle hasn't changed meaningfully (< 0.5 deg), don't spam I2C
+        # TUNE #2: Deadband Threshold (Kept at 0.25)
         if channel in self.angles:
-            prev_angle = self.angles[channel]
-            # Clamp change
-            delta = angle - prev_angle
-            if abs(delta) > MAX_DELTA:
-                angle = prev_angle + max(-MAX_DELTA, min(MAX_DELTA, delta))
-            
-            # TUNE #2: Deadband Threshold
-            # Lowered from 0.5 to 0.25 for higher stance resolution
-            if abs(prev_angle - angle) < 0.25:
+            if abs(self.angles[channel] - angle) < 0.25:
                 return 
 
         # Determine which board to use based on Freenove logic
