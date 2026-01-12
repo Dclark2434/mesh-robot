@@ -211,7 +211,7 @@ class AnimationController:
             group_mids = [1, 4]         # Middle
             
             # Parameters
-            steps = 40
+            steps = 30 # Reduced from 40 for speed
             strike_height = 80          # Lift
             high_stance_z = -75         # Exaggerated Tall Stance (-75)
             neutral_stance_z = -60      # Settle to Tall/Swagger Stance (Prev: -25)
@@ -261,7 +261,7 @@ class AnimationController:
                     
                     self.loco.transform_coordinates(current)
                     self.loco.set_leg_angles()
-                    time.sleep(0.03) # Speeding up (prev 0.04)
+                    time.sleep(0.02) # Speeding up significantly (prev 0.03/40steps)
                 
                 # Impact/Recoil Group
                 for i in range(5): # Compressor
