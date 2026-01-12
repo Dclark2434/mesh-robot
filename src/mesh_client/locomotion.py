@@ -259,7 +259,7 @@ class LocomotionController:
         logger.info(f"Walking forward {steps} steps at speed {speed}...")
         # Add basic hip swing to forward walk (Yaw rotation)
         # Stride increased to 50mm for Sprint/Dynamic gait
-        self.execute_gait(0, 50, 0, steps, speed=speed, hip_swing=5.0)
+        self.execute_gait(0, 65, 0, steps, speed=speed, hip_swing=5.0)
 
     def move_backward(self, steps=5, speed=1.0):
         logger.info(f"Walking backward {steps} steps at speed {speed}...")
