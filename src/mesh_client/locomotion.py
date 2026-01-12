@@ -371,6 +371,10 @@ class LocomotionController:
              
         # Forward Coupling Check (Experimental)
         # If moving fast but Ay is low?
+        # FIXED: Constant velocity = 0 accel. 
+        # But legged gait has constant accel/decel cycles.
+        # If |Ax| < threshold, it means we are "floating" or sliding smoothly?
+        # Let's Log it to debug "Skating"
         if requested_speed > 1.0 and abs(measured_ax) < 0.05:
              current_slip += 1 
              
@@ -378,6 +382,10 @@ class LocomotionController:
              self.slip_score += 1
         else:
              self.slip_score = max(0, self.slip_score - 1)
+             
+        # DEBUG: Print metrics to diagnose "Skating"
+        if self.slip_score > 0 or current_slip > 0:
+            logger.info(f"SLIP: Score={self.slip_score} Cur={current_slip} | Ax={measured_ax:.3f} YawRate={yaw_rate:.1f} Vibe={vibration:.2f} | Gov: {self.traction_governors['stride']:.2f}")
              
         # 4. Active Response (Traction Control)
         if self.slip_score >= 2:
