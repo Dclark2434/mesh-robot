@@ -388,12 +388,13 @@ class LocomotionController:
              # SLIP DETECTED -> THROTTLE DOWN
              self.traction_governors['stride'] = max(0.5, self.traction_governors['stride'] * 0.85)
              self.traction_governors['speed'] = max(0.5, self.traction_governors['speed'] * 0.8) # Slower gait
-             self.traction_governors['lift'] = max(0.3, self.traction_governors['lift'] * 0.7) # Keep feet down
+             # LOW LIFT CAUSES DRAG. REMOVED.
+             # self.traction_governors['lift'] = max(0.3, self.traction_governors['lift'] * 0.7) 
         else:
              # RECOVER (Slowly)
              self.traction_governors['stride'] = min(1.0, self.traction_governors['stride'] * 1.05)
              self.traction_governors['speed'] = min(1.0, self.traction_governors['speed'] * 1.02)
-             self.traction_governors['lift'] = min(1.0, self.traction_governors['lift'] * 1.05)
+             # self.traction_governors['lift'] = min(1.0, self.traction_governors['lift'] * 1.05)
 
     def run_one_cycle(self, x, y, angle, Z, F, speed=1.0, swing_amp=0.0):
         # Port of 'run_gait' logic for Mode 1 (Ripple)
