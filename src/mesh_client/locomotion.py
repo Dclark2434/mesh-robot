@@ -225,12 +225,12 @@ class LocomotionController:
 
     def move_forward(self, steps=5, speed=1.0):
         logger.info(f"Walking forward {steps} steps at speed {speed}...")
-        # Add basic hip swing to forward walk
-        self.execute_gait(0, 25, 0, steps, speed=speed, hip_swing=15.0)
+        # Add basic hip swing to forward walk (Yaw rotation)
+        self.execute_gait(0, 25, 0, steps, speed=speed, hip_swing=3.0)
 
     def move_backward(self, steps=5, speed=1.0):
         logger.info(f"Walking backward {steps} steps at speed {speed}...")
-        self.execute_gait(0, -25, 0, steps, speed=speed, hip_swing=15.0)
+        self.execute_gait(0, -25, 0, steps, speed=speed, hip_swing=3.0)
 
     def turn_left(self, steps=5, speed=1.0):
         logger.info(f"Turning left {steps} steps at speed {speed}...")
@@ -285,37 +285,27 @@ class LocomotionController:
 
         # Execute Ripple Gait Cycle
         for j in range(F):
-            # Hip Swing: Sinusoidal Y offset applied to body (moved inversely on legs)
-            # Cycle is 0 to F. One full sine wave?
-            # Swag: Swing hips Left then Right (or vice versa).
-            # math.sin(0..2PI)
-            swing_offset = 0
+            # Hip Swing: Body Yaw (Rotation around Z)
+            # Simulates the body twisting into the step (Swagger)
+            swing_angle_rad = 0
             if swing_amp != 0:
                 swing_phase = (j / F) * 2 * math.pi
-                swing_offset = math.sin(swing_phase) * swing_amp
+                # Amplitude is now in DEGREES. Convert to Radians.
+                # Use a smaller divisor for defaults if needed, or assume user passes reasonable degrees.
+                swing_angle_rad = math.radians(math.sin(swing_phase) * swing_amp)
 
-            for i in range(6):
-                # Apply swing offset to all legs (simulating body moving)
-                # If body moves +Y, legs must move -Y relative to body
-                # However, this overwrites accumulated gait logic if not careful.
-                # Better to apply it as a temporary offset during calculation, 
-                # but 'points' is stateful accumulation. 
-                # Actually, gait logic below modifies specific 'points'. 
-                # I should just modify the 'points' Y coordinate temporarily for IK?
-                # No, that's complex. Let's start with modifying the logic loop below 
-                # and just let the swing accumulate/de-accumulate if we want?
-                # A sine wave sums to 0 over a cycle, so we can just ADD the delta-swing to Y
-                # But 'points' stores ABSOLUTE positions (mostly).
-                # Actually, the logic below uses += and -= to 'points'.
-                # So if I want dynamic swing, I should add a swing component to the leg positions before IK.
-                pass 
-                
             # Temporary copy for IK + Swing
             current_points = copy.deepcopy(points)
             
             if swing_amp != 0:
+                 cos_a = math.cos(swing_angle_rad)
+                 sin_a = math.sin(swing_angle_rad)
                  for i in range(6):
-                     current_points[i][1] += swing_offset
+                     # Rotate X,Y around 0,0 (Body Center)
+                     x = current_points[i][0]
+                     y = current_points[i][1]
+                     current_points[i][0] = x * cos_a - y * sin_a
+                     current_points[i][1] = x * sin_a + y * cos_a
 
             for i in range(3):
                 # Leg pair operations
