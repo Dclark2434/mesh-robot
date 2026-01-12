@@ -215,7 +215,7 @@ class LocomotionController:
     def execute_gait(self, x, y, angle, steps=4, speed=1.0, hip_swing=0.0):
         """Generic gait execution wrapper."""
         z_step = 30
-        f_steps = 32
+        f_steps = 12 # Lower resolution for higher speed (Sprint Mode)
         
         logger.info(f"Gait Cycle: x={x}, y={y}, angle={angle}, steps={steps}, speed={speed}, swing={hip_swing}")
         self.reset_posture()
@@ -226,11 +226,12 @@ class LocomotionController:
     def move_forward(self, steps=5, speed=1.0):
         logger.info(f"Walking forward {steps} steps at speed {speed}...")
         # Add basic hip swing to forward walk (Yaw rotation)
-        self.execute_gait(0, 25, 0, steps, speed=speed, hip_swing=3.0)
+        # Stride increased to 50mm for Sprint/Dynamic gait
+        self.execute_gait(0, 50, 0, steps, speed=speed, hip_swing=5.0)
 
     def move_backward(self, steps=5, speed=1.0):
         logger.info(f"Walking backward {steps} steps at speed {speed}...")
-        self.execute_gait(0, -25, 0, steps, speed=speed, hip_swing=3.0)
+        self.execute_gait(0, -50, 0, steps, speed=speed, hip_swing=5.0)
 
     def turn_left(self, steps=5, speed=1.0):
         logger.info(f"Turning left {steps} steps at speed {speed}...")
