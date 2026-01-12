@@ -493,6 +493,13 @@ def main():
                         leds.set_state(LEDState.SPEAKING)
                         head.look_up(20)
                         stream_audio_response(r, on_server_command)
+                        
+                        # CRITICAL FIX: Drain queue after speaking (Vision Path)
+                        while not audio_queue.empty():
+                            try: audio_queue.get_nowait()
+                            except queue.Empty: break
+                        last_activity_time = time.time()
+                        
                         leds.set_state(LEDState.IDLE)
                         head.look_neutral()
                     else:
@@ -687,6 +694,13 @@ def main():
                                         head.look_up(20)
                                         stream_audio_response(r, on_server_command)
                                         logger.info(f"[LATENCY] Round-trip: {time.time() - start_time:.2f}s")
+                                        
+                                        # CRITICAL FIX: Drain queue after speaking to remove any self-heard echoes
+                                        while not audio_queue.empty():
+                                            try: audio_queue.get_nowait()
+                                            except queue.Empty: break
+                                        last_activity_time = time.time() # Reset idle timer
+                                        
                                         leds.set_state(LEDState.IDLE)
                                         head.look_neutral()
                                     else:

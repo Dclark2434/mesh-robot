@@ -12,6 +12,7 @@ import json
 import time
 from fastapi import FastAPI, UploadFile, File, Form, Request
 from fastapi.responses import StreamingResponse
+import re
 
 # Server imports
 
@@ -197,7 +198,6 @@ async def interact_generator(audio_bytes, image_bytes=None, text_prompt=None, te
         return
     
     llm_start = time.time()
-    llm_start = time.time()
     raw_response = await asyncio.to_thread(brain.think, final_prompt, user_id, image_bytes)
     llm_duration = time.time() - llm_start
     SESSION_STATS["llm"].append(llm_duration)
@@ -218,7 +218,6 @@ async def interact_generator(audio_bytes, image_bytes=None, text_prompt=None, te
         spoken_text = re.sub(pattern, "", spoken_text, flags=re.IGNORECASE).strip()
         logger.info(f"[FILTER] Applied redundancy filter for {hardware_command}")
 
-    import re
 
     # 4. Speak & Act (with Tag Parsing)
     # Split by tags: e.g. "Text [ACTION: LOOK_LEFT] More text"
