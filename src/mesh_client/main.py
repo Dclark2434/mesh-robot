@@ -265,16 +265,31 @@ def main():
     
     logger.info("Hardware Initialized.")
 
+    # Boot Sound & Animation
+    # logger.info("Playing Boot Sound...")
+    # play_wav(boot_sound_data)
+    
+    # anim.assume_tucked_pose() # Ensure start state
+    # time.sleep(0.5)
+    # anim.slow_boot_stand()
+    
+    # Instead, just assume safe standing pose
+    locomotion.reset_posture()
+    
+    # Indicate Ready
+    leds.set_state(LEDState.IDLE)
+
     def boot_sequence():
         """Choreographed startup: Audio + Slow Stand"""
         start_time = time.time()
         
         # Ensure Yellow "Thinking" State
-        leds.set_state(LEDState.THINKING)
+        # leds.set_state(LEDState.THINKING)
         
         # 1. IMMEDIATE: Snap to Tucked State (Before Audio starts)
         try:
-            anim.assume_tucked_pose()
+            # anim.assume_tucked_pose()
+            pass # No longer assuming tucked pose at boot
         except Exception as e:
             logger.error(f"Failed to assume tucked pose: {e}")
 
