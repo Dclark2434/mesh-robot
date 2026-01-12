@@ -423,96 +423,9 @@ def main():
                      locomotion.reset_posture_flat()
 
                 # Vision Action
-                # Vision Action
                 elif action == "see":
                      logger.info("Requesting Vision Action (Serialized)...")
                      vision_requested.set()
-
-            """Captures image and sends to server."""
-            logger.info("Vision: capturing image...")
-            jpg_bytes = None
-            
-            # METHOD 1: Try Native CLI Tools (rpicam-jpeg / libcamera-jpeg)
-            # This is most robust on Pi Bullseye/Bookworm as it bypasses python binding issues.
-            temp_img = "temp_vision_capture.jpg"
-            cli_tools = ["rpicam-jpeg", "libcamera-jpeg"]
-            
-            for tool in cli_tools:
-                try:
-                    # Check if tool exists
-                    if subprocess.run(["which", tool], capture_output=True).returncode == 0:
-                        logger.info(f"Vision: Attempting capture with {tool}...")
-                        # -n: no preview, -t 500: 500ms warmup, -o: output, --width 640 --height 480
-                        cmd = [tool, "-n", "-t", "500", "--width", "640", "--height", "480", "-o", temp_img]
-                        subprocess.run(cmd, check=True, capture_output=True)
-                        
-                        if os.path.exists(temp_img):
-                            with open(temp_img, "rb") as f:
-                                jpg_bytes = f.read()
-                            os.remove(temp_img)
-                            logger.info(f"Vision: Captured via {tool} ({len(jpg_bytes)} bytes).")
-                            break
-                except Exception as e:
-                    logger.warning(f"Vision: CLI {tool} failed: {e}")
-            
-            # METHOD 2: Fallback to OpenCV
-            if not jpg_bytes:
-                logger.info("Vision: Falling back to OpenCV...")
-                try:
-                    cap = cv2.VideoCapture(0)
-                    if not cap.isOpened():
-                        logger.error("Vision: Could not open camera (cv2).")
-                    else:
-                        # Warmup
-                        for _ in range(5): cap.read()
-                        
-                        ret, frame = cap.read()
-                        cap.release()
-                        
-                        if ret:
-                            frame = cv2.resize(frame, (640, 480))
-                            ret, buffer = cv2.imencode('.jpg', frame)
-                            if ret:
-                                jpg_bytes = buffer.tobytes()
-                                logger.info(f"Vision: Captured via OpenCV ({len(jpg_bytes)} bytes).")
-                except Exception as e:
-                    logger.error(f"Vision: OpenCV failed: {e}")
-
-            if not jpg_bytes:
-                logger.error("Vision: All capture methods failed.")
-                leds.set_state(LEDState.ERROR)
-                time.sleep(1)
-                leds.set_state(LEDState.IDLE)
-                return
-
-            # Send to Server
-            try:
-                leds.set_state(LEDState.THINKING)
-                
-                files = {
-                    'image_file': ('view.jpg', io.BytesIO(jpg_bytes), 'image/jpeg')
-                }
-                data = {
-                    'prompt': "Describe what you see in this image."
-                }
-                
-                with requests.post(SERVER_URL, files=files, data=data, stream=True, timeout=30) as r:
-                    if r.status_code == 200:
-                        leds.set_state(LEDState.SPEAKING)
-                        head.look_up(20)
-                        head.look_up(20)
-                        stream_audio_response(r, leds, on_server_command)
-                        
-                        last_activity_time = time.time()
-                        
-                        leds.set_state(LEDState.IDLE)
-                        head.look_neutral()
-                    else:
-                        logger.error(f"Vision Server Error: {r.status_code}")
-                        leds.set_state(LEDState.ERROR)
-                        time.sleep(1)
-                        leds.set_state(LEDState.IDLE)
-                        
             except Exception as e:
                 logger.error(f"Command execution error: {e}")
                 is_moving.clear() # Ensure cleared on error
