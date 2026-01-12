@@ -25,10 +25,15 @@ try:
         IMU_AVAILABLE = False
 
 except ImportError as e:
-    logger.warning(f"Failed to import Freenove IMU: {e}")
+    logger.error(f"Failed to import Freenove IMU Module: {e}")
+    # Likely missing 'smbus' or other dependency inside imu.py
+    import traceback
+    logger.error(traceback.format_exc())
     IMU_AVAILABLE = False
 except Exception as e:
-    logger.error(f"IMU setup error: {e}")
+    logger.error(f"Unexpected IMU setup error: {e}")
+    import traceback
+    logger.error(traceback.format_exc())
     IMU_AVAILABLE = False
 
 class IMUWrapper:

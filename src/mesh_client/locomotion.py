@@ -242,12 +242,10 @@ class LocomotionController:
     def execute_gait(self, x, y, angle, steps=4, speed=1.0, hip_swing=0.0):
         """Generic gait execution wrapper."""
         # Dynamic Z-Step (User Req: Low Z at high speed for efficiency/traction)
-        # Slow (0.5) -> 50mm
-        # Fast (1.5) -> 20mm
-        # Linear Interp: 65 - 30*speed?
-        # speed=1.5 -> 20
-        # speed=0.5 -> 50
-        z_step = max(20, 65 - (speed * 30))
+        # Slow (0.5) -> 55mm
+        # Fast (1.5) -> 35mm (Raised from 20mm to prevent dragging/skating)
+        # Linear Interp
+        z_step = max(35, 65 - (speed * 20))
         
         f_steps = 16 # Tuned: 12 was frantic, 16 is Fast/Controlled
         
@@ -306,7 +304,8 @@ class LocomotionController:
         Physics-based slip detection and active response.
         called inside the gait loop.
         """
-        if not self.imu: return
+        # Abort if no IMU or if IMU is in Mock Mode (Data is fake)
+        if not self.imu or getattr(self.imu, 'mock_mode', False): return
 
         # 1. Read Sensors
         accel = self.imu.read_accel_raw() # {'x':, 'y':, 'z':}
