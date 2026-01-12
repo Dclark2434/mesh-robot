@@ -357,7 +357,17 @@ def main():
                     match = re.search(r'\d+', str(param))
                     if match:
                         val = int(match.group())
-                        steps = min(val, 10) # Cap at 10
+                        
+                        # TURN LOGIC: Convert Degrees to Steps
+                        if action in ["turn_left", "turn_right"] and val > 15:
+                             # Assume Degrees. Eff turn rate ~7-8 deg/step (with 10 deg command)
+                             # 180 deg / 7 = ~25 steps
+                             # 90 deg / 7 = ~13 steps
+                             steps = int(val / 7.0)
+                             steps = min(steps, 40) # Cap turn at ~300 degrees
+                        else:
+                             # Standard Step Count
+                             steps = min(val, 20) # Raised cap to 20 for longer walks
 
                 logger.info(f"Command Received: {action} (Param: {param})")
                 
