@@ -124,6 +124,21 @@ class ServoController(RobotHardware):
         
         angle = max(0, min(180, angle))
         
+        # TUNE #3: Cap per-update angle delta (Torque Limiter)
+        # Slower commands -> Faster robot (prevents stalling)
+        MAX_DELTA = 2.5
+        if channel in self.angles:
+            prev_angle = self.angles[channel]
+            # Clamp change
+            delta = angle - prev_angle
+            if abs(delta) > MAX_DELTA:
+                angle = prev_angle + max(-MAX_DELTA, min(MAX_DELTA, delta))
+            
+            # TUNE #2: Deadband Threshold
+            # Lowered from 0.5 to 0.25 for higher stance resolution
+            if abs(prev_angle - angle) < 0.25:
+                return 
+
         # Determine which board to use based on Freenove logic
         if channel < 16:
             target_pwm = self.pwm41
@@ -134,15 +149,15 @@ class ServoController(RobotHardware):
 
         if isinstance(target_pwm, DummyServo):
             target_pwm.set_angle(channel, angle)
+            self.angles[channel] = angle
             return
 
-        # Map 0-180 to 500-2500us pulse, then to 0-4095 (12-bit)
-        duty_cycle = map_value(angle, 0, 180, 500, 2500)
+        # TUNE #1: Safe Pulse Range (600-2400)
+        # Prevents saturation at extremes where torque drops off.
+        # Original was 500-2500.
+        duty_cycle = map_value(angle, 0, 180, 600, 2400)
         off_count = int(map_value(duty_cycle, 0, 20000, 0, 4095))
         
-        if channel in [0, 8, 16] or logger.level <= 10: 
-             logger.info(f"[SERVO] Ch {channel} -> {angle} deg -> PWM {off_count}")
-             
         target_pwm.set_pwm(target_channel, 0, off_count)
         self.angles[channel] = angle
 
@@ -154,7 +169,8 @@ class ServoController(RobotHardware):
                 board.relax()
             else:
                 for i in range(16):
-                    board.set_pwm(i, 0, 4096)
+                    # TUNE #5: PWM off = 0, 0 (Cleaner signal than 0, 4096)
+                    board.set_pwm(i, 0, 0)
         
         # Cut Power Rail (GPIO 4 High)
         if hasattr(self, 'power_pin') and self.power_pin:
