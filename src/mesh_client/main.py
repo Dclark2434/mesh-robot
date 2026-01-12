@@ -346,13 +346,13 @@ def main():
                      is_moving.set()
                      try:
                          if action in ["walk", "walk_forward", "move_forward"]:
-                              locomotion.move_forward(steps)
+                               locomotion.move_forward(steps, speed=1.5)
                          elif action == "move_backward":
-                              locomotion.move_backward(steps)
+                               locomotion.move_backward(steps, speed=1.5)
                          elif action == "turn_left":
-                              locomotion.turn_left(steps)
+                               locomotion.turn_left(steps, speed=1.5)
                          elif action == "turn_right":
-                              locomotion.turn_right(steps)
+                               locomotion.turn_right(steps, speed=1.5)
                      finally:
                          # Brief cool-down to let servos settle silence
                          time.sleep(0.2)

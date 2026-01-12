@@ -10,7 +10,7 @@ logger = get_logger("mesh_locomotion")
 class LocomotionController:
     def __init__(self, servo_ctrl: ServoController):
         self.servo = servo_ctrl
-        self.body_height = -25 # Adjusted lower for "Heavy Settle" (was -30, orig -45)
+        self.body_height = -35 # Adjusted higher (more negative) for swagger (was -25)
         # Body and Leg geometry (from Freenove control.py)
         # Note: These values are specific to the Freenove Big Hexapod
         self.body_points = [
@@ -212,34 +212,35 @@ class LocomotionController:
         self.leg_positions[5][1] = -points[5][0] * math.sin(126 * math.pi/180) + points[5][1] * math.cos(126 * math.pi/180)
         self.leg_positions[5][2] = points[5][2] - 14
 
-    def execute_gait(self, x, y, angle, steps=4):
+    def execute_gait(self, x, y, angle, steps=4, speed=1.0, hip_swing=0.0):
         """Generic gait execution wrapper."""
         z_step = 30
         f_steps = 32
         
-        logger.info(f"Gait Cycle: x={x}, y={y}, angle={angle}, steps={steps}")
+        logger.info(f"Gait Cycle: x={x}, y={y}, angle={angle}, steps={steps}, speed={speed}, swing={hip_swing}")
         self.reset_posture()
         for s in range(steps):
-             self.run_one_cycle(x, y, angle, z_step, f_steps)
+             self.run_one_cycle(x, y, angle, z_step, f_steps, speed, hip_swing)
         self.reset_posture()
 
-    def move_forward(self, steps=5):
-        logger.info(f"Walking forward {steps} steps...")
-        self.execute_gait(0, 25, 0, steps)
+    def move_forward(self, steps=5, speed=1.0):
+        logger.info(f"Walking forward {steps} steps at speed {speed}...")
+        # Add basic hip swing to forward walk
+        self.execute_gait(0, 25, 0, steps, speed=speed, hip_swing=15.0)
 
-    def move_backward(self, steps=5):
-        logger.info(f"Walking backward {steps} steps...")
-        self.execute_gait(0, -25, 0, steps)
+    def move_backward(self, steps=5, speed=1.0):
+        logger.info(f"Walking backward {steps} steps at speed {speed}...")
+        self.execute_gait(0, -25, 0, steps, speed=speed, hip_swing=15.0)
 
-    def turn_left(self, steps=5):
-        logger.info(f"Turning left {steps} steps...")
+    def turn_left(self, steps=5, speed=1.0):
+        logger.info(f"Turning left {steps} steps at speed {speed}...")
         # Adjusted: -10 degrees for Left
-        self.execute_gait(0, 0, -10, steps)
+        self.execute_gait(0, 0, -10, steps, speed=speed)
 
-    def turn_right(self, steps=5):
-        logger.info(f"Turning right {steps} steps...")
+    def turn_right(self, steps=5, speed=1.0):
+        logger.info(f"Turning right {steps} steps at speed {speed}...")
         # Adjusted: 10 degrees for Right
-        self.execute_gait(0, 0, 10, steps)
+        self.execute_gait(0, 0, 10, steps, speed=speed)
 
     def reset_posture_flat(self):
         """
@@ -265,11 +266,12 @@ class LocomotionController:
          self.transform_coordinates(self.body_points)
          self.set_leg_angles()
 
-    def run_one_cycle(self, x, y, angle, Z, F):
+    def run_one_cycle(self, x, y, angle, Z, F, speed=1.0, swing_amp=0.0):
         # Port of 'run_gait' logic for Mode 1 (Ripple)
         # Assuming constants for F (Resolution)
         z = Z / F
-        delay = 0.01
+        # Default delay was 0.01. Increase speed by dividing delay.
+        delay = 0.01 / max(0.1, speed)
         
         points = copy.deepcopy(self.body_points)
         xy = [[0, 0] for _ in range(6)]
@@ -283,6 +285,38 @@ class LocomotionController:
 
         # Execute Ripple Gait Cycle
         for j in range(F):
+            # Hip Swing: Sinusoidal Y offset applied to body (moved inversely on legs)
+            # Cycle is 0 to F. One full sine wave?
+            # Swag: Swing hips Left then Right (or vice versa).
+            # math.sin(0..2PI)
+            swing_offset = 0
+            if swing_amp != 0:
+                swing_phase = (j / F) * 2 * math.pi
+                swing_offset = math.sin(swing_phase) * swing_amp
+
+            for i in range(6):
+                # Apply swing offset to all legs (simulating body moving)
+                # If body moves +Y, legs must move -Y relative to body
+                # However, this overwrites accumulated gait logic if not careful.
+                # Better to apply it as a temporary offset during calculation, 
+                # but 'points' is stateful accumulation. 
+                # Actually, gait logic below modifies specific 'points'. 
+                # I should just modify the 'points' Y coordinate temporarily for IK?
+                # No, that's complex. Let's start with modifying the logic loop below 
+                # and just let the swing accumulate/de-accumulate if we want?
+                # A sine wave sums to 0 over a cycle, so we can just ADD the delta-swing to Y
+                # But 'points' stores ABSOLUTE positions (mostly).
+                # Actually, the logic below uses += and -= to 'points'.
+                # So if I want dynamic swing, I should add a swing component to the leg positions before IK.
+                pass 
+                
+            # Temporary copy for IK + Swing
+            current_points = copy.deepcopy(points)
+            
+            if swing_amp != 0:
+                 for i in range(6):
+                     current_points[i][1] += swing_offset
+
             for i in range(3):
                 # Leg pair operations
                 if j < (F / 8):
@@ -318,7 +352,7 @@ class LocomotionController:
                     points[2 * i + 1][0] += 8 * xy[2 * i + 1][0]
                     points[2 * i + 1][1] += 8 * xy[2 * i + 1][1]
 
-            self.transform_coordinates(points)
+            self.transform_coordinates(current_points)
             self.set_leg_angles()
             time.sleep(delay)
 
