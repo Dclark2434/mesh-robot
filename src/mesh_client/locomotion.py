@@ -448,27 +448,7 @@ class LocomotionController:
 
         # Execute Ripple Gait Cycle
         for j in range(F):
-            # Hip Swing: Body Yaw (Rotation around Z)
-            swing_angle_rad = 0
-            if swing_amp != 0:
-                swing_phase = (j / F) * 2 * math.pi
-                swing_angle_rad = math.radians(math.sin(swing_phase) * swing_amp)
-
-            # Copy points (which now include Body Pitch!)
-            current_points = copy.deepcopy(points)
-            
-            if swing_amp != 0:
-                 cos_a = math.cos(swing_angle_rad)
-                 sin_a = math.sin(swing_angle_rad)
-                 for i in range(6):
-                     # Rotate X,Y around 0,0 (Body Center)
-                     x_val = current_points[i][0]
-                     y_val = current_points[i][1]
-                     current_points[i][0] = x_val * cos_a - y_val * sin_a
-                     current_points[i][1] = x_val * sin_a + y_val * cos_a
-
-            # Removed: Body Pitch Loop (Was here, now moved to top)
-
+            # 1. Update Gait State (Persistent)
             for i in range(3):
                 # Leg pair operations
                 if j < (F / 8):
@@ -503,6 +483,25 @@ class LocomotionController:
                     points[2 * i][1] -= 4 * xy[2 * i][1]
                     points[2 * i + 1][0] += 8 * xy[2 * i + 1][0]
                     points[2 * i + 1][1] += 8 * xy[2 * i + 1][1]
+
+            # 2. Apply Hip Swing (Body Yaw) to Temporary Copy
+            current_points = copy.deepcopy(points)
+            
+            # Hip Swing: Body Yaw (Rotation around Z)
+            swing_angle_rad = 0
+            if swing_amp != 0:
+                swing_phase = (j / F) * 2 * math.pi
+                swing_angle_rad = math.radians(math.sin(swing_phase) * swing_amp)
+                
+            if swing_angle_rad != 0:
+                 cos_a = math.cos(swing_angle_rad)
+                 sin_a = math.sin(swing_angle_rad)
+                 for i in range(6):
+                     # Rotate X,Y around 0,0 (Body Center)
+                     x_val = current_points[i][0]
+                     y_val = current_points[i][1]
+                     current_points[i][0] = x_val * cos_a - y_val * sin_a
+                     current_points[i][1] = x_val * sin_a + y_val * cos_a
 
             self.transform_coordinates(current_points)
             self.set_leg_angles()
