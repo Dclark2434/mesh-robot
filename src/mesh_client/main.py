@@ -9,6 +9,7 @@ import time
 import subprocess
 import os
 import sys
+import shutil
 import struct
 from scipy.io.wavfile import write, read
 from typing import Optional, Generator
