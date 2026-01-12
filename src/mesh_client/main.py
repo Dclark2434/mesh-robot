@@ -124,78 +124,97 @@ def stream_audio_response(response: requests.Response, cmd_callback=None):
     """Streams audio segments from server and plays them, executing commands if found."""
     logger.info("Response stream started...")
     
+    # CRITICAL: Hold speaking lock for entire stream + buffer
+    # This prevents the mic from opening between chunks
+    is_speaking.set()
+    leds.set_state(LEDState.SPEAKING)
+    
     buffer = b""
     expected_size = 0
-    # Match JSON commands: {"action":...} with optional newline
-    command_pattern = re.compile(rb'(\{"action":.*?\})(\n)?')
-
-    for chunk in response.iter_content(chunk_size=4096): 
-        if not chunk: continue
-        # logger.debug(f"Received stream chunk: {len(chunk)} bytes")
-        buffer += chunk
-        
-        # 1. Scan for Commands manually (Regex can be flaky on binary)
-        while True:
-            start_idx = buffer.find(b'{"action"')
-            if start_idx == -1:
-                break
+    
+    try:
+        # Match JSON commands: {"action":...} with optional newline
+        command_pattern = re.compile(rb'(\{"action":.*?\})(\n)?')
+    
+        for chunk in response.iter_content(chunk_size=4096): 
+            if not chunk: continue
+            # logger.debug(f"Received stream chunk: {len(chunk)} bytes")
+            buffer += chunk
             
-            # Found start, look for end
-            # We assume simple JSON object ending with } or }\n
-            # Safest is to find "}" after start
-            end_idx = buffer.find(b'}', start_idx)
-            if end_idx == -1:
-                break # Wait for more data
-            
-            # Extract candidate
-            json_bytes = buffer[start_idx:end_idx+1]
-            try:
-                cmd_str = json_bytes.decode("utf-8")
-                logger.info(f"Found Command Candidate: {cmd_str}")
-                cmd = json.loads(cmd_str)
-                if cmd_callback: 
-                    cmd_callback(cmd)
-                
-                # Remove from buffer
-                # Note: There might be a \n after match, it will be treated as garbage later (fine)
-                buffer = buffer[:start_idx] + buffer[end_idx+1:]
-                
-            except Exception as e:
-                logger.error(f"Manual Parse Failed: {e}")
-                # We should probably discard this attempt to avoid infinite loop
-                # checking the same invalid bytes?
-                # For now, assume if it looks like {"action" it's valid.
-                break 
-
-        # 2. Parse WAV headers
-        while True:
-            if expected_size == 0:
-                riff_idx = buffer.find(b"RIFF")
-                if riff_idx == -1:
-                    break 
-                
-                if len(buffer) < riff_idx + 8:
-                    break 
-                
-                # Discard garbage (Log it!)
-                if riff_idx > 0:
-                    garbage = buffer[:riff_idx]
-                    if len(garbage) > 4: # Ignore small newlines
-                         logger.warning(f"Discarding {len(garbage)} bytes before RIFF: {garbage[:50]}...")
-                    buffer = buffer[riff_idx:]
-                
-                val = struct.unpack("<I", buffer[4:8])[0]
-                expected_size = val + 8
-                # logger.info(f"WAV Detected. Size: {expected_size}")
-            
-            if expected_size > 0:
-                if len(buffer) >= expected_size:
-                    wav_data = buffer[:expected_size]
-                    buffer = buffer[expected_size:] 
-                    expected_size = 0 
-                    play_wav(wav_data)
-                else:
+            # 1. Scan for Commands manually (Regex can be flaky on binary)
+            while True:
+                start_idx = buffer.find(b'{"action"')
+                if start_idx == -1:
                     break
+                
+                # Found start, look for end
+                # We assume simple JSON object ending with } or }\n
+                # Safest is to find "}" after start
+                end_idx = buffer.find(b'}', start_idx)
+                if end_idx == -1:
+                    break # Wait for more data
+                
+                # Extract candidate
+                json_bytes = buffer[start_idx:end_idx+1]
+                try:
+                    cmd_str = json_bytes.decode("utf-8")
+                    logger.info(f"Found Command Candidate: {cmd_str}")
+                    cmd = json.loads(cmd_str)
+                    if cmd_callback: 
+                        cmd_callback(cmd)
+                    
+                    # Remove from buffer
+                    # Note: There might be a \n after match, it will be treated as garbage later (fine)
+                    buffer = buffer[:start_idx] + buffer[end_idx+1:]
+                    
+                except Exception as e:
+                    logger.error(f"Manual Parse Failed: {e}")
+                    # We should probably discard this attempt to avoid infinite loop
+                    # checking the same invalid bytes?
+                    # For now, assume if it looks like {"action" it's valid.
+                    break 
+    
+            # 2. Parse WAV headers
+            while True:
+                if expected_size == 0:
+                    riff_idx = buffer.find(b"RIFF")
+                    if riff_idx == -1:
+                        break 
+                    
+                    if len(buffer) < riff_idx + 8:
+                        break 
+                    
+                    # Discard garbage (Log it!)
+                    if riff_idx > 0:
+                        garbage = buffer[:riff_idx]
+                        if len(garbage) > 4: # Ignore small newlines
+                             pass
+                        buffer = buffer[riff_idx:]
+                    
+                    val = struct.unpack("<I", buffer[4:8])[0]
+                    expected_size = val + 8
+                    # logger.info(f"WAV Detected. Size: {expected_size}")
+                
+                if expected_size > 0:
+                    if len(buffer) >= expected_size:
+                        wav_data = buffer[:expected_size]
+                        buffer = buffer[expected_size:] 
+                        expected_size = 0 
+                        play_wav(wav_data)
+                    else:
+                        break
+    finally:
+        # POST-SPEECH COOL DOWN
+        # Wait a moment for room echoes to die down
+        time.sleep(1.0)
+        
+        # Drain queue of any self-hearing
+        while not audio_queue.empty():
+            try: audio_queue.get_nowait()
+            except queue.Empty: break
+            
+    is_speaking.clear()
+    leds.set_state(LEDState.IDLE)
 
     logger.info("Stream complete.")
 
@@ -494,10 +513,6 @@ def main():
                         head.look_up(20)
                         stream_audio_response(r, on_server_command)
                         
-                        # CRITICAL FIX: Drain queue after speaking (Vision Path)
-                        while not audio_queue.empty():
-                            try: audio_queue.get_nowait()
-                            except queue.Empty: break
                         last_activity_time = time.time()
                         
                         leds.set_state(LEDState.IDLE)
@@ -695,10 +710,6 @@ def main():
                                         stream_audio_response(r, on_server_command)
                                         logger.info(f"[LATENCY] Round-trip: {time.time() - start_time:.2f}s")
                                         
-                                        # CRITICAL FIX: Drain queue after speaking to remove any self-heard echoes
-                                        while not audio_queue.empty():
-                                            try: audio_queue.get_nowait()
-                                            except queue.Empty: break
                                         last_activity_time = time.time() # Reset idle timer
                                         
                                         leds.set_state(LEDState.IDLE)
