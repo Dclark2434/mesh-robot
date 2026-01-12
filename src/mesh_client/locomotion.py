@@ -324,11 +324,8 @@ class LocomotionController:
         # User Logic: measured / expected.
         # Let's say expected_accel ~ speed * 0.5G (rough heuristic)
         # Using abs() because gait oscillates +-.
-        measured_ax = accel['y'] / 16384.0 # Convert raw to G (assuming +/- 2G scale)
-        # Scale might be different, keeping raw? 
-        # MPU6050 default is 16384 LSB/g.
-        # But let's check values at runtime. Freenove driver might normalize?
-        # Freenove get_accel_data returns raw int. So / 16384 is safe guess.
+        # FIXED SCALE: Driver returns m/s^2. Convert to Gs.
+        measured_ax = accel['y'] / 9.8 
         
         coupling_score = 1.0
         if requested_speed > 0.5:
@@ -349,7 +346,7 @@ class LocomotionController:
         
         # C) Vibration (Z-axis RMS)
         # Micro-slip causes chatter
-        az = accel['z'] / 16384.0
+        az = accel['z'] / 9.8
         self.az_history.pop(0)
         self.az_history.append(az)
         avg_az = sum(self.az_history) / len(self.az_history)
