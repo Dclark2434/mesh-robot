@@ -214,7 +214,7 @@ class LocomotionController:
 
     def execute_gait(self, x, y, angle, steps=4, speed=1.0, hip_swing=0.0):
         """Generic gait execution wrapper."""
-        z_step = 30
+        z_step = 50 # High Knees for sprint clearance
         f_steps = 12 # Lower resolution for higher speed (Sprint Mode)
         
         logger.info(f"Gait Cycle: x={x}, y={y}, angle={angle}, steps={steps}, speed={speed}, swing={hip_swing}")
