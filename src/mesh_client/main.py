@@ -302,6 +302,7 @@ def main():
 
     # Movement State Flag
     is_moving = threading.Event()
+    vision_requested = threading.Event()
     # is_speaking moved to global scope
     has_idled = False # Flag to prevent repeating idle anim
 
@@ -422,25 +423,10 @@ def main():
                      locomotion.reset_posture_flat()
 
                 # Vision Action
+                # Vision Action
                 elif action == "see":
-                     logger.info("Executing Vision Action...")
-                     # Run in separate thread to not block the action runner (though action runner is already threaded)
-                     # But capture_and_send_vision makes a network call which blocks.
-                     # We can run it here directly since run_action is already a daemon thread.
-                     capture_and_send_vision()
-                     
-            except Exception as e:
-                logger.error(f"Command execution error: {e}")
-                is_moving.clear() # Ensure cleared on error
-
-        # Camera Logic
-        last_vision_time = 0
-        def capture_and_send_vision():
-            nonlocal last_vision_time
-            if time.time() - last_vision_time < 5.0:
-                logger.warning("Vision: Debounced (Too soon).")
-                return
-            last_vision_time = time.time()
+                     logger.info("Requesting Vision Action (Serialized)...")
+                     vision_requested.set()
 
             """Captures image and sends to server."""
             logger.info("Vision: capturing image...")
@@ -528,14 +514,107 @@ def main():
                         leds.set_state(LEDState.IDLE)
                         
             except Exception as e:
-                logger.error(f"Vision Network Error: {e}")
-                leds.set_state(LEDState.ERROR)
-                time.sleep(1)
-                leds.set_state(LEDState.IDLE)
+                logger.error(f"Command execution error: {e}")
+                is_moving.clear() # Ensure cleared on error
 
 
         # Start execution in background
         threading.Thread(target=run_action, daemon=True).start()
+
+
+
+    # Camera Logic (Moved to Main Scope)
+    last_vision_time = 0
+    def capture_and_send_vision():
+        nonlocal last_vision_time
+        if time.time() - last_vision_time < 5.0:
+            logger.warning("Vision: Debounced (Too soon).")
+            return
+        last_vision_time = time.time()
+
+        """Captures image and sends to server."""
+        logger.info("Vision: capturing image...")
+        jpg_bytes = None
+        
+        # METHOD 1: Try Native CLI Tools (rpicam-jpeg / libcamera-jpeg)
+        # This is most robust on Pi Bullseye/Bookworm as it bypasses python binding issues.
+        for tool in ["rpicam-jpeg", "libcamera-jpeg"]:
+            if shutil.which(tool):
+                temp_img = "/tmp/mesh_vision_capture.jpg"
+                try:
+                    # Capture safely
+                    subprocess.run([tool, "-o", temp_img, "-t", "500", "--width", "640", "--height", "480", "--nopreview"], check=True)
+                    if os.path.exists(temp_img):
+                        with open(temp_img, "rb") as f:
+                            jpg_bytes = f.read()
+                        os.remove(temp_img)
+                        logger.info(f"Vision: Captured via {tool} ({len(jpg_bytes)} bytes).")
+                        break
+                except Exception as e:
+                    logger.warning(f"Vision: CLI {tool} failed: {e}")
+        
+        # METHOD 2: Fallback to OpenCV
+        if not jpg_bytes:
+            logger.info("Vision: Falling back to OpenCV...")
+            try:
+                cap = cv2.VideoCapture(0)
+                if not cap.isOpened():
+                    logger.error("Vision: Could not open camera (cv2).")
+                else:
+                    # Warmup
+                    for _ in range(5): cap.read()
+                    
+                    ret, frame = cap.read()
+                    cap.release()
+                    
+                    if ret:
+                        frame = cv2.resize(frame, (640, 480))
+                        ret, buffer = cv2.imencode('.jpg', frame)
+                        if ret:
+                            jpg_bytes = buffer.tobytes()
+                            logger.info(f"Vision: Captured via OpenCV ({len(jpg_bytes)} bytes).")
+            except Exception as e:
+                logger.error(f"Vision: OpenCV failed: {e}")
+
+        if not jpg_bytes:
+            logger.error("Vision: All capture methods failed.")
+            leds.set_state(LEDState.ERROR)
+            time.sleep(1)
+            leds.set_state(LEDState.IDLE)
+            return
+
+        # Send to Server
+        try:
+            leds.set_state(LEDState.THINKING)
+            
+            files = {
+                'image_file': ('view.jpg', io.BytesIO(jpg_bytes), 'image/jpeg')
+            }
+            data = {
+                'prompt': "Describe what you see in this image."
+            }
+            
+            with requests.post(SERVER_URL, files=files, data=data, stream=True, timeout=30) as r:
+                if r.status_code == 200:
+                    leds.set_state(LEDState.SPEAKING)
+                    head.look_up(20)
+                    stream_audio_response(r, leds, on_server_command)
+                    
+                    last_activity_time = time.time()
+                    
+                    leds.set_state(LEDState.IDLE)
+                    head.look_neutral()
+                else:
+                    logger.error(f"Vision Server Error: {r.status_code}")
+                    leds.set_state(LEDState.ERROR)
+                    time.sleep(1)
+                    leds.set_state(LEDState.IDLE)
+                    
+        except Exception as e:
+            logger.error(f"Vision Network Error: {e}")
+            leds.set_state(LEDState.ERROR)
+            time.sleep(1)
+            leds.set_state(LEDState.IDLE)
 
 
     # Calibration
@@ -715,6 +794,12 @@ def main():
                                         stream_audio_response(r, leds, on_server_command)
                                         logger.info(f"[LATENCY] Round-trip: {time.time() - start_time:.2f}s")
                                         
+                                        # DEFERRED ACTION CHECK
+                                        if vision_requested.is_set():
+                                             logger.info("Executing Deferred Vision Action...")
+                                             vision_requested.clear()
+                                             capture_and_send_vision()
+
                                         last_activity_time = time.time() # Reset idle timer
                                         
                                         leds.set_state(LEDState.IDLE)
