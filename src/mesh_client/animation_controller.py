@@ -261,7 +261,7 @@ class AnimationController:
                     
                     self.loco.transform_coordinates(current)
                     self.loco.set_leg_angles()
-                    time.sleep(0.04)
+                    time.sleep(0.05) # Slowed down (prev 0.04) to match audio timing
                 
                 # Impact/Recoil Group
                 for i in range(5): # Compressor
