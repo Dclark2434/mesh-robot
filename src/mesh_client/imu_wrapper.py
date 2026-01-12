@@ -46,6 +46,9 @@ class IMUWrapper:
                 self.sensor = IMU()
                 # Run one update to warm up filters
                 self.sensor.update_imu_state()
+                # DEBUG UNITS:
+                raw_acc = self.sensor.sensor.get_accel_data()
+                logger.info(f"IMU Initialized. Raw Sample: {raw_acc}")
                 logger.info("IMU Initialized (MPU6050 via Freenove Driver)")
             except Exception as e:
                 logger.error(f"IMU Init Failed: {e}. Falling back to Mock.")

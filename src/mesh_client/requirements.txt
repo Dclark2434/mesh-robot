@@ -7,3 +7,4 @@ gpiozero
 rpi.gpio
 smbus2
 opencv-python
+mpu6050-raspberrypi
