@@ -123,7 +123,7 @@ def play_wav(wav_data: bytes):
 
 # --- STREAMING ENGINE ---
 
-def stream_audio_response(response: requests.Response, cmd_callback=None):
+def stream_audio_response(response: requests.Response, leds, cmd_callback=None):
     """Streams audio segments from server and plays them, executing commands if found."""
     logger.info("Response stream started...")
     
@@ -514,7 +514,8 @@ def main():
                     if r.status_code == 200:
                         leds.set_state(LEDState.SPEAKING)
                         head.look_up(20)
-                        stream_audio_response(r, on_server_command)
+                        head.look_up(20)
+                        stream_audio_response(r, leds, on_server_command)
                         
                         last_activity_time = time.time()
                         
@@ -710,7 +711,8 @@ def main():
                                     if r.status_code == 200:
                                         leds.set_state(LEDState.SPEAKING)
                                         head.look_up(20)
-                                        stream_audio_response(r, on_server_command)
+                                        head.look_up(20)
+                                        stream_audio_response(r, leds, on_server_command)
                                         logger.info(f"[LATENCY] Round-trip: {time.time() - start_time:.2f}s")
                                         
                                         last_activity_time = time.time() # Reset idle timer
