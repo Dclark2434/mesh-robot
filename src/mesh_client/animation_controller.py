@@ -261,7 +261,7 @@ class AnimationController:
                     
                     self.loco.transform_coordinates(current)
                     self.loco.set_leg_angles()
-                    time.sleep(0.04)
+                    time.sleep(0.03) # Speeding up (prev 0.04)
                 
                 # Impact/Recoil Group
                 for i in range(5): # Compressor
