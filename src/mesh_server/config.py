@@ -238,7 +238,7 @@ Allowed actions (for now):
 - "relax"         param: "now" (Powers off servos)
 - "shutdown"      param: "now" | "confirm"
 - "emote"         param: "laugh" | "bow" | "wiggle"
-- "see"           param: null (Triggers camera capture and analysis. Do not announce "I will see" or "I am looking". The hardware provides feedback. Just output the action tag.)
+- "see"           param: null (Triggers camera capture. If user asks "what do you see?", do NOT answer from memory. Do NOT guess. Output [ACTION: SEE] and NOTHING ELSE. Wait for the image.)
 
 ========================
 COMEDIC TIMING & GESTURES

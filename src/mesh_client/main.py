@@ -170,6 +170,15 @@ def stream_audio_response(response: requests.Response, leds, cmd_callback=None):
                     # Remove from buffer
                     # Note: There might be a \n after match, it will be treated as garbage later (fine)
                     buffer = buffer[:start_idx] + buffer[end_idx+1:]
+
+                    # SPECIAL CASE: "see" action
+                    # If we are asked to see, we must silent the current stream (which contains hallucinated context)
+                    # and jump straight to the vision loop.
+                    if cmd.get("action") == "see":
+                        logger.info("Vision Command Detected: Aborting current audio stream to prevent hallucination.")
+                        # Drain buffer
+                        buffer = b""
+                        return # Exit function immediately
                     
                 except Exception as e:
                     logger.error(f"Manual Parse Failed: {e}")
