@@ -606,7 +606,7 @@ def main():
             # Set threshold relative to noise floor with a safety buffer: 1.5x Multiplier + 0.02 Offset.
             # Hard Cap: 0.12 to ensure sensitivity.
             # Prefer calibrated value unless it is critically low.
-            calculated_threshold = max(0.04, min(noise_floor * 1.5 + 0.02, 0.12))
+            calculated_threshold = max(0.08, min(noise_floor * 1.5 + 0.02, 0.20))
             
             THRESHOLD = calculated_threshold
             logger.info(f"Calibration captured noise floor: {noise_floor:.4f}. Setting Threshold: {THRESHOLD:.4f}")
@@ -658,7 +658,7 @@ def main():
                         while not audio_queue.empty():
                             try: audio_queue.get_nowait()
                             except queue.Empty: break
-                        time.sleep(0.1)
+                        time.sleep(0.5) # Extended cooldown to reject servo spin-down noise
                         # Update activity to prevent immediate idle trigger after move
                         last_activity_time = time.time()
                         continue
