@@ -10,7 +10,7 @@ logger = get_logger("mesh_locomotion")
 class LocomotionController:
     def __init__(self, servo_ctrl: ServoController):
         self.servo = servo_ctrl
-        self.body_height = -35 # Adjusted higher (more negative) for swagger (was -25)
+        self.body_height = -60 # Adjusted to -60 for Tall/Swagger Stance (Prev: -35)
         # Body and Leg geometry (from Freenove control.py)
         # Note: These values are specific to the Freenove Big Hexapod
         self.body_points = [

@@ -214,7 +214,7 @@ class AnimationController:
             steps = 40
             strike_height = 80          # Lift
             high_stance_z = -75         # Exaggerated Tall Stance (-75)
-            neutral_stance_z = -25      # Lower Settle (Squat -25)
+            neutral_stance_z = -60      # Settle to Tall/Swagger Stance (Prev: -25)
             
             # Helper to animate a group
             def animate_group(legs, target_z_base):
