@@ -13,6 +13,7 @@ import struct
 from scipy.io.wavfile import write, read
 from typing import Optional, Generator
 import re
+import cv2
 
 # Client imports
 
@@ -396,10 +397,89 @@ def main():
                      sc.relax()
                 elif action in ["reset", "lay_flat"]:
                      locomotion.reset_posture_flat()
+
+                # Vision Action
+                elif action == "see":
+                     logger.info("Executing Vision Action...")
+                     # Run in separate thread to not block the action runner (though action runner is already threaded)
+                     # But capture_and_send_vision makes a network call which blocks.
+                     # We can run it here directly since run_action is already a daemon thread.
+                     capture_and_send_vision()
                      
             except Exception as e:
                 logger.error(f"Command execution error: {e}")
                 is_moving.clear() # Ensure cleared on error
+
+        # Camera Logic
+        def capture_and_send_vision():
+            """Captures image and sends to server."""
+            logger.info("Vision: capturing image...")
+            try:
+                # 0 is usually the default camera (picamera on Pi if legacy enabled, or USB)
+                # On Pi with libcamera, standard cv2.VideoCapture(0) might need specific ENV vars or work if legacy shim is active.
+                # Assuming standard V4L2 device availability.
+                cap = cv2.VideoCapture(0)
+                if not cap.isOpened():
+                    logger.error("Vision: Could not open camera.")
+                    # Fallback to playing an error sound or saying something?
+                    # For now just log.
+                    return
+
+                # Warmup / Stabilization
+                # Read a few frames to let auto-exposure settle
+                for _ in range(5):
+                    cap.read()
+                
+                ret, frame = cap.read()
+                cap.release()
+                
+                if not ret:
+                    logger.error("Vision: Failed to read frame.")
+                    return
+
+                # Resize to Freenove standard (640x480) for consistency/speed
+                frame = cv2.resize(frame, (640, 480))
+                
+                # Encode to JPEG
+                ret, buffer = cv2.imencode('.jpg', frame)
+                if not ret:
+                    logger.error("Vision: JPEG processing failed.")
+                    return
+                
+                # Send to Server
+                jpg_bytes = buffer.tobytes()
+                logger.info(f"Vision: Image captured ({len(jpg_bytes)} bytes). Sending...")
+                
+                leds.set_state(LEDState.THINKING)
+                
+                # Prepare Multipart Request
+                files = {
+                    'image_file': ('view.jpg', io.BytesIO(jpg_bytes), 'image/jpeg')
+                }
+                data = {
+                    'prompt': "Describe what you see in this image."
+                }
+                
+                # We reuse the stream_audio_response handler
+                with requests.post(SERVER_URL, files=files, data=data, stream=True, timeout=30) as r:
+                    if r.status_code == 200:
+                        leds.set_state(LEDState.SPEAKING)
+                        head.look_up(20)
+                        stream_audio_response(r, on_server_command)
+                        leds.set_state(LEDState.IDLE)
+                        head.look_neutral()
+                    else:
+                        logger.error(f"Vision Server Error: {r.status_code}")
+                        leds.set_state(LEDState.ERROR)
+                        time.sleep(1)
+                        leds.set_state(LEDState.IDLE)
+                        
+            except Exception as e:
+                logger.error(f"Vision Error: {e}")
+                leds.set_state(LEDState.ERROR)
+                time.sleep(1)
+                leds.set_state(LEDState.IDLE)
+
 
         # Start execution in background
         threading.Thread(target=run_action, daemon=True).start()

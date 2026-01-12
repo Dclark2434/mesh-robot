@@ -78,24 +78,43 @@ def print_latency_report():
 
 # --- STREAM LOGIC ---
 
-async def interact_generator(audio_bytes, telemetry=None):
+async def interact_generator(audio_bytes, image_bytes=None, text_prompt=None, telemetry=None):
     start_total = time.time()
-    audio_buffer = io.BytesIO(audio_bytes)
     
-    # 1. Transcribe (In background thread!)
-    stt_start = time.time()
-    user_text = await asyncio.to_thread(voice_engine.transcribe, audio_buffer)
-    stt_duration = time.time() - stt_start
+    user_text = ""
     
-    if user_text:
-        logger.info(f"[HEARD] '{user_text}'")
-        SESSION_STATS["stt"].append(stt_duration)
+    # 1. Transcribe (if audio present)
+    if audio_bytes:
+        audio_buffer = io.BytesIO(audio_bytes)
+        stt_start = time.time()
+        user_text = await asyncio.to_thread(voice_engine.transcribe, audio_buffer)
+        stt_duration = time.time() - stt_start
+        
+        if user_text:
+            logger.info(f"[HEARD] '{user_text}'")
+            SESSION_STATS["stt"].append(stt_duration)
+    
+    # 2. Text Override/Fallback
+    if text_prompt:
+        # If we have both, maybe append? OR override. 
+        # Typically text_prompt comes from "See" action ("Describe this") or specialized client.
+        if user_text:
+            user_text += f" {text_prompt}"
+        else:
+            user_text = text_prompt
+            logger.info(f"[TEXT INPUT] '{user_text}'")
 
-    if not user_text:
+    if not user_text and not image_bytes:
+        # If we have an image but no text, we can default to "Look at this."
+        # But if we have neither, ignoring.
         yield json.dumps({"status": "no_speech"}).encode()
         return
+        
+    # Default prompt for image-only input
+    if image_bytes and not user_text:
+        user_text = "What do you see here?"
 
-    # 2. Logic (Wake words, attention, etc.)
+    # 3. Logic (Wake words, attention, etc.)
     user_id = "dustin"
     clean_input = user_text.lower().strip()
     last_seen = USER_STATES.get(user_id, 0)
@@ -178,7 +197,8 @@ async def interact_generator(audio_bytes, telemetry=None):
         return
     
     llm_start = time.time()
-    raw_response = await asyncio.to_thread(brain.think, final_prompt, user_id)
+    llm_start = time.time()
+    raw_response = await asyncio.to_thread(brain.think, final_prompt, user_id, image_bytes)
     llm_duration = time.time() - llm_start
     SESSION_STATS["llm"].append(llm_duration)
     
@@ -245,30 +265,37 @@ async def interact_generator(audio_bytes, telemetry=None):
 # --- API ENDPOINTS ---
 
 @app.post("/interact")
-async def interact_endpoint(request: Request, audio_file: UploadFile = File(...), telemetry: str = Form(None)):
+async def interact_endpoint(
+    request: Request, 
+    audio_file: UploadFile = File(None), 
+    image_file: UploadFile = File(None),
+    prompt: str = Form(None),
+    telemetry: str = Form(None)
+):
     start_time = getattr(request.state, "start_time", time.time())
     overhead = time.time() - start_time
     logger.info(f"[LATENCY] Request Overhead: {overhead:.2f}s")
 
-    read_start = time.time()
-    audio_bytes = await audio_file.read()
-    logger.info(f"[LATENCY] Server File Read: {time.time() - read_start:.2f}s")
+    # Read Inputs
+    audio_bytes = None
+    if audio_file:
+        read_start = time.time()
+        audio_bytes = await audio_file.read()
+        logger.info(f"[LATENCY] Server Audio Read: {time.time() - read_start:.2f}s")
     
+    image_bytes = None
+    if image_file:
+        read_start = time.time()
+        image_bytes = await image_file.read()
+        logger.info(f"[LATENCY] Server Image Read: {time.time() - read_start:.2f}s")
+
     return StreamingResponse(
-        interact_generator(audio_bytes, telemetry),
+        interact_generator(audio_bytes, image_bytes, prompt, telemetry),
         media_type="audio/wav"
     )
 
-@app.post("/see")
-async def see_endpoint(
-    image: UploadFile = File(...), 
-    prompt: str = Form("Analyze this image.")
-):
-    image_bytes = await image.read()
-    return StreamingResponse(
-        vision_interaction_stream(image_bytes, prompt),
-        media_type="audio/wav"
-    )
+# Clean up /see endpoint as it is now merged
+# (Removing check for cleaner file)
 
 if __name__ == "__main__":
     # When running directly, we use host 0.0.0.0 for network access

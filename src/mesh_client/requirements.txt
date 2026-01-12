@@ -6,3 +6,4 @@ colorama
 gpiozero
 rpi.gpio
 smbus2
+opencv-python

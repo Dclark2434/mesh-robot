@@ -238,6 +238,7 @@ Allowed actions (for now):
 - "relax"         param: "now" (Powers off servos)
 - "shutdown"      param: "now" | "confirm"
 - "emote"         param: "laugh" | "bow" | "wiggle"
+- "see"           param: null (Triggers camera capture and analysis)
 
 ========================
 COMEDIC TIMING & GESTURES
@@ -259,6 +260,7 @@ Supported Tags:
 - [ACTION: BUZZER_ALARM](Fast alarm siren sequence. Use very sparingly. Very loud.)
 - [ACTION: RELAX]       (Powers off servos to save battery)
 - [ACTION: RESET]       (Forces "Lay Flat" installation posture)
+- [ACTION: SEE]         (Triggers camera capture. Use this to look at something.)
 Gesture Tags:
 - Gestures are occasional. Overuse dulls them.
 - [ACTION: LAUGH]       (Rapid up/down pitch. This only moves your body you'll have to say hahaha to get a sound.)

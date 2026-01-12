@@ -139,7 +139,7 @@ def summarize_context(context_tokens, user_id):
         logger.error(f"Summarization error: {e}")
         return ""
 
-def think_gemini(prompt, user_id="dustin"):
+def think_gemini(prompt, user_id="dustin", image_bytes=None):
     """
     Gemini implementation of the brain.
     Leverages large context window to persist full chat history without immediate pruning.
@@ -162,7 +162,13 @@ def think_gemini(prompt, user_id="dustin"):
             contents.append(types.Content(role=turn['role'], parts=p_list))
         
         # Add current user prompt
-        contents.append(types.Content(role='user', parts=[types.Part(text=prompt)]))
+        current_parts = []
+        if image_bytes:
+            logger.info("Attaching image to Gemini request.")
+            current_parts.append(types.Part.from_bytes(data=image_bytes, mime_type='image/jpeg'))
+            
+        current_parts.append(types.Part(text=prompt))
+        contents.append(types.Content(role='user', parts=current_parts))
         
         start_time = time.time()
         response = client.models.generate_content(
@@ -174,7 +180,10 @@ def think_gemini(prompt, user_id="dustin"):
         logger.info(f"[LATENCY] LLM (Gemini): {duration:.2f}s")
         
         # Update memory with new history
-        history.append({"role": "user", "parts": [prompt]})
+        # Note: We don't store the image bytes in history to save space/complexity for now.
+        # We just store the text prompt. 
+        # TODO: Consider storing a placeholder or image ID if needed.
+        history.append({"role": "user", "parts": [prompt + " [Image Uploaded]"] if image_bytes else [prompt]})
         history.append({"role": "model", "parts": [response.text]})
             
         user_memory["gemini_history"] = history
@@ -189,15 +198,52 @@ def think_gemini(prompt, user_id="dustin"):
         logger.error(f"Gemini API Error: {type(e).__name__} - {str(e)}")
         return json.dumps({"response": "Signal interference. Repeat.", "action": "none", "param": "null"})
 
-def think(prompt, user_id="dustin"):
+def think(prompt, user_id="dustin", image_bytes=None):
     """Query Text Model with Persistent Identity and Rolling Memory"""
     
     # --- GEMINI PATH ---
     if config.USE_GEMINI:
-        return think_gemini(prompt, user_id)
+        return think_gemini(prompt, user_id, image_bytes)
         
     # --- OLLAMA PATH (Legacy) ---
     
+    # If image is present, we divert to Vision Model immediately for this turn
+    if image_bytes:
+        logger.info("Image detected. Diverting to Ollama Vision Model.")
+        try:
+            b64_image = base64.b64encode(image_bytes).decode('utf-8')
+            
+            # Use Vision System Prompt (Lighter version) because Llava/Llama-Vision often gets confused by complex JSON rules
+            vision_system = (
+                "You are MESH. Tactical Robot. "
+                "Analyze this image. Be cynical, dry, and brief. "
+                "Output VALID JSON ONLY: {\"response\": \"...\", \"action\": null, \"param\": null}"
+            )
+            
+            payload = {
+                "model": "llama3.2-vision", # Ensure this model is pulled
+                "messages": [
+                    {
+                        "role": "user", 
+                        "content": f"{prompt}\nSYSTEM: {vision_system}",
+                        "images": [b64_image]
+                    }
+                ],
+                "stream": False,
+                "format": "json" # Force JSON if supported
+            }
+            start_time = time.time()
+            response = requests.post(config.OLLAMA_CHAT_URL, json=payload)
+            duration = time.time() - start_time
+            logger.info(f"[LATENCY] LLM (Ollama Vision): {duration:.2f}s")
+            
+            data = response.json()
+            return data['message']['content']
+        except Exception as e:
+            logger.error(f"Ollama Vision Error: {e}")
+            return json.dumps({"response": "Visual sensors offline.", "action": "none", "param": "null"})
+
+    # ... Standard Text Path (No Image) ...
     # Get or create user memory
     if user_id not in SESSION_MEMORY:
         SESSION_MEMORY[user_id] = get_default_user_memory()
@@ -277,58 +323,7 @@ def think(prompt, user_id="dustin"):
         logger.error(f"Brain Error: {e}")
         return "Connection lost."
 
-def look(prompt, image_bytes):
-    """Query Vision Model"""
-    
-    # --- GEMINI PATH ---
-    if config.USE_GEMINI:
-        try:
-            # Construct parts: prompt + image
-            image_part = types.Part.from_bytes(data=image_bytes, mime_type='image/jpeg')
-            
-            start_time = time.time()
-            response = client.models.generate_content(
-                model='gemini-3-flash-preview',
-                contents=[prompt, image_part],
-                config=types.GenerateContentConfig(
-                    system_instruction="SYSTEM: You are MESH. Tactical Robot. Analyze this image. Be cynical, dry, brief."
-                )
-            )
-            duration = time.time() - start_time
-            logger.info(f"[LATENCY] Vision (Gemini): {duration:.2f}s")
-            return response.text
-        except Exception as e:
-            logger.error(f"Gemini Vision Error: {e}")
-            return "Visual sensors malfunction."
-
-    # --- OLLAMA PATH ---
-    try:
-        b64_image = base64.b64encode(image_bytes).decode('utf-8')
-        
-        # We inject a lighter version of the identity into the Vision prompt
-        vision_system = (
-            "SYSTEM: You are MESH. Tactical Robot. "
-            "Analyze this image for security threats or inefficiencies. "
-            "Be cynical, dry, and brief. End with [CUE: GREEN]."
-        )
-        
-        payload = {
-            "model": "llama3.2-vision",
-            "messages": [
-                {
-                    "role": "user", 
-                    "content": f"{prompt}\n({vision_system})",
-                    "images": [b64_image]
-                }
-            ],
-            "stream": False
-        }
-        response = requests.post(config.OLLAMA_CHAT_URL, json=payload)
-        data = response.json()
-        return data['message']['content']
-    except Exception as e:
-        logger.error(f"Vision Error: {e}")
-        return "Visual sensors offline."
+# Removed look() function as it is integrated into think()
 
 def robust_json_parse(raw_text):
     """Extracts JSON even if the model messes up"""
