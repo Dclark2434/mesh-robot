@@ -412,7 +412,14 @@ def main():
                 is_moving.clear() # Ensure cleared on error
 
         # Camera Logic
+        last_vision_time = 0
         def capture_and_send_vision():
+            nonlocal last_vision_time
+            if time.time() - last_vision_time < 5.0:
+                logger.warning("Vision: Debounced (Too soon).")
+                return
+            last_vision_time = time.time()
+
             """Captures image and sends to server."""
             logger.info("Vision: capturing image...")
             jpg_bytes = None
@@ -601,6 +608,14 @@ def main():
                                 check_idle_timeout()
                             continue 
                         
+                        # CRITICAL FIX: Check if we started speaking while waiting for chunk
+                        if is_speaking.is_set():
+                            # Clear buffer and restart outer loop to drain
+                            preroll_buffer = []
+                            audio_buffer = []
+                            started = False
+                            break
+
                         volume = np.max(np.abs(chunk))
                         
                         if not started:
