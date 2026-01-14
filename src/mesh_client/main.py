@@ -371,6 +371,17 @@ def main():
                              steps = min(val, 20) # Raised cap to 20 for longer walks
 
                 logger.info(f"Command Received: {action} (Param: {param})")
+
+                # --- ACTIVE LEANING (Applied BEFORE movement) ---
+                # Immediate aggressive lean into the turn/move
+                target_pitch = 0.0
+                if action in ["walk", "walk_forward", "move_forward"]:
+                     target_pitch = 10.0 # Lean Forward
+                elif action == "move_backward":
+                     target_pitch = -10.0 # Lean Backward
+                
+                # Apply instantly for dynamic feel
+                locomotion.body_pitch = target_pitch
                 
                 if action in ["walk", "walk_forward", "move_forward", "move_backward", "turn_left", "turn_right"]:
                      logger.info(f"Movement Action: {action} for {steps} steps")
