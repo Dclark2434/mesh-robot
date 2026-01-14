@@ -400,6 +400,7 @@ def main():
                      finally:
                          # Brief cool-down to let servos settle silence
                          time.sleep(0.2)
+                         locomotion.body_pitch = 0.0
                          is_moving.clear()
                      
                      return # Movement handled
@@ -418,21 +419,6 @@ def main():
 
                 time.sleep(0.05)
                 
-                
-                # --- ACTIVE LEANING (Simple Command Based) ---
-                # We still want to lean into moves, but let's keep it simple here 
-                # or delegate to locomotion.set_body_pitch() if needed.
-                # For now, let's trust the new Locomotion physics to handle pitch if set.
-                target_pitch = 0
-                if action in ["walk", "walk_forward", "move_forward"]:
-                     target_pitch = 5.0 
-                elif action == "move_backward":
-                     target_pitch = -5.0
-                
-                # Update pitch target (Locomotion handles smoothing/application)
-                locomotion.body_pitch = locomotion.body_pitch * 0.8 + target_pitch * 0.2
-
-
                 
                 # Non-movement actions
                 if action == "null": return
