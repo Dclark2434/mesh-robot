@@ -9,10 +9,12 @@ import time
 import subprocess
 import os
 import sys
+import shutil
 import struct
 from scipy.io.wavfile import write, read
 from typing import Optional, Generator
 import re
+import cv2
 
 # Client imports
 
@@ -24,6 +26,7 @@ from mesh_client.locomotion import LocomotionController
 from mesh_client.animation_controller import AnimationController
 from mesh_client.buzzer_controller import BuzzerController
 from mesh_client.power_monitor import PowerMonitor
+from mesh_client.imu_wrapper import IMUWrapper
 
 logger = get_logger("mesh_client")
 
@@ -65,6 +68,9 @@ def play_wav_windows(wav_data: bytes):
         logger.error(f"SoundDevice Playback Error: {e}")
         # Fallback to PowerShell if SD fails?
         # For now, let's assume SD works since we are using it for Input.
+
+# Global State Flags
+is_speaking = threading.Event()
 
 def play_wav_linux(wav_data: bytes, alsa_device: Optional[str] = None):
     """Utility to play a single WAV buffer on Linux via pw-play (Primary) or aplay (Fallback)."""
@@ -119,82 +125,110 @@ def play_wav(wav_data: bytes):
 
 # --- STREAMING ENGINE ---
 
-def stream_audio_response(response: requests.Response, cmd_callback=None):
+def stream_audio_response(response: requests.Response, leds, cmd_callback=None):
     """Streams audio segments from server and plays them, executing commands if found."""
     logger.info("Response stream started...")
     
+    # CRITICAL: Hold speaking lock for entire stream + buffer
+    # This prevents the mic from opening between chunks
+    is_speaking.set()
+    leds.set_state(LEDState.SPEAKING)
+    
     buffer = b""
     expected_size = 0
-    # Match JSON commands: {"action":...} with optional newline
-    command_pattern = re.compile(rb'(\{"action":.*?\})(\n)?')
-
-    for chunk in response.iter_content(chunk_size=4096): 
-        if not chunk: continue
-        # logger.debug(f"Received stream chunk: {len(chunk)} bytes")
-        buffer += chunk
-        
-        # 1. Scan for Commands manually (Regex can be flaky on binary)
-        while True:
-            start_idx = buffer.find(b'{"action"')
-            if start_idx == -1:
-                break
+    
+    try:
+        # Match JSON commands: {"action":...} with optional newline
+        command_pattern = re.compile(rb'(\{"action":.*?\})(\n)?')
+    
+        for chunk in response.iter_content(chunk_size=4096): 
+            if not chunk: continue
+            # logger.debug(f"Received stream chunk: {len(chunk)} bytes")
+            buffer += chunk
             
-            # Found start, look for end
-            # We assume simple JSON object ending with } or }\n
-            # Safest is to find "}" after start
-            end_idx = buffer.find(b'}', start_idx)
-            if end_idx == -1:
-                break # Wait for more data
-            
-            # Extract candidate
-            json_bytes = buffer[start_idx:end_idx+1]
-            try:
-                cmd_str = json_bytes.decode("utf-8")
-                logger.info(f"Found Command Candidate: {cmd_str}")
-                cmd = json.loads(cmd_str)
-                if cmd_callback: 
-                    cmd_callback(cmd)
-                
-                # Remove from buffer
-                # Note: There might be a \n after match, it will be treated as garbage later (fine)
-                buffer = buffer[:start_idx] + buffer[end_idx+1:]
-                
-            except Exception as e:
-                logger.error(f"Manual Parse Failed: {e}")
-                # We should probably discard this attempt to avoid infinite loop
-                # checking the same invalid bytes?
-                # For now, assume if it looks like {"action" it's valid.
-                break 
-
-        # 2. Parse WAV headers
-        while True:
-            if expected_size == 0:
-                riff_idx = buffer.find(b"RIFF")
-                if riff_idx == -1:
-                    break 
-                
-                if len(buffer) < riff_idx + 8:
-                    break 
-                
-                # Discard garbage (Log it!)
-                if riff_idx > 0:
-                    garbage = buffer[:riff_idx]
-                    if len(garbage) > 4: # Ignore small newlines
-                         logger.warning(f"Discarding {len(garbage)} bytes before RIFF: {garbage[:50]}...")
-                    buffer = buffer[riff_idx:]
-                
-                val = struct.unpack("<I", buffer[4:8])[0]
-                expected_size = val + 8
-                # logger.info(f"WAV Detected. Size: {expected_size}")
-            
-            if expected_size > 0:
-                if len(buffer) >= expected_size:
-                    wav_data = buffer[:expected_size]
-                    buffer = buffer[expected_size:] 
-                    expected_size = 0 
-                    play_wav(wav_data)
-                else:
+            # 1. Scan for Commands manually (Regex can be flaky on binary)
+            while True:
+                start_idx = buffer.find(b'{"action"')
+                if start_idx == -1:
                     break
+                
+                # Found start, look for end
+                # We assume simple JSON object ending with } or }\n
+                # Safest is to find "}" after start
+                end_idx = buffer.find(b'}', start_idx)
+                if end_idx == -1:
+                    break # Wait for more data
+                
+                # Extract candidate
+                json_bytes = buffer[start_idx:end_idx+1]
+                try:
+                    cmd_str = json_bytes.decode("utf-8")
+                    logger.info(f"Found Command Candidate: {cmd_str}")
+                    cmd = json.loads(cmd_str)
+                    if cmd_callback: 
+                        cmd_callback(cmd)
+                    
+                    # Remove from buffer
+                    # Note: There might be a \n after match, it will be treated as garbage later (fine)
+                    buffer = buffer[:start_idx] + buffer[end_idx+1:]
+
+                    # SPECIAL CASE: "see" action
+                    # If we are asked to see, we must silent the current stream (which contains hallucinated context)
+                    # and jump straight to the vision loop.
+                    if cmd.get("action") == "see":
+                        logger.info("Vision Command Detected: Aborting current audio stream to prevent hallucination.")
+                        # Drain buffer
+                        buffer = b""
+                        return # Exit function immediately
+                    
+                except Exception as e:
+                    logger.error(f"Manual Parse Failed: {e}")
+                    # We should probably discard this attempt to avoid infinite loop
+                    # checking the same invalid bytes?
+                    # For now, assume if it looks like {"action" it's valid.
+                    break 
+    
+            # 2. Parse WAV headers
+            while True:
+                if expected_size == 0:
+                    riff_idx = buffer.find(b"RIFF")
+                    if riff_idx == -1:
+                        break 
+                    
+                    if len(buffer) < riff_idx + 8:
+                        break 
+                    
+                    # Discard garbage (Log it!)
+                    if riff_idx > 0:
+                        garbage = buffer[:riff_idx]
+                        if len(garbage) > 4: # Ignore small newlines
+                             pass
+                        buffer = buffer[riff_idx:]
+                    
+                    val = struct.unpack("<I", buffer[4:8])[0]
+                    expected_size = val + 8
+                    # logger.info(f"WAV Detected. Size: {expected_size}")
+                
+                if expected_size > 0:
+                    if len(buffer) >= expected_size:
+                        wav_data = buffer[:expected_size]
+                        buffer = buffer[expected_size:] 
+                        expected_size = 0 
+                        play_wav(wav_data)
+                    else:
+                        break
+    finally:
+        # POST-SPEECH COOL DOWN
+        # Wait a moment for room echoes to die down
+        time.sleep(1.0)
+        
+        # Drain queue of any self-hearing
+        while not audio_queue.empty():
+            try: audio_queue.get_nowait()
+            except queue.Empty: break
+            
+    is_speaking.clear()
+    leds.set_state(LEDState.IDLE)
 
     logger.info("Stream complete.")
 
@@ -212,29 +246,50 @@ def main():
     print_banner()
     
     # Initialize Hardware
-    # Initialize Hardware
     leds = LEDManager()
-    sc = ServoController()
-    head = HeadController(sc)
-    locomotion = LocomotionController(sc)
-    anim = AnimationController(locomotion, head)
     buzzer = BuzzerController()
     power = PowerMonitor()
+    imu = IMUWrapper() # Moved up to inject into Locomotion
+    
+    # Initialize Controllers
+    sc = ServoController()
+    head = HeadController(sc)
+    locomotion = LocomotionController(sc, imu)
+    anim = AnimationController(locomotion, head)
     
     last_activity_time = time.time()
     
+    # Traction State
+    last_accel = {'x':0, 'y':0, 'z':0}
+    traction_slip_quota = 0
+    
     logger.info("Hardware Initialized.")
+
+    # Boot Sound & Animation
+    # logger.info("Playing Boot Sound...")
+    # play_wav(boot_sound_data)
+    
+    # anim.assume_tucked_pose() # Ensure start state
+    # time.sleep(0.5)
+    # anim.slow_boot_stand()
+    
+    # Instead, just assume safe standing pose
+    locomotion.reset_posture()
+    
+    # Indicate Ready
+    leds.set_state(LEDState.IDLE)
 
     def boot_sequence():
         """Choreographed startup: Audio + Slow Stand"""
         start_time = time.time()
         
         # Ensure Yellow "Thinking" State
-        leds.set_state(LEDState.THINKING)
+        # leds.set_state(LEDState.THINKING)
         
         # 1. IMMEDIATE: Snap to Tucked State (Before Audio starts)
         try:
-            anim.assume_tucked_pose()
+            # anim.assume_tucked_pose()
+            pass # No longer assuming tucked pose at boot
         except Exception as e:
             logger.error(f"Failed to assume tucked pose: {e}")
 
@@ -275,10 +330,12 @@ def main():
             time.sleep(remaining)
 
     # Run Boot Sequence
-    boot_sequence()
+    # boot_sequence()
 
     # Movement State Flag
     is_moving = threading.Event()
+    vision_requested = threading.Event()
+    # is_speaking moved to global scope
     has_idled = False # Flag to prevent repeating idle anim
 
     def on_server_command(cmd):
@@ -300,9 +357,31 @@ def main():
                     match = re.search(r'\d+', str(param))
                     if match:
                         val = int(match.group())
-                        steps = min(val, 10) # Cap at 10
+                        
+                        # TURN LOGIC: Convert Degrees to Steps
+                        if action in ["turn_left", "turn_right"] and val > 15:
+                             # Assume Degrees. Eff turn rate ~15 deg/step (User Verified: 12 steps = 180 deg)
+                             # 180 deg / 15 = 12 steps
+                             # 90 deg / 15 = 6 steps
+                             steps = int(val / 15.0)
+                             steps = min(steps, 60) # Cap turn at ~360 degrees
+                             logger.info(f"Turn Logic: Converted {val} deg -> {steps} steps")
+                        else:
+                             # Standard Step Count
+                             steps = min(val, 20) # Raised cap to 20 for longer walks
 
                 logger.info(f"Command Received: {action} (Param: {param})")
+
+                # --- ACTIVE LEANING (Applied BEFORE movement) ---
+                # Immediate aggressive lean into the turn/move
+                target_pitch = 0.0
+                if action in ["walk", "walk_forward", "move_forward"]:
+                     target_pitch = 10.0 # Lean Forward
+                elif action == "move_backward":
+                     target_pitch = -10.0 # Lean Backward
+                
+                # Apply instantly for dynamic feel
+                locomotion.body_pitch = target_pitch
                 
                 if action in ["walk", "walk_forward", "move_forward", "move_backward", "turn_left", "turn_right"]:
                      logger.info(f"Movement Action: {action} for {steps} steps")
@@ -311,16 +390,17 @@ def main():
                      is_moving.set()
                      try:
                          if action in ["walk", "walk_forward", "move_forward"]:
-                              locomotion.move_forward(steps)
+                               locomotion.move_forward(steps, speed=1.5)
                          elif action == "move_backward":
-                              locomotion.move_backward(steps)
+                               locomotion.move_backward(steps, speed=1.5)
                          elif action == "turn_left":
-                              locomotion.turn_left(steps)
+                               locomotion.turn_left(steps, speed=1.5)
                          elif action == "turn_right":
-                              locomotion.turn_right(steps)
+                               locomotion.turn_right(steps, speed=1.5)
                      finally:
                          # Brief cool-down to let servos settle silence
                          time.sleep(0.2)
+                         locomotion.body_pitch = 0.0
                          is_moving.clear()
                      
                      return # Movement handled
@@ -338,6 +418,7 @@ def main():
                           last_activity_time = time.time()
 
                 time.sleep(0.05)
+                
                 
                 # Non-movement actions
                 if action == "null": return
@@ -396,13 +477,113 @@ def main():
                      sc.relax()
                 elif action in ["reset", "lay_flat"]:
                      locomotion.reset_posture_flat()
-                     
+
+                # Vision Action
+                elif action == "see":
+                     logger.info("Requesting Vision Action (Serialized)...")
+                     vision_requested.set()
             except Exception as e:
                 logger.error(f"Command execution error: {e}")
                 is_moving.clear() # Ensure cleared on error
 
+
         # Start execution in background
         threading.Thread(target=run_action, daemon=True).start()
+
+
+
+    # Camera Logic (Moved to Main Scope)
+    last_vision_time = 0
+    def capture_and_send_vision():
+        nonlocal last_vision_time
+        if time.time() - last_vision_time < 5.0:
+            logger.warning("Vision: Debounced (Too soon).")
+            return
+        last_vision_time = time.time()
+
+        """Captures image and sends to server."""
+        logger.info("Vision: capturing image...")
+        jpg_bytes = None
+        
+        # METHOD 1: Try Native CLI Tools (rpicam-jpeg / libcamera-jpeg)
+        # This is most robust on Pi Bullseye/Bookworm as it bypasses python binding issues.
+        for tool in ["rpicam-jpeg", "libcamera-jpeg"]:
+            if shutil.which(tool):
+                temp_img = "/tmp/mesh_vision_capture.jpg"
+                try:
+                    # Capture safely
+                    subprocess.run([tool, "-o", temp_img, "-t", "500", "--width", "640", "--height", "480", "--nopreview"], check=True)
+                    if os.path.exists(temp_img):
+                        with open(temp_img, "rb") as f:
+                            jpg_bytes = f.read()
+                        os.remove(temp_img)
+                        logger.info(f"Vision: Captured via {tool} ({len(jpg_bytes)} bytes).")
+                        break
+                except Exception as e:
+                    logger.warning(f"Vision: CLI {tool} failed: {e}")
+        
+        # METHOD 2: Fallback to OpenCV
+        if not jpg_bytes:
+            logger.info("Vision: Falling back to OpenCV...")
+            try:
+                cap = cv2.VideoCapture(0)
+                if not cap.isOpened():
+                    logger.error("Vision: Could not open camera (cv2).")
+                else:
+                    # Warmup
+                    for _ in range(5): cap.read()
+                    
+                    ret, frame = cap.read()
+                    cap.release()
+                    
+                    if ret:
+                        frame = cv2.resize(frame, (640, 480))
+                        ret, buffer = cv2.imencode('.jpg', frame)
+                        if ret:
+                            jpg_bytes = buffer.tobytes()
+                            logger.info(f"Vision: Captured via OpenCV ({len(jpg_bytes)} bytes).")
+            except Exception as e:
+                logger.error(f"Vision: OpenCV failed: {e}")
+
+        if not jpg_bytes:
+            logger.error("Vision: All capture methods failed.")
+            leds.set_state(LEDState.ERROR)
+            time.sleep(1)
+            leds.set_state(LEDState.IDLE)
+            return
+
+        # Send to Server
+        try:
+            leds.set_state(LEDState.THINKING)
+            
+            files = {
+                'image_file': ('view.jpg', io.BytesIO(jpg_bytes), 'image/jpeg')
+            }
+            data = {
+                'prompt': "Describe what you see in this image."
+            }
+            
+            with requests.post(SERVER_URL, files=files, data=data, stream=True, timeout=30) as r:
+                if r.status_code == 200:
+                    leds.set_state(LEDState.SPEAKING)
+                    head.look_up(20)
+                    stream_audio_response(r, leds, on_server_command)
+                    
+                    last_activity_time = time.time()
+                    
+                    leds.set_state(LEDState.IDLE)
+                    head.look_neutral()
+                else:
+                    logger.error(f"Vision Server Error: {r.status_code}")
+                    leds.set_state(LEDState.ERROR)
+                    time.sleep(1)
+                    leds.set_state(LEDState.IDLE)
+                    
+        except Exception as e:
+            logger.error(f"Vision Network Error: {e}")
+            leds.set_state(LEDState.ERROR)
+            time.sleep(1)
+            leds.set_state(LEDState.IDLE)
 
 
     # Calibration
@@ -419,7 +600,7 @@ def main():
             # Set threshold relative to noise floor with a safety buffer: 1.5x Multiplier + 0.02 Offset.
             # Hard Cap: 0.12 to ensure sensitivity.
             # Prefer calibrated value unless it is critically low.
-            calculated_threshold = max(0.04, min(noise_floor * 1.5 + 0.02, 0.12))
+            calculated_threshold = max(0.08, min(noise_floor * 1.5 + 0.02, 0.20))
             
             THRESHOLD = calculated_threshold
             logger.info(f"Calibration captured noise floor: {noise_floor:.4f}. Setting Threshold: {THRESHOLD:.4f}")
@@ -448,36 +629,30 @@ def main():
         nonlocal last_activity_time, has_idled
         
         if (time.time() - last_activity_time > 45.0) and not has_idled:
-            logger.info("Idle limit reached (45s). Triggering Simple Step -> Relax.")
-            is_moving.set()
+            logger.info("Idle limit reached (45s). Auto-Relaxing...")
+            # No animation, just cut power to sit still/silent
             try:
-                anim.simple_idle_step()
-                # Wait 5 seconds in neutral before relaxing
-                time.sleep(5.0)
-                
-                logger.info("Auto-Relaxing...")
                 head.look_neutral()
                 time.sleep(0.5)
                 sc.relax()
                 has_idled = True
             except Exception as e:
-                logger.error(f"Idle Anim Error: {e}")
+                logger.error(f"Idle Relax Error: {e}")
             finally:
-                is_moving.clear()
-                # Reset activity so we don't loop immediately (though has_idled prevents it)
-                last_activity_time = time.time()
+                # We don't need to set is_moving here since we aren't animating
+                pass
 
     try:
         if audio_input_available:
             with sd.InputStream(samplerate=SAMPLE_RATE, channels=CHANNELS, callback=audio_callback):
                 while True:
-                    # MUTE during movement to prevent self-triggering
-                    if is_moving.is_set():
-                        # Drain queue to discard servo noise
+                    # MUTE during movement or speaking to prevent self-triggering
+                    if is_moving.is_set() or is_speaking.is_set():
+                        # Drain queue to discard servo noise and self-speech
                         while not audio_queue.empty():
                             try: audio_queue.get_nowait()
                             except queue.Empty: break
-                        time.sleep(0.1)
+                        time.sleep(0.5) # Extended cooldown to reject servo spin-down noise
                         # Update activity to prevent immediate idle trigger after move
                         last_activity_time = time.time()
                         continue
@@ -507,6 +682,14 @@ def main():
                                 check_idle_timeout()
                             continue 
                         
+                        # CRITICAL FIX: Check if we started speaking while waiting for chunk
+                        if is_speaking.is_set():
+                            # Clear buffer and restart outer loop to drain
+                            preroll_buffer = []
+                            audio_buffer = []
+                            started = False
+                            break
+
                         volume = np.max(np.abs(chunk))
                         
                         if not started:
@@ -576,8 +759,18 @@ def main():
                                     if r.status_code == 200:
                                         leds.set_state(LEDState.SPEAKING)
                                         head.look_up(20)
-                                        stream_audio_response(r, on_server_command)
+                                        head.look_up(20)
+                                        stream_audio_response(r, leds, on_server_command)
                                         logger.info(f"[LATENCY] Round-trip: {time.time() - start_time:.2f}s")
+                                        
+                                        # DEFERRED ACTION CHECK
+                                        if vision_requested.is_set():
+                                             logger.info("Executing Deferred Vision Action...")
+                                             vision_requested.clear()
+                                             capture_and_send_vision()
+
+                                        last_activity_time = time.time() # Reset idle timer
+                                        
                                         leds.set_state(LEDState.IDLE)
                                         head.look_neutral()
                                     else:

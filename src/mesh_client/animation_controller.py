@@ -211,10 +211,10 @@ class AnimationController:
             group_mids = [1, 4]         # Middle
             
             # Parameters
-            steps = 40
+            steps = 40 # Restored to 40 for hydraulic smoothness
             strike_height = 80          # Lift
             high_stance_z = -75         # Exaggerated Tall Stance (-75)
-            neutral_stance_z = -25      # Lower Settle (Squat -25)
+            neutral_stance_z = -25      # Settle to Tall/Swagger Stance (Prev: -25)
             
             # Helper to animate a group
             def animate_group(legs, target_z_base):
@@ -261,7 +261,7 @@ class AnimationController:
                     
                     self.loco.transform_coordinates(current)
                     self.loco.set_leg_angles()
-                    time.sleep(0.04)
+                    time.sleep(0.02) # Fast loop, but with high resolution (40 steps)
                 
                 # Impact/Recoil Group
                 for i in range(5): # Compressor

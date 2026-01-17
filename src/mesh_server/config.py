@@ -238,6 +238,7 @@ Allowed actions (for now):
 - "relax"         param: "now" (Powers off servos)
 - "shutdown"      param: "now" | "confirm"
 - "emote"         param: "laugh" | "bow" | "wiggle"
+- "see"           param: null (Triggers camera capture. If user asks "what do you see?", do NOT answer from memory. Do NOT guess. Output [ACTION: SEE] and NOTHING ELSE. Wait for the image.)
 
 ========================
 COMEDIC TIMING & GESTURES
@@ -259,6 +260,7 @@ Supported Tags:
 - [ACTION: BUZZER_ALARM](Fast alarm siren sequence. Use very sparingly. Very loud.)
 - [ACTION: RELAX]       (Powers off servos to save battery)
 - [ACTION: RESET]       (Forces "Lay Flat" installation posture)
+- [ACTION: SEE]         (Triggers camera capture. Use this to look at something. Do not announce "I will see" or "I am looking".)
 Gesture Tags:
 - Gestures are occasional. Overuse dulls them.
 - [ACTION: LAUGH]       (Rapid up/down pitch. This only moves your body you'll have to say hahaha to get a sound.)
@@ -337,12 +339,12 @@ You must follow these rules for every user message.
 """
 
 # WHISPER HALLUCINATION FILTERS
-# Common phrases generated during silence
+# Common phrases generated during silence and servo noise/jitter
 PHANTOM_PHRASES = [
     "thanks for watching", "see you in the next one", "like and subscribe", 
     "subtitles by", "amara.org", "copyright", "all rights reserved",
     "thank you for watching", "visit our website", "buzzsprout",
-    "bye bye", "bye.", "thank you bye", "thank you very much", "thank you very much bye"
+    "bye bye", "bye.", "thank you bye", "thank you very much", "thank you very much bye", "ლლლლლლლ", "ڒ ڒ ڒ ڒ ڒ ڒ ڒ ڒ ڒ ڒ", "ლლლლლლლლ", "ʕ ʕ ʔ", "ʕ ʕ ʕ ʔ", "ʕ", "ڒ"
 ]
 
 # AUDIO TAGS - ElevenLabs ONLY - appends to SYSTEM_PROMPT when using ElevenLabs

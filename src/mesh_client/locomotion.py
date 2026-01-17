@@ -8,9 +8,10 @@ from mesh_client.servo_controller import ServoController
 logger = get_logger("mesh_locomotion")
 
 class LocomotionController:
-    def __init__(self, servo_ctrl: ServoController):
+    def __init__(self, servo_ctrl: ServoController, imu=None):
         self.servo = servo_ctrl
-        self.body_height = -25 # Adjusted lower for "Heavy Settle" (was -30, orig -45)
+        self.imu = imu
+        self.body_height = -50 # Adjusted to -50. Lower center of gravity. (Prev: -60)
         # Body and Leg geometry (from Freenove control.py)
         # Note: These values are specific to the Freenove Big Hexapod
         self.body_points = [
@@ -22,6 +23,23 @@ class LocomotionController:
         self.leg_positions = [[140, 0, 0] for _ in range(6)]
         self.calibration_angles = [[0, 0, 0] for _ in range(6)]
         self.current_angles = [[90, 0, 0] for _ in range(6)]
+        
+        # Dynamic Gait Parameters (Traction Control)
+        self.body_pitch = 0.0 # Lean Forward/Back (Degrees)
+        
+        # SLIP DETECTION STATE
+        self.last_yaw = 0.0
+        self.last_imu_time = time.time()
+        self.slip_score = 0
+        self.az_history = [0] * 10 # For vibration RMS
+        
+        # TRACTION GOVERNORS (Active Response)
+        # Multipliers [0.0 - 1.0] that scale gait parameters when slipping
+        self.traction_governors = {
+            'stride': 1.0, # Scales XY offsets
+            'speed': 1.0,  # Scales wait time (Inverse speed)
+            'lift': 1.0    # Scales Z height
+        }
         
         # Geometry constants
         self.l1 = 33
@@ -113,12 +131,13 @@ class LocomotionController:
             v = self.restrict_value((l2 * l2 + l23 * l23 - l3 * l3) / (2 * l2 * l23), -1, 1)
             u = self.restrict_value((l2 ** 2 + l3 ** 2 - l23 ** 2) / (2 * l3 * l2), -1, 1)
             
-            b = math.asin(round(w, 2)) - math.acos(round(v, 2))
-            c = math.pi - math.acos(round(u, 2))
+            # Removed rounding for precision
+            b = math.asin(w) - math.acos(v)
+            c = math.pi - math.acos(u)
             
-            return round(math.degrees(a)), round(math.degrees(b)), round(math.degrees(c))
+            return math.degrees(a), math.degrees(b), math.degrees(c)
         except Exception as e:
-            logger.error(f"IK Error: {e} for {x},{y},{z}")
+            # logger.error(f"IK Error: {e} for {x},{y},{z}") # Suppress error spam in hot loop
             return 90, 90, 90
 
     def calibrate(self):
@@ -159,31 +178,39 @@ class LocomotionController:
             final_angles[i + 3][2] = self.restrict_value(180 - (final_angles[i + 3][2] + self.calibration_angles[i + 3][2]), 0, 180)
 
         # Map to Servo Channels (Based on Freenove layout)
-        # Leg 1
-        logger.info(f"[IK] Leg 1 Angles: {final_angles[0]}")
-        self.servo.set_angle(15, final_angles[0][0])
-        self.servo.set_angle(14, final_angles[0][1])
-        self.servo.set_angle(13, final_angles[0][2])
-        # Leg 2
-        self.servo.set_angle(12, final_angles[1][0])
-        self.servo.set_angle(11, final_angles[1][1])
-        self.servo.set_angle(10, final_angles[1][2])
-        # Leg 3
+        # TUNE #4: Channel Grouping & Phase Ordering
+        # Order: Rear Legs (Drive) -> Front Legs (Steer/Drive) -> Mid Legs (Balance)
+        # This ensures the critical push-off happens first in the I2C frame.
+        
+        # Group 1: Rear Legs (Leg 3 & Leg 4) - The "Engine"
+        # Leg 3 (Right Rear)
         self.servo.set_angle(9, final_angles[2][0])
         self.servo.set_angle(8, final_angles[2][1])
         self.servo.set_angle(31, final_angles[2][2])
-        # Leg 6
-        self.servo.set_angle(16, final_angles[5][0])
-        self.servo.set_angle(17, final_angles[5][1])
-        self.servo.set_angle(18, final_angles[5][2])
-        # Leg 5
-        self.servo.set_angle(19, final_angles[4][0])
-        self.servo.set_angle(20, final_angles[4][1])
-        self.servo.set_angle(21, final_angles[4][2])
-        # Leg 4
+        # Leg 4 (Left Rear)
         self.servo.set_angle(22, final_angles[3][0])
         self.servo.set_angle(23, final_angles[3][1])
         self.servo.set_angle(27, final_angles[3][2])
+
+        # Group 2: Front Legs (Leg 1 & Leg 6) - The "Steering"
+        # Leg 1 (Right Front)
+        self.servo.set_angle(15, final_angles[0][0])
+        self.servo.set_angle(14, final_angles[0][1])
+        self.servo.set_angle(13, final_angles[0][2])
+        # Leg 6 (Left Front)
+        self.servo.set_angle(16, final_angles[5][0])
+        self.servo.set_angle(17, final_angles[5][1])
+        self.servo.set_angle(18, final_angles[5][2])
+
+        # Group 3: Middle Legs (Leg 2 & Leg 5) - The "Pivot"
+        # Leg 2 (Right Mid)
+        self.servo.set_angle(12, final_angles[1][0])
+        self.servo.set_angle(11, final_angles[1][1])
+        self.servo.set_angle(10, final_angles[1][2])
+        # Leg 5 (Left Mid)
+        self.servo.set_angle(19, final_angles[4][0])
+        self.servo.set_angle(20, final_angles[4][1])
+        self.servo.set_angle(21, final_angles[4][2])
 
     def transform_coordinates(self, points):
         # Hardcoded transform based on leg mounting angles
@@ -212,34 +239,47 @@ class LocomotionController:
         self.leg_positions[5][1] = -points[5][0] * math.sin(126 * math.pi/180) + points[5][1] * math.cos(126 * math.pi/180)
         self.leg_positions[5][2] = points[5][2] - 14
 
-    def execute_gait(self, x, y, angle, steps=4):
+    def execute_gait(self, x, y, angle, steps=4, speed=1.0, hip_swing=0.0):
         """Generic gait execution wrapper."""
-        z_step = 30
-        f_steps = 32
+        # Dynamic Z-Step
+        # User Req: Higher lift to avoid dragging + High Step at low speed
+        # Base Lift: 45mm (Fast/Min) -> up to 85mm (Slow)
+        # Speed 0.5 -> 85mm
+        # Speed 1.0 -> 75mm
+        # Speed 1.5 -> 65mm
+        z_step = max(45, 95 - (speed * 20))
         
-        logger.info(f"Gait Cycle: x={x}, y={y}, angle={angle}, steps={steps}")
+        # Turn Boost: Turning causes lateral drag if feet don't clear carpet
+        if abs(angle) > 0:
+            z_step += 20.0
+        
+        f_steps = 16 # Tuned: 12 was frantic, 16 is Fast/Controlled
+        
+        logger.info(f"Gait Cycle: x={x}, y={y}, angle={angle}, steps={steps}, speed={speed}, swing={hip_swing}, z_step={z_step:.1f}")
         self.reset_posture()
         for s in range(steps):
-             self.run_one_cycle(x, y, angle, z_step, f_steps)
+             self.run_one_cycle(x, y, angle, z_step, f_steps, speed, hip_swing)
         self.reset_posture()
 
-    def move_forward(self, steps=5):
-        logger.info(f"Walking forward {steps} steps...")
-        self.execute_gait(0, 25, 0, steps)
+    def move_forward(self, steps=5, speed=1.0):
+        logger.info(f"Walking forward {steps} steps at speed {speed}...")
+        # Add basic hip swing to forward walk (Yaw rotation)
+        # Stride increased to 50mm for Sprint/Dynamic gait
+        self.execute_gait(0, 65, 0, steps, speed=speed, hip_swing=5.0)
 
-    def move_backward(self, steps=5):
-        logger.info(f"Walking backward {steps} steps...")
-        self.execute_gait(0, -25, 0, steps)
+    def move_backward(self, steps=5, speed=1.0):
+        logger.info(f"Walking backward {steps} steps at speed {speed}...")
+        self.execute_gait(0, -50, 0, steps, speed=speed, hip_swing=5.0)
 
-    def turn_left(self, steps=5):
-        logger.info(f"Turning left {steps} steps...")
+    def turn_left(self, steps=5, speed=1.0):
+        logger.info(f"Turning left {steps} steps at speed {speed}...")
         # Adjusted: -10 degrees for Left
-        self.execute_gait(0, 0, -10, steps)
+        self.execute_gait(0, 0, -10, steps, speed=speed)
 
-    def turn_right(self, steps=5):
-        logger.info(f"Turning right {steps} steps...")
+    def turn_right(self, steps=5, speed=1.0):
+        logger.info(f"Turning right {steps} steps at speed {speed}...")
         # Adjusted: 10 degrees for Right
-        self.execute_gait(0, 0, 10, steps)
+        self.execute_gait(0, 0, 10, steps, speed=speed)
 
     def reset_posture_flat(self):
         """
@@ -265,24 +305,155 @@ class LocomotionController:
          self.transform_coordinates(self.body_points)
          self.set_leg_angles()
 
-    def run_one_cycle(self, x, y, angle, Z, F):
+    def detect_slip(self, requested_speed):
+        """
+        Physics-based slip detection and active response.
+        called inside the gait loop.
+        """
+        # Abort if no IMU or if IMU is in Mock Mode (Data is fake)
+        if not self.imu or getattr(self.imu, 'mock_mode', False): return
+
+        # 1. Read Sensors
+        accel = self.imu.read_accel_raw() # {'x':, 'y':, 'z':}
+        r, p, yaw = self.imu.read_orientation()
+        now = time.time()
+        dt = now - self.last_imu_time
+        if dt <= 0: return # Prevent div zero
+        
+        # 2. Compute Metrics
+        
+        # A) Forward Coupling (Ax / Expected)
+        # We assume Y is Forward (based on transforms)
+        # Expected Accel roughly prop to Speed? 
+        # Actually measure if we are accelerating at all when moving.
+        # Simple Logic: If Speed > 0.5, we expect |Ay| > 0.1G consistently?
+        # User Logic: measured / expected.
+        # Let's say expected_accel ~ speed * 0.5G (rough heuristic)
+        # Using abs() because gait oscillates +-.
+        # FIXED SCALE: Driver returns m/s^2. Convert to Gs.
+        measured_ax = accel['y'] / 9.8 
+        
+        coupling_score = 1.0
+        if requested_speed > 0.5:
+             # If we are commanding speed, we expect some forward force.
+             # If Ay is near zero, we might be wheel-spinning (slipping).
+             # But gait is cyclic. Ay goes + and -.
+             # Simple metric: Activity Level.
+             pass 
+             
+        # B) Yaw Instability (Side Slip)
+        yaw_rate = (yaw - self.last_yaw) / dt
+        # Wrap yaw? (0-360 issue). If jump > 180, adjust.
+        if abs(yaw - self.last_yaw) > 180:
+             yaw_rate = 0 # Ignore wrap-around frame
+        
+        self.last_yaw = yaw
+        self.last_imu_time = now
+        
+        # C) Vibration (Z-axis RMS)
+        # Micro-slip causes chatter
+        az = accel['z'] / 9.8
+        self.az_history.pop(0)
+        self.az_history.append(az)
+        avg_az = sum(self.az_history) / len(self.az_history)
+        # FIXED MATH: Divide by N before Sqrt for std dev
+        vibration = (sum([(x - avg_az)**2 for x in self.az_history]) / len(self.az_history)) ** 0.5
+        
+        # 3. Calculate Slip Score
+        current_slip = 0
+        
+        # Check thresholds
+        YAW_THRESH = 10.0 # deg/sec (tuned high to ignore normal sway)
+        VIBE_THRESH = 0.2 # G (Moderate chatter check)
+        
+        if abs(yaw_rate) > YAW_THRESH:
+             current_slip += 1
+        
+        if vibration > VIBE_THRESH:
+             current_slip += 1
+             
+        # Forward Coupling Check (Experimental)
+        # If moving fast but Ay is low?
+        # FIXED: Constant velocity = 0 accel. 
+        # But legged gait has constant accel/decel cycles.
+        # If |Ax| < threshold, it means we are "floating" or sliding smoothly?
+        # Let's Log it to debug "Skating"
+        if requested_speed > 1.0 and abs(measured_ax) < 0.05:
+             current_slip += 1 
+             
+        if current_slip >= 2:
+             self.slip_score += 1
+        else:
+             self.slip_score = max(0, self.slip_score - 1)
+             
+        # DEBUG: Print metrics to diagnose "Skating"
+        if self.slip_score > 0 or current_slip > 0:
+            logger.info(f"SLIP: Score={self.slip_score} Cur={current_slip} | Ax={measured_ax:.3f} YawRate={yaw_rate:.1f} Vibe={vibration:.2f} | Gov: {self.traction_governors['stride']:.2f}")
+             
+        # 4. Active Response (Traction Control)
+        # SENSITIVITY INCREASE: Trigger on 1 check (Instant reaction)
+        if self.slip_score >= 1:
+             # SLIP DETECTED -> THROTTLE DOWN
+             self.traction_governors['stride'] = max(0.5, self.traction_governors['stride'] * 0.85)
+             self.traction_governors['speed'] = max(0.5, self.traction_governors['speed'] * 0.8) # Slower gait
+             self.traction_governors['lift'] = max(0.5, self.traction_governors['lift'] * 0.9) # reduce lift slightly (was 0.7)
+        else:
+             # RECOVER (Slowly)
+             self.traction_governors['stride'] = min(1.0, self.traction_governors['stride'] * 1.05)
+             self.traction_governors['speed'] = min(1.0, self.traction_governors['speed'] * 1.02)
+             self.traction_governors['lift'] = min(1.0, self.traction_governors['lift'] * 1.05)
+
+    def run_one_cycle(self, x, y, angle, Z, F, speed=1.0, swing_amp=0.0):
         # Port of 'run_gait' logic for Mode 1 (Ripple)
+        
+        # --- TRACTION CONTROL CHECK ---
+        # Run every few ticks to save I2C bandwidth
+        self.detect_slip(speed)
+        
+        # Apply Governors
+        eff_stride = self.traction_governors['stride']
+        eff_speed  = self.traction_governors['speed']
+        eff_lift   = self.traction_governors['lift']
+        
+        # Apply active response to parameters
+        eff_x = x * eff_stride
+        eff_y = y * eff_stride
+        eff_Z = Z * eff_lift
+        
         # Assuming constants for F (Resolution)
-        z = Z / F
-        delay = 0.01
+        z = eff_Z / F
+        # Default delay was 0.01. Increase speed by dividing delay.
+        # Effective speed reduces delay divisor -> Increases delay -> Slower gait
+        delay = 0.01 / max(0.1, speed * eff_speed)
         
         points = copy.deepcopy(self.body_points)
+        
+        # --- PHYSICS CORRECTION: Apply Body Pitch FIRST ---
+        # Apply adjustment to the BASE body points (neutral stance)
+        # effectively rotating the "Hips" before any legs move.
+        if abs(self.body_pitch) > 0.1:
+            pitch_rad = math.radians(self.body_pitch)
+            cos_p = math.cos(pitch_rad)
+            sin_p = math.sin(pitch_rad)
+            for i in range(6):
+                y_val = points[i][1]
+                z_val = points[i][2]
+                points[i][1] = y_val * cos_p - z_val * sin_p
+                points[i][2] = y_val * sin_p + z_val * cos_p
+
         xy = [[0, 0] for _ in range(6)]
         
-        # Calculate step offsets
+        # Calculate step offsets (Using Governor-scaled X/Y)
         for i in range(6):
-            xy[i][0] = ((points[i][0] * math.cos(angle * math.pi / 180) + points[i][1] * math.sin(angle * math.pi / 180) - points[i][0]) + x) / F
-            xy[i][1] = ((-points[i][0] * math.sin(angle * math.pi / 180) + points[i][1] * math.cos(angle * math.pi / 180) - points[i][1]) + y) / F
+            xy[i][0] = ((points[i][0] * math.cos(angle * math.pi / 180) + points[i][1] * math.sin(angle * math.pi / 180) - points[i][0]) + eff_x) / F
+            xy[i][1] = ((-points[i][0] * math.sin(angle * math.pi / 180) + points[i][1] * math.cos(angle * math.pi / 180) - points[i][1]) + eff_y) / F
 
-        logger.info(f"Gait XY Offset: {xy[0]}")
+        # Removing Log from loop
+        # logger.info(f"Gait XY Offset: {xy[0]}")
 
         # Execute Ripple Gait Cycle
         for j in range(F):
+            # 1. Update Gait State (Persistent)
             for i in range(3):
                 # Leg pair operations
                 if j < (F / 8):
@@ -290,7 +461,7 @@ class LocomotionController:
                     points[2 * i][1] -= 4 * xy[2 * i][1]
                     points[2 * i + 1][0] += 8 * xy[2 * i + 1][0]
                     points[2 * i + 1][1] += 8 * xy[2 * i + 1][1]
-                    points[2 * i + 1][2] = Z + self.body_height
+                    points[2 * i + 1][2] = eff_Z + self.body_height # Use governed Lift
                 elif j < (F / 4):
                     points[2 * i][0] -= 4 * xy[2 * i][0]
                     points[2 * i][1] -= 4 * xy[2 * i][1]
@@ -318,7 +489,26 @@ class LocomotionController:
                     points[2 * i + 1][0] += 8 * xy[2 * i + 1][0]
                     points[2 * i + 1][1] += 8 * xy[2 * i + 1][1]
 
-            self.transform_coordinates(points)
+            # 2. Apply Hip Swing (Body Yaw) to Temporary Copy
+            current_points = copy.deepcopy(points)
+            
+            # Hip Swing: Body Yaw (Rotation around Z)
+            swing_angle_rad = 0
+            if swing_amp != 0:
+                swing_phase = (j / F) * 2 * math.pi
+                swing_angle_rad = math.radians(math.sin(swing_phase) * swing_amp)
+                
+            if swing_angle_rad != 0:
+                 cos_a = math.cos(swing_angle_rad)
+                 sin_a = math.sin(swing_angle_rad)
+                 for i in range(6):
+                     # Rotate X,Y around 0,0 (Body Center)
+                     x_val = current_points[i][0]
+                     y_val = current_points[i][1]
+                     current_points[i][0] = x_val * cos_a - y_val * sin_a
+                     current_points[i][1] = x_val * sin_a + y_val * cos_a
+
+            self.transform_coordinates(current_points)
             self.set_leg_angles()
             time.sleep(delay)
 

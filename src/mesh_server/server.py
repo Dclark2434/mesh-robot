@@ -12,6 +12,7 @@ import json
 import time
 from fastapi import FastAPI, UploadFile, File, Form, Request
 from fastapi.responses import StreamingResponse
+import re
 
 # Server imports
 
@@ -78,24 +79,43 @@ def print_latency_report():
 
 # --- STREAM LOGIC ---
 
-async def interact_generator(audio_bytes, telemetry=None):
+async def interact_generator(audio_bytes, image_bytes=None, text_prompt=None, telemetry=None):
     start_total = time.time()
-    audio_buffer = io.BytesIO(audio_bytes)
     
-    # 1. Transcribe (In background thread!)
-    stt_start = time.time()
-    user_text = await asyncio.to_thread(voice_engine.transcribe, audio_buffer)
-    stt_duration = time.time() - stt_start
+    user_text = ""
     
-    if user_text:
-        logger.info(f"[HEARD] '{user_text}'")
-        SESSION_STATS["stt"].append(stt_duration)
+    # 1. Transcribe (if audio present)
+    if audio_bytes:
+        audio_buffer = io.BytesIO(audio_bytes)
+        stt_start = time.time()
+        user_text = await asyncio.to_thread(voice_engine.transcribe, audio_buffer)
+        stt_duration = time.time() - stt_start
+        
+        if user_text:
+            logger.info(f"[HEARD] '{user_text}'")
+            SESSION_STATS["stt"].append(stt_duration)
+    
+    # 2. Text Override/Fallback
+    if text_prompt:
+        # If we have both, maybe append? OR override. 
+        # Typically text_prompt comes from "See" action ("Describe this") or specialized client.
+        if user_text:
+            user_text += f" {text_prompt}"
+        else:
+            user_text = text_prompt
+            logger.info(f"[TEXT INPUT] '{user_text}'")
 
-    if not user_text:
+    if not user_text and not image_bytes:
+        # If we have an image but no text, we can default to "Look at this."
+        # But if we have neither, ignoring.
         yield json.dumps({"status": "no_speech"}).encode()
         return
+        
+    # Default prompt for image-only input
+    if image_bytes and not user_text:
+        user_text = "What do you see here?"
 
-    # 2. Logic (Wake words, attention, etc.)
+    # 3. Logic (Wake words, attention, etc.)
     user_id = "dustin"
     clean_input = user_text.lower().strip()
     last_seen = USER_STATES.get(user_id, 0)
@@ -158,14 +178,41 @@ async def interact_generator(audio_bytes, telemetry=None):
     elif is_focused:
         # If already focused, only say "Checking..." for longer commands
         USER_STATES[user_id] = time.time()
-        if not is_poke:
-            ack_bytes = voice_engine.get_prebaked_sound("processing")
-            if ack_bytes:
-                logger.info(f"[FEEDBACK] Yielding processing sound (Focused mode)...")
-                yield ack_bytes
+        ack_bytes = voice_engine.get_prebaked_sound("processing")
+        
+        # Suppress feedback for automated vision requests
+        # Why? Because the robot just clicked the camera, no need to beep again.
+        is_automated_vision = "describe what you see" in clean_input and "image" in clean_input
+        
+        if ack_bytes and not is_poke and not is_automated_vision:
+             logger.info(f"[FEEDBACK] Yielding processing sound (Focused mode)...")
+             yield ack_bytes
     else:
         logger.debug(f"[IGNORED] {clean_input}")
         yield json.dumps({"status": "ignored"}).encode()
+        return
+
+    # FAST PATH: VISION
+    # Heuristic: If user says "look at this" or "what do you see" with NO image,
+    # skip the "Okay, I will look" LLM step and trigger the camera immediately.
+    vision_patterns = [
+        r"look at (this|that|what)",
+        r"what (do|can) you see",
+        r"what is (this|that|it)",
+        r"describe (this|that|the scene|what)",
+        r"tell me what you see"
+    ]
+    
+    # Only trigger if we DON'T have an image yet and we have a valid prompt
+    if not image_bytes and any(re.search(p, clean_input) for p in vision_patterns):
+        logger.info(f"[FAST PATH] Vision Triggered by: '{clean_input}'")
+        
+        # 1. Yield Action immediately
+        # We use a special param to indicate origin, though effectively just 'see'
+        yield json.dumps({"action": "see", "param": "fast_path"}).encode("utf-8") + b"\n"
+        
+        # 2. Stop Processing 
+        # (Don't call LLM, don't speak, just wait for client to call back with image)
         return
 
     logger.info(f"User: {final_prompt}")
@@ -178,7 +225,7 @@ async def interact_generator(audio_bytes, telemetry=None):
         return
     
     llm_start = time.time()
-    raw_response = await asyncio.to_thread(brain.think, final_prompt, user_id)
+    raw_response = await asyncio.to_thread(brain.think, final_prompt, user_id, image_bytes)
     llm_duration = time.time() - llm_start
     SESSION_STATS["llm"].append(llm_duration)
     
@@ -191,8 +238,13 @@ async def interact_generator(audio_bytes, telemetry=None):
         logger.info(f"[COMMAND] {hardware_command} -> {hardware_param}")
         cmd_payload = json.dumps({"action": hardware_command, "param": hardware_param})
         yield (cmd_payload + "\n").encode("utf-8")
+        
+        # Anti-Redundancy: Use Regex to remove the tag (handling spacing/variations)
+        # Matches [ACTION: CMD] or [ACTION:CMD] case insensitive
+        pattern = rf"\[ACTION:\s*{hardware_command}\]"
+        spoken_text = re.sub(pattern, "", spoken_text, flags=re.IGNORECASE).strip()
+        logger.info(f"[FILTER] Applied redundancy filter for {hardware_command}")
 
-    import re
 
     # 4. Speak & Act (with Tag Parsing)
     # Split by tags: e.g. "Text [ACTION: LOOK_LEFT] More text"
@@ -245,30 +297,37 @@ async def interact_generator(audio_bytes, telemetry=None):
 # --- API ENDPOINTS ---
 
 @app.post("/interact")
-async def interact_endpoint(request: Request, audio_file: UploadFile = File(...), telemetry: str = Form(None)):
+async def interact_endpoint(
+    request: Request, 
+    audio_file: UploadFile = File(None), 
+    image_file: UploadFile = File(None),
+    prompt: str = Form(None),
+    telemetry: str = Form(None)
+):
     start_time = getattr(request.state, "start_time", time.time())
     overhead = time.time() - start_time
     logger.info(f"[LATENCY] Request Overhead: {overhead:.2f}s")
 
-    read_start = time.time()
-    audio_bytes = await audio_file.read()
-    logger.info(f"[LATENCY] Server File Read: {time.time() - read_start:.2f}s")
+    # Read Inputs
+    audio_bytes = None
+    if audio_file:
+        read_start = time.time()
+        audio_bytes = await audio_file.read()
+        logger.info(f"[LATENCY] Server Audio Read: {time.time() - read_start:.2f}s")
     
+    image_bytes = None
+    if image_file:
+        read_start = time.time()
+        image_bytes = await image_file.read()
+        logger.info(f"[LATENCY] Server Image Read: {time.time() - read_start:.2f}s")
+
     return StreamingResponse(
-        interact_generator(audio_bytes, telemetry),
+        interact_generator(audio_bytes, image_bytes, prompt, telemetry),
         media_type="audio/wav"
     )
 
-@app.post("/see")
-async def see_endpoint(
-    image: UploadFile = File(...), 
-    prompt: str = Form("Analyze this image.")
-):
-    image_bytes = await image.read()
-    return StreamingResponse(
-        vision_interaction_stream(image_bytes, prompt),
-        media_type="audio/wav"
-    )
+# Clean up /see endpoint as it is now merged
+# (Removing check for cleaner file)
 
 if __name__ == "__main__":
     # When running directly, we use host 0.0.0.0 for network access
