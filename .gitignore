@@ -25,6 +25,7 @@ reference.bak.wav
 # --- Vendor Code (Freenove) ---
 freenove_code/
 Freenove_Big_Hexapod_Robot_Kit_for_Raspberry_Pi/
+reference/
 
 # --- Build & Metadata ---
 *.egg-info/
