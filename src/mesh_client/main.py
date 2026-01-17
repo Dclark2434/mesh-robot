@@ -371,6 +371,17 @@ def main():
                              steps = min(val, 20) # Raised cap to 20 for longer walks
 
                 logger.info(f"Command Received: {action} (Param: {param})")
+
+                # --- ACTIVE LEANING (Applied BEFORE movement) ---
+                # Immediate aggressive lean into the turn/move
+                target_pitch = 0.0
+                if action in ["walk", "walk_forward", "move_forward"]:
+                     target_pitch = 10.0 # Lean Forward
+                elif action == "move_backward":
+                     target_pitch = -10.0 # Lean Backward
+                
+                # Apply instantly for dynamic feel
+                locomotion.body_pitch = target_pitch
                 
                 if action in ["walk", "walk_forward", "move_forward", "move_backward", "turn_left", "turn_right"]:
                      logger.info(f"Movement Action: {action} for {steps} steps")
@@ -389,6 +400,7 @@ def main():
                      finally:
                          # Brief cool-down to let servos settle silence
                          time.sleep(0.2)
+                         locomotion.body_pitch = 0.0
                          is_moving.clear()
                      
                      return # Movement handled
@@ -407,21 +419,6 @@ def main():
 
                 time.sleep(0.05)
                 
-                
-                # --- ACTIVE LEANING (Simple Command Based) ---
-                # We still want to lean into moves, but let's keep it simple here 
-                # or delegate to locomotion.set_body_pitch() if needed.
-                # For now, let's trust the new Locomotion physics to handle pitch if set.
-                target_pitch = 0
-                if action in ["walk", "walk_forward", "move_forward"]:
-                     target_pitch = 5.0 
-                elif action == "move_backward":
-                     target_pitch = -5.0
-                
-                # Update pitch target (Locomotion handles smoothing/application)
-                locomotion.body_pitch = locomotion.body_pitch * 0.8 + target_pitch * 0.2
-
-
                 
                 # Non-movement actions
                 if action == "null": return

@@ -192,6 +192,29 @@ async def interact_generator(audio_bytes, image_bytes=None, text_prompt=None, te
         yield json.dumps({"status": "ignored"}).encode()
         return
 
+    # FAST PATH: VISION
+    # Heuristic: If user says "look at this" or "what do you see" with NO image,
+    # skip the "Okay, I will look" LLM step and trigger the camera immediately.
+    vision_patterns = [
+        r"look at (this|that|what)",
+        r"what (do|can) you see",
+        r"what is (this|that|it)",
+        r"describe (this|that|the scene|what)",
+        r"tell me what you see"
+    ]
+    
+    # Only trigger if we DON'T have an image yet and we have a valid prompt
+    if not image_bytes and any(re.search(p, clean_input) for p in vision_patterns):
+        logger.info(f"[FAST PATH] Vision Triggered by: '{clean_input}'")
+        
+        # 1. Yield Action immediately
+        # We use a special param to indicate origin, though effectively just 'see'
+        yield json.dumps({"action": "see", "param": "fast_path"}).encode("utf-8") + b"\n"
+        
+        # 2. Stop Processing 
+        # (Don't call LLM, don't speak, just wait for client to call back with image)
+        return
+
     logger.info(f"User: {final_prompt}")
 
     # 3. Think (In background thread!)
