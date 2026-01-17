@@ -27,7 +27,7 @@ M.E.S.H. is a "Brain" for Freenove Big Hexapod robots. It features a custom spee
 - **Pro-Grade Voice**: ElevenLabs integration for expressive speech (laughs, sighs) with seamless fallback to F5-TTS (Local and free).
 - **Advanced TTS**: State-of-the-art voice cloning via F5-TTS or Chatterbox.
 - **Real-time Senses**: Whisper-powered STT for hands-free interaction.
-- **Vision System**: Image analysis and commentary via the `/see` endpoint. - Active development...
+- **Vision System**: Image analysis and commentary. - Active development...
 - **Custom Identity**: Configurable cynical, dry, and military-aware persona.
 - **Command Engine**: Integrated stubs for hardware control (walking, scanning, etc.).
 - **Server Launcher GUI**: Launching server includes a GUI to help guide users through launching server with correct environment variables and api keys.
@@ -197,7 +197,7 @@ python -m mesh_client.main
 ```
 
 ### 3. Autostart on Boot (Raspberry Pi)
-To have M.E.S.H. start automatically when the Pi boots:
+To have Mesh start automatically when the Pi boots:
 
 ```bash
 # Make the setup script executable
@@ -209,6 +209,20 @@ bash scripts/setup-autostart.sh
 
 > [!TIP]
 > Use `sudo systemctl status mesh-client.service` to verify it's running.
+
+---
+
+## Acknowledgments
+
+> "Good artists copy, great artists steal." — Pablo Picasso
+
+This project wouldn't exist without two key inspirations:
+
+**[gptars](https://www.youtube.com/@gptars)**
+The original inspiration. I saw his ChatGPT powered TARS replica and immediately thought, *"I can do that."* This repo is my attempt to prove it.
+
+**[NikodemBartnik](https://www.youtube.com/@NikodemBartnik)**
+A massive source of knowledge and ideas. His approach to blending hardware, software, and 3D printing set the standard I aimed for with Mesh.
 
 ---
 
