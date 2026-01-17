@@ -12,7 +12,7 @@
   <img width="256" height="384" alt="edited hexapod" src="https://github.com/user-attachments/assets/cacb2021-0fb4-4f09-95fc-123475b88816" />
 </p>
 
-M.E.S.H. is a "Brain" for Freenove Big Hexapod robots. It features a custom speech-to-speech pipeline, on-the-fly voice cloning, and a modular architecture designed for high-performance inference. This will only work with a Freenove Big Hexapod robot with the following components:
+MESH is a "Brain" for Freenove Big Hexapod robots. It features a custom speech-to-speech pipeline, on-the-fly voice cloning, and a modular architecture designed for high-performance inference. This will only work with a Freenove Big Hexapod robot with the following components:
 
 - Raspberry Pi 3/4/5
 - Added Microphone
