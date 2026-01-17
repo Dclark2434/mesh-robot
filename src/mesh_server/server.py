@@ -204,7 +204,11 @@ async def interact_generator(audio_bytes, image_bytes=None, text_prompt=None, te
     ]
     
     # Only trigger if we DON'T have an image yet and we have a valid prompt
-    if not image_bytes and any(re.search(p, clean_input) for p in vision_patterns):
+    # AND if the prompt does NOT likely require movement/planning (e.g. "go", "move", "walk")
+    movement_keywords = ["go ", "move", "walk", "turn", "step", "come", "back"]
+    is_complex_request = any(k in clean_input for k in movement_keywords)
+
+    if not image_bytes and not is_complex_request and any(re.search(p, clean_input) for p in vision_patterns):
         logger.info(f"[FAST PATH] Vision Triggered by: '{clean_input}'")
         
         # 1. Yield Action immediately
@@ -233,8 +237,14 @@ async def interact_generator(audio_bytes, image_bytes=None, text_prompt=None, te
     spoken_text = parsed.get("response", "Data error.")
     hardware_command = parsed.get("action", "none")
     hardware_param = parsed.get("param", "null")
+    plan_list = parsed.get("plan", None)
 
-    if hardware_command != "none":
+    if plan_list:
+        logger.info(f"[PLAN] {len(plan_list)} steps")
+        cmd_payload = json.dumps({"plan": plan_list})
+        yield (cmd_payload + "\n").encode("utf-8")
+
+    if hardware_command != "none" and hardware_command is not None:
         logger.info(f"[COMMAND] {hardware_command} -> {hardware_param}")
         cmd_payload = json.dumps({"action": hardware_command, "param": hardware_param})
         yield (cmd_payload + "\n").encode("utf-8")

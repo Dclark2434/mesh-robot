@@ -45,9 +45,20 @@ def get_gemini_config():
             "properties": {
                 "response": {"type": "STRING"},
                 "action": {"type": "STRING"},
-                "param": {"type": "STRING"}
+                "param": {"type": "STRING"},
+                "memory": {"type": "STRING"},,
+                "plan": {
+                    "type": "ARRAY",
+                    "items": {
+                        "type": "OBJECT",
+                        "properties": {
+                            "action": {"type": "STRING"},
+                            "param": {"type": "STRING"}
+                        }
+                    }
+                }
             },
-            "required": ["response", "action", "param"]
+            "required": ["response", "action", "param", "plan"]
         }
     )
 
@@ -327,7 +338,7 @@ def think(prompt, user_id="dustin", image_bytes=None):
 
 def robust_json_parse(raw_text):
     """Extracts JSON even if the model messes up"""
-    default_data = { "response": raw_text, "action": "none", "param": "null" }
+    default_data = { "response": raw_text, "action": "none", "param": "null", "plan": None, "memory": None }
     
     # Try Regex extraction for { ... }
     match = re.search(r"(\{.*\})", raw_text, re.DOTALL)

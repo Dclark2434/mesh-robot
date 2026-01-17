@@ -27,6 +27,7 @@ from mesh_client.animation_controller import AnimationController
 from mesh_client.buzzer_controller import BuzzerController
 from mesh_client.power_monitor import PowerMonitor
 from mesh_client.imu_wrapper import IMUWrapper
+from mesh_client.command_dispatcher import CommandDispatcher
 
 logger = get_logger("mesh_client")
 
@@ -338,163 +339,162 @@ def main():
     # is_speaking moved to global scope
     has_idled = False # Flag to prevent repeating idle anim
 
-    def on_server_command(cmd):
+    # --- COMMAND DISPATCHER ---
+    dispatcher = CommandDispatcher()
+
+    def execute_hardware_command(param, action_name=None):
         nonlocal last_activity_time
         nonlocal has_idled
+        
+        # If action_name is passed (via closure), use it. 
+        # But wait, Dispatcher calls func(param).
+        # We need to know WHICH action triggered this if we register generic handler.
+        # Strategy: Register distinct lambdas for each action.
+        
+        action = action_name
         last_activity_time = time.time()
         has_idled = False
         
-        def run_action():
-            nonlocal last_activity_time
-            try:
-                """Handle hardware commands from server."""
-                action = cmd.get("action")
-                param = cmd.get("param")
-                
-                # Normalize action
-                steps = 4
-                if param:
-                    match = re.search(r'\d+', str(param))
-                    if match:
-                        val = int(match.group())
-                        
-                        # TURN LOGIC: Convert Degrees to Steps
-                        if action in ["turn_left", "turn_right"] and val > 15:
-                             # Assume Degrees. Eff turn rate ~15 deg/step (User Verified: 12 steps = 180 deg)
-                             # 180 deg / 15 = 12 steps
-                             # 90 deg / 15 = 6 steps
-                             steps = int(val / 15.0)
-                             steps = min(steps, 60) # Cap turn at ~360 degrees
-                             logger.info(f"Turn Logic: Converted {val} deg -> {steps} steps")
-                        else:
-                             # Standard Step Count
-                             steps = min(val, 20) # Raised cap to 20 for longer walks
+        try:
+            # Normalize action steps
+            steps = 4
+            if param:
+                match = re.search(r'\d+', str(param))
+                if match:
+                    val = int(match.group())
+                    
+                    # TURN LOGIC: Convert Degrees to Steps
+                    if action in ["turn_left", "turn_right"] and val > 15:
+                            # Assume Degrees. Eff turn rate ~15 deg/step
+                            steps = int(val / 15.0)
+                            steps = min(steps, 60) # Cap turn
+                            logger.info(f"Turn Logic: Converted {val} deg -> {steps} steps")
+                    else:
+                            steps = min(val, 20)
 
-                logger.info(f"Command Received: {action} (Param: {param})")
+            logger.info(f"Command Execution: {action} (Param: {param})")
 
-                # --- ACTIVE LEANING (Applied BEFORE movement) ---
-                # Immediate aggressive lean into the turn/move
-                target_pitch = 0.0
-                if action in ["walk", "walk_forward", "move_forward"]:
-                     target_pitch = 10.0 # Lean Forward
-                elif action == "move_backward":
-                     target_pitch = -10.0 # Lean Backward
-                
-                # Apply instantly for dynamic feel
-                locomotion.body_pitch = target_pitch
-                
-                if action in ["walk", "walk_forward", "move_forward", "move_backward", "turn_left", "turn_right"]:
-                     logger.info(f"Movement Action: {action} for {steps} steps")
-                     
-                     # MUTE MICROPHONE
-                     is_moving.set()
-                     try:
-                         if action in ["walk", "walk_forward", "move_forward"]:
-                               locomotion.move_forward(steps, speed=1.5)
-                         elif action == "move_backward":
-                               locomotion.move_backward(steps, speed=1.5)
-                         elif action == "turn_left":
-                               locomotion.turn_left(steps, speed=1.5)
-                         elif action == "turn_right":
-                               locomotion.turn_right(steps, speed=1.5)
-                     finally:
-                         # Brief cool-down to let servos settle silence
-                         time.sleep(0.2)
-                         locomotion.body_pitch = 0.0
-                         is_moving.clear()
-                     
-                     return # Movement handled
-                
-                # IDLE CHECK
-                if time.time() - last_activity_time > 30.0: # 30s of silence
-                     # Trigger idle animation if not already moving
-                     if not is_moving.is_set():
-                          logger.info("Auto-Idle: Palp Wiggle")
-                          is_moving.set()
-                          try:
-                              anim.palp_wiggle()
-                          finally:
-                              is_moving.clear()
-                          last_activity_time = time.time()
-
-                time.sleep(0.05)
-                
-                
-                # Non-movement actions
-                if action == "null": return
-                
-                # Head Actions
-                elif action == "look_left":
-                     head.look_left()
-                elif action == "look_right":
-                     head.look_right()
-                elif action == "look_down":
-                     head.look_down()
-                elif action == "look_up":
-                     head.look_up()
-                elif action == "look_center":
-                     head.look_neutral()
-                
-                # LED Actions
-                elif action == "led_on":
-                     leds.set_state(LEDState.LISTENING) # Use white/listening for ON
-                elif action == "led_off":
-                     leds.set_state(LEDState.IDLE)
-                elif action == "led_flash":
-                     for _ in range(3):
-                         leds.set_state(LEDState.SPEAKING)
-                         time.sleep(0.1)
-                         leds.set_state(LEDState.IDLE)
-                         time.sleep(0.1)
-
-                # Buzzer Actions
-                elif action == "buzzer_beep":
-                     buzzer.beep()
-
-                # Emote Actions
-                elif action in ["emote", "laugh", "bow", "wiggle"]:
+            # --- ACTIVE LEANING ---
+            target_pitch = 0.0
+            if action in ["walk", "walk_forward", "move_forward"]:
+                    target_pitch = 10.0
+            elif action == "move_backward":
+                    target_pitch = -10.0
+            
+            locomotion.body_pitch = target_pitch
+            
+            if action in ["walk", "walk_forward", "move_forward", "move_backward", "turn_left", "turn_right"]:
+                    logger.info(f"Movement Action: {action} for {steps} steps")
+                    
                     is_moving.set()
                     try:
-                        anim_name = param if action == "emote" else action
-                        logger.info(f"Executing Emote: {anim_name}")
-                        
-                        if anim_name == "laugh": anim.laugh()
-                        elif anim_name == "bow": anim.bow()
-                        elif anim_name == "wiggle": anim.palp_wiggle()
-                        else: logger.warning(f"Unknown emote: {anim_name}")
-                    except Exception as e:
-                        logger.error(f"Emote Failed: {e}")
+                        if action in ["walk", "walk_forward", "move_forward"]:
+                            locomotion.move_forward(steps, speed=1.5)
+                        elif action == "move_backward":
+                            locomotion.move_backward(steps, speed=1.5)
+                        elif action == "turn_left":
+                            locomotion.turn_left(steps, speed=1.5)
+                        elif action == "turn_right":
+                            locomotion.turn_right(steps, speed=1.5)
                     finally:
+                        time.sleep(0.2)
+                        locomotion.body_pitch = 0.0
                         is_moving.clear()
+                    return
 
-                elif action == "buzzer_warn":
-                     buzzer.warn()
-                elif action == "buzzer_alarm":
-                     buzzer.alarm()
-                elif action in ["relax", "stand_by"]:
-                     head.look_neutral()
-                     time.sleep(0.5)
-                     sc.relax()
-                elif action in ["reset", "lay_flat"]:
-                     locomotion.reset_posture_flat()
+            # IDLE CHECK (Keep simple update)
+            if time.time() - last_activity_time > 30.0:
+                    if not is_moving.is_set():
+                        is_moving.set()
+                        try: anim.palp_wiggle()
+                        finally: is_moving.clear()
+                        last_activity_time = time.time()
 
-                # Vision Action
-                elif action == "see":
-                     logger.info("Requesting Vision Action (Serialized)...")
-                     vision_requested.set()
-            except Exception as e:
-                logger.error(f"Command execution error: {e}")
-                is_moving.clear() # Ensure cleared on error
+            time.sleep(0.05)
+            
+            if action == "null": return
+            
+            # Head Actions
+            elif action == "look_left": head.look_left()
+            elif action == "look_right": head.look_right()
+            elif action == "look_down": head.look_down()
+            elif action == "look_up": head.look_up()
+            elif action == "look_center": head.look_neutral()
+            
+            # LED Actions
+            elif action == "led_on": leds.set_state(LEDState.LISTENING)
+            elif action == "led_off": leds.set_state(LEDState.IDLE)
+            elif action == "led_flash":
+                    for _ in range(3):
+                        leds.set_state(LEDState.SPEAKING)
+                        time.sleep(0.1)
+                        leds.set_state(LEDState.IDLE)
+                        time.sleep(0.1)
 
+            # Buzzer Actions
+            elif action == "buzzer_beep": buzzer.beep()
+            elif action == "buzzer_warn": buzzer.warn()
+            elif action == "buzzer_alarm": buzzer.alarm()
 
-        # Start execution in background
-        threading.Thread(target=run_action, daemon=True).start()
+            # Emote Actions
+            elif action in ["emote", "laugh", "bow", "wiggle"]:
+                is_moving.set()
+                try:
+                    anim_name = param if action == "emote" else action
+                    if anim_name == "laugh": anim.laugh()
+                    elif anim_name == "bow": anim.bow()
+                    elif anim_name == "wiggle": anim.palp_wiggle()
+                finally:
+                    is_moving.clear()
+
+            elif action in ["relax", "stand_by"]:
+                    head.look_neutral()
+                    time.sleep(0.5)
+                    sc.relax()
+            elif action in ["reset", "lay_flat"]:
+                    locomotion.reset_posture_flat()
+
+            # Vision Action
+            elif action == "see":
+                    logger.info(f"[EXEC] Capturing Vision (Param: {param})...")
+                    is_silent = (param == "silent" or (param and "silent" in param))
+                    capture_and_send_vision(silent=is_silent)
+        except Exception as e:
+            logger.error(f"Command Error ({action}): {e}")
+            is_moving.clear()
+
+    # Register all known commands to the dispatcher
+    KNOWN_COMMANDS = [
+        "walk", "walk_forward", "move_forward", "move_backward", 
+        "turn_left", "turn_right", 
+        "look_left", "look_right", "look_down", "look_up", "look_center", 
+        "led_on", "led_off", "led_flash", 
+        "buzzer_beep", "buzzer_warn", "buzzer_alarm", 
+        "emote", "laugh", "bow", "wiggle", 
+        "relax", "stand_by", "reset", "lay_flat", 
+        "see", "null"
+    ]
+
+    for cmd_name in KNOWN_COMMANDS:
+        # Capture current cmd_name in closure default arg
+        dispatcher.register(cmd_name, lambda p, name=cmd_name: execute_hardware_command(p, name))
+
+    def on_server_command(cmd):
+        nonlocal last_activity_time
+        last_activity_time = time.time()
+        
+        plan = cmd.get("plan")
+        if plan:
+            dispatcher.push_plan(plan)
+        else:
+            # Treat single command as size-1 plan
+            dispatcher.push_plan([cmd])
 
 
 
     # Camera Logic (Moved to Main Scope)
     last_vision_time = 0
-    def capture_and_send_vision():
+    def capture_and_send_vision(silent=False):
         nonlocal last_vision_time
         if time.time() - last_vision_time < 5.0:
             logger.warning("Vision: Debounced (Too soon).")
