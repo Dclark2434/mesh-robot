@@ -224,6 +224,7 @@ The original inspiration. I saw his ChatGPT powered TARS replica and immediately
 **[NikodemBartnik](https://www.youtube.com/@NikodemBartnik)**
 A massive source of knowledge and ideas. His approach to blending hardware, software, and 3D printing set the standard I aimed for with Mesh.
 
+I wanted to thank the Freenove Team for making such a great robot kit with great documentation.
 ---
 
 ## License
