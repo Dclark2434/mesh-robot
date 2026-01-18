@@ -437,3 +437,141 @@ class AnimationController:
         finally:
             self.is_animating = False
             self.anim_lock.release()
+    def hand_wave(self):
+        """Lifts right front leg and waves it."""
+        if not self.anim_lock.acquire(blocking=False): return
+        logger.info("Animation: Hand Wave")
+        self.is_animating = True
+        try:
+            current = copy.deepcopy(self.loco.body_points)
+            leg = 0 # Front Right
+            
+            # Lift High
+            steps = 10
+            for _ in range(steps):
+                current[leg][2] += (100 / steps) # Lift 100mm
+                current[leg][0] += (30 / steps)  # Out a bit
+                self.loco.transform_coordinates(current)
+                self.loco.set_leg_angles()
+                time.sleep(0.04)
+            
+            # Wave (Y-Axis Oscillation)
+            base_y = current[leg][1]
+            for _ in range(3): # 3 waves
+                # Left
+                for _ in range(5):
+                    current[leg][1] += 8
+                    self.loco.transform_coordinates(current)
+                    self.loco.set_leg_angles()
+                    time.sleep(0.02)
+                # Right
+                for _ in range(10): # Swing back double distance
+                    current[leg][1] -= 8
+                    self.loco.transform_coordinates(current)
+                    self.loco.set_leg_angles()
+                    time.sleep(0.02)
+                # Center
+                for _ in range(5):
+                    current[leg][1] += 8
+                    self.loco.transform_coordinates(current)
+                    self.loco.set_leg_angles()
+                    time.sleep(0.02)
+
+            self.reset_neutral()
+        finally:
+            self.is_animating = False
+            self.anim_lock.release()
+
+    def foot_tap(self):
+        """Impatienly taps front right foot."""
+        if not self.anim_lock.acquire(blocking=False): return
+        logger.info("Animation: Foot Tap")
+        self.is_animating = True
+        try:
+            current = copy.deepcopy(self.loco.body_points)
+            leg = 0 # Front Right
+            
+            # 5 Taps
+            for _ in range(5):
+                # Lift
+                for _ in range(2):
+                    current[leg][2] += 15 # Quick 30mm lift total
+                    self.loco.transform_coordinates(current)
+                    self.loco.set_leg_angles()
+                    time.sleep(0.02)
+                # Drop
+                for _ in range(2):
+                    current[leg][2] -= 15
+                    self.loco.transform_coordinates(current)
+                    self.loco.set_leg_angles()
+                    time.sleep(0.02)
+                time.sleep(0.1)
+                
+            self.reset_neutral()
+        finally:
+            self.is_animating = False
+            self.anim_lock.release()
+
+    def head_move(self, pan_target, tilt_target, duration=0.5):
+        """Helper for smooth head movement."""
+        if self.head:
+            if tilt_target < -10: self.head.look_down()
+            elif tilt_target > 10: self.head.look_up()
+            else: self.head.look_neutral()
+            
+            if pan_target < -10: self.head.look_left()
+            elif pan_target > 10: self.head.look_right()
+            else: self.head.look_neutral()
+            time.sleep(duration)
+
+    def nod_yes(self):
+        """Head Pitch Up/Down."""
+        if not self.head: return
+        logger.info("Animation: Nod Yes")
+        for _ in range(3):
+            self.head.look_up()
+            time.sleep(0.3)
+            self.head.look_down()
+            time.sleep(0.3)
+        self.head.look_neutral()
+
+    def shake_no(self):
+        """Head Pan Left/Right."""
+        if not self.head: return
+        logger.info("Animation: Shake No")
+        for _ in range(3):
+            self.head.look_left()
+            time.sleep(0.3)
+            self.head.look_right()
+            time.sleep(0.3)
+        self.head.look_neutral()
+
+    def smh(self):
+        """Look Down + Shake Head (Disappointment)."""
+        if not self.head: return
+        logger.info("Animation: SMH")
+        self.head.look_down() # Stay looking down
+        time.sleep(0.4)
+        for _ in range(3):
+            self.head.look_left()
+            time.sleep(0.4) # Slower
+            self.head.look_right()
+            time.sleep(0.4)
+        self.head.look_neutral()
+
+    def eye_roll(self):
+        """Pan Left->Right while Arcing Up."""
+        if not self.head: return
+        logger.info("Animation: Eye Roll")
+        
+        # Start Left Down
+        self.head.look_left()
+        time.sleep(0.3)
+        
+        # Arc: Left-Up -> Right-Up -> Right-Down
+        self.head.look_up() # Up
+        time.sleep(0.4)
+        self.head.look_right() # Right
+        time.sleep(0.4)
+        
+        self.head.look_neutral()

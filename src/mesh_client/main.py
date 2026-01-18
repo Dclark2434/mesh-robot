@@ -446,7 +446,43 @@ def main():
                     elif anim_name == "wiggle": anim.palp_wiggle()
                 finally:
                     is_moving.clear()
+                
+            # Locomotion Extensions
+            elif action == "strafe_left":
+                 is_moving.set()
+                 try: locomotion.strafe_left(steps, speed=1.5)
+                 finally: is_moving.clear()
+            elif action == "strafe_right":
+                 is_moving.set()
+                 try: locomotion.strafe_right(steps, speed=1.5)
+                 finally: is_moving.clear()
 
+            # Animation Extensions
+            elif action == "wave":
+                 is_moving.set()
+                 try: anim.hand_wave()
+                 finally: is_moving.clear()
+            elif action == "tap":
+                 is_moving.set()
+                 try: anim.foot_tap()
+                 finally: is_moving.clear()
+            elif action == "nod":
+                 is_moving.set()
+                 try: anim.nod_yes()
+                 finally: is_moving.clear()
+            elif action == "shake":
+                 is_moving.set()
+                 try: anim.shake_no()
+                 finally: is_moving.clear()
+            elif action == "smh":
+                 is_moving.set()
+                 try: anim.smh()
+                 finally: is_moving.clear()
+            elif action == "roll_eyes":
+                 is_moving.set()
+                 try: anim.eye_roll()
+                 finally: is_moving.clear()
+            
             elif action in ["relax", "stand_by"]:
                     head.look_neutral()
                     time.sleep(0.5)
@@ -467,10 +503,12 @@ def main():
     KNOWN_COMMANDS = [
         "walk", "walk_forward", "move_forward", "move_backward", 
         "turn_left", "turn_right", 
+        "strafe_left", "strafe_right",
         "look_left", "look_right", "look_down", "look_up", "look_center", 
         "led_on", "led_off", "led_flash", 
         "buzzer_beep", "buzzer_warn", "buzzer_alarm", 
         "emote", "laugh", "bow", "wiggle", 
+        "wave", "tap", "nod", "shake", "smh", "roll_eyes",
         "relax", "stand_by", "reset", "lay_flat", 
         "see", "null"
     ]
