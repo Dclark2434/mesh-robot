@@ -46,7 +46,7 @@ def get_gemini_config():
                 "response": {"type": "STRING"},
                 "action": {"type": "STRING"},
                 "param": {"type": "STRING"},
-                "memory": {"type": "STRING"},,
+                "memory": {"type": "STRING"},
                 "plan": {
                     "type": "ARRAY",
                     "items": {

@@ -797,7 +797,6 @@ def main():
                                     if r.status_code == 200:
                                         leds.set_state(LEDState.SPEAKING)
                                         head.look_up(20)
-                                        head.look_up(20)
                                         stream_audio_response(r, leds, on_server_command)
                                         logger.info(f"[LATENCY] Round-trip: {time.time() - start_time:.2f}s")
                                         
