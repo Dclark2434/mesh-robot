@@ -32,7 +32,7 @@ from mesh_client.command_dispatcher import CommandDispatcher
 logger = get_logger("mesh_client")
 
 # --- CONFIGURATION ---
-SERVER_URL = os.environ.get("MESH_SERVER_URL", f"http://127.0.0.1:{DEFAULT_SERVER_PORT}/interact")
+SERVER_URL = os.environ.get("MESH_SERVER_URL", f"http://192.168.4.80:{DEFAULT_SERVER_PORT}/interact")
 THRESHOLD = float(os.environ.get("MESH_THRESHOLD", 0.2))
 PLAYBACK_RATE = 24000  # TTS output sample rate (Chatterbox/ElevenLabs)
 SILENCE_LIMIT = float(os.environ.get("MESH_SILENCE_LIMIT", 2.5))
