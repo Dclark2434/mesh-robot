@@ -13,8 +13,8 @@ class MeshLauncher(ctk.CTk):
     def __init__(self):
         super().__init__()
 
-        self.title("M.E.S.H. System Launcher v1.1")
-        self.geometry("500x650")
+        self.title("M.E.S.H. System Launcher v1.2")
+        self.geometry("550x750")
 
         # Load existing env vars
         self.env_path = os.path.join(os.path.dirname(os.path.abspath(__file__)), ".env")
@@ -22,8 +22,9 @@ class MeshLauncher(ctk.CTk):
 
         # Main Layout
         self.grid_columnconfigure(0, weight=1)
+        self.grid_rowconfigure(1, weight=1) # Let scroll frame expand
 
-        # Header
+        # Header (Fixed at top)
         self.header_frame = ctk.CTkFrame(self, fg_color="transparent")
         self.header_frame.grid(row=0, column=0, pady=20, sticky="ew")
         
@@ -33,9 +34,14 @@ class MeshLauncher(ctk.CTk):
         self.subtitle_label = ctk.CTkLabel(self.header_frame, text="Mobile Engineering Support Hexapod", font=("Arial", 12))
         self.subtitle_label.pack()
 
-        # Brain Section
-        self.brain_frame = ctk.CTkFrame(self)
-        self.brain_frame.grid(row=1, column=0, padx=20, pady=10, sticky="ew")
+        # --- SCROLLABLE CONTENT AREA ---
+        self.scroll_frame = ctk.CTkScrollableFrame(self, fg_color="transparent")
+        self.scroll_frame.grid(row=1, column=0, padx=10, pady=0, sticky="nsew")
+        self.scroll_frame.columnconfigure(0, weight=1)
+
+        # Brain Section (Now inside scroll_frame)
+        self.brain_frame = ctk.CTkFrame(self.scroll_frame)
+        self.brain_frame.grid(row=0, column=0, padx=10, pady=10, sticky="ew")
         
         ctk.CTkLabel(self.brain_frame, text="Neural Brain", font=("Arial", 16, "bold")).pack(pady=5)
         
@@ -62,6 +68,9 @@ class MeshLauncher(ctk.CTk):
         short_start = inv_map.get(start_model, "100m")
         
         self.chatterbox_model_var = ctk.StringVar(value=short_start)
+        
+        start_persona = os.getenv("MESH_PERSONALITY", "mesh")
+        self.persona_var = ctk.StringVar(value=start_persona)
 
         # 2. Create Input Widgets (Hidden by default or managed later)
         
@@ -70,9 +79,17 @@ class MeshLauncher(ctk.CTk):
         start_gemini_key = os.getenv("GEMINI_API_KEY", "")
         if start_gemini_key: self.gemini_key_entry.insert(0, start_gemini_key)
 
+        # Personality Section
+        self.persona_frame = ctk.CTkFrame(self.scroll_frame)
+        self.persona_frame.grid(row=1, column=0, padx=10, pady=10, sticky="ew")
+        
+        ctk.CTkLabel(self.persona_frame, text="Robot Personality", font=("Arial", 16, "bold")).pack(pady=5)
+        self.persona_seg = ctk.CTkSegmentedButton(self.persona_frame, values=["mesh", "rocky", "tars"], variable=self.persona_var)
+        self.persona_seg.pack(pady=10)
+
         # Voice Section
-        self.voice_frame = ctk.CTkFrame(self)
-        self.voice_frame.grid(row=2, column=0, padx=20, pady=10, sticky="ew")
+        self.voice_frame = ctk.CTkFrame(self.scroll_frame)
+        self.voice_frame.grid(row=2, column=0, padx=10, pady=10, sticky="ew")
 
         ctk.CTkLabel(self.voice_frame, text="Vocal Synthesis", font=("Arial", 16, "bold")).pack(pady=5)
 
@@ -107,9 +124,9 @@ class MeshLauncher(ctk.CTk):
         self.toggle_brain_inputs(self.brain_var.get())
         self.toggle_voice_inputs(self.voice_var.get())
 
-        # Action Buttons
+        # Action Buttons (Fixed at bottom)
         self.launch_btn = ctk.CTkButton(self, text="INITIALIZE SYSTEM", font=("Arial", 16, "bold"), height=50, fg_color="green", hover_color="darkgreen", command=self.launch_system)
-        self.launch_btn.grid(row=3, column=0, padx=20, pady=30, sticky="ew")
+        self.launch_btn.grid(row=2, column=0, padx=20, pady=20, sticky="ew")
 
     def toggle_brain_inputs(self, value):
         if value == "Gemini":
@@ -153,6 +170,7 @@ class MeshLauncher(ctk.CTk):
         eleven_key = self.eleven_api_entry.get()
         eleven_voice = self.eleven_voice_entry.get()
         hf_token = self.hf_token_entry.get()
+        persona = self.persona_var.get()
         
         # Map short label back to full model string
         short_model = self.chatterbox_model_var.get()
@@ -186,6 +204,7 @@ class MeshLauncher(ctk.CTk):
         env_dict["ELEVENLABS_VOICE_ID"] = eleven_voice
         env_dict["CHATTERBOX_MODEL"] = chatterbox_model
         env_dict["HF_TOKEN"] = hf_token
+        env_dict["MESH_PERSONALITY"] = persona
 
         # Write back
         with open(self.env_path, "w") as f:

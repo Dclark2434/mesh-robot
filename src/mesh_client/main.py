@@ -494,6 +494,7 @@ def main():
                     if anim_name == "laugh": anim.laugh()
                     elif anim_name == "bow": anim.bow()
                     elif anim_name == "wiggle": anim.palp_wiggle()
+                    elif anim_name == "tippy_tap": anim.simple_idle_step()
                 finally:
                     is_moving.clear()
                 
@@ -557,7 +558,7 @@ def main():
         "look_left", "look_right", "look_down", "look_up", "look_center", 
         "led_on", "led_off", "led_flash", 
         "buzzer_beep", "buzzer_warn", "buzzer_alarm", 
-        "emote", "laugh", "bow", "wiggle", 
+        "emote", "laugh", "bow", "wiggle", "tippy_tap",
         "wave", "tap", "nod", "shake", "smh", "roll_eyes",
         "relax", "stand_by", "reset", "lay_flat", 
         "see", "null"
