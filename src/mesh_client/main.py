@@ -9,11 +9,10 @@ import queue
 import time
 import subprocess
 import os
-import sys
 import shutil
 import struct
 from scipy.io.wavfile import write
-from typing import Optional, Generator
+from typing import Generator
 import re
 import cv2
 
@@ -890,6 +889,7 @@ def main():
         leds.set_state(LEDState.ERROR)
         logger.error(f"Main loop error: {e}")
     finally:
+        player.stop()
         leds.stop()
 
 if __name__ == "__main__":
