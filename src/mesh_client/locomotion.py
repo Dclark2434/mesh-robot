@@ -24,6 +24,11 @@ class LocomotionController:
         self.calibration_angles = [[0, 0, 0] for _ in range(6)]
         self.current_angles = [[90, 0, 0] for _ in range(6)]
         
+        # Individual Leg Offsets (Fine Tuning)
+        # [FrontRight, MidRight, RearRight, RearLeft, MidLeft, FrontLeft]
+        # Positive = Lower, Negative = Higher
+        self.leg_z_offsets = [0, 0, 0, 0, 0, -10] # 10mm boost to Front Left to stop dragging
+        
         # Dynamic Gait Parameters (Traction Control)
         self.body_pitch = 0.0 # Lean Forward/Back (Degrees)
         
@@ -217,27 +222,27 @@ class LocomotionController:
         # Leg 1 (54 deg)
         self.leg_positions[0][0] = points[0][0] * math.cos(54 * math.pi/180) + points[0][1] * math.sin(54 * math.pi/180) - 94
         self.leg_positions[0][1] = -points[0][0] * math.sin(54 * math.pi/180) + points[0][1] * math.cos(54 * math.pi/180)
-        self.leg_positions[0][2] = points[0][2] - 14
+        self.leg_positions[0][2] = points[0][2] - 14 + self.leg_z_offsets[0]
         # Leg 2 (0 deg)
         self.leg_positions[1][0] = points[1][0] - 85
         self.leg_positions[1][1] = points[1][1]
-        self.leg_positions[1][2] = points[1][2] - 14
+        self.leg_positions[1][2] = points[1][2] - 14 + self.leg_z_offsets[1]
         # Leg 3 (-54 deg)
         self.leg_positions[2][0] = points[2][0] * math.cos(-54 * math.pi/180) + points[2][1] * math.sin(-54 * math.pi/180) - 94
         self.leg_positions[2][1] = -points[2][0] * math.sin(-54 * math.pi/180) + points[2][1] * math.cos(-54 * math.pi/180)
-        self.leg_positions[2][2] = points[2][2] - 14
+        self.leg_positions[2][2] = points[2][2] - 14 + self.leg_z_offsets[2]
         # Leg 4 (-126 deg)
         self.leg_positions[3][0] = points[3][0] * math.cos(-126 * math.pi/180) + points[3][1] * math.sin(-126 * math.pi/180) - 94
         self.leg_positions[3][1] = -points[3][0] * math.sin(-126 * math.pi/180) + points[3][1] * math.cos(-126 * math.pi/180)
-        self.leg_positions[3][2] = points[3][2] - 14
+        self.leg_positions[3][2] = points[3][2] - 14 + self.leg_z_offsets[3]
         # Leg 5 (180 deg)
         self.leg_positions[4][0] = points[4][0] * math.cos(math.pi) + points[4][1] * math.sin(math.pi) - 85
         self.leg_positions[4][1] = -points[4][0] * math.sin(math.pi) + points[4][1] * math.cos(math.pi)
-        self.leg_positions[4][2] = points[4][2] - 14
+        self.leg_positions[4][2] = points[4][2] - 14 + self.leg_z_offsets[4]
         # Leg 6 (126 deg)
         self.leg_positions[5][0] = points[5][0] * math.cos(126 * math.pi/180) + points[5][1] * math.sin(126 * math.pi/180) - 94
         self.leg_positions[5][1] = -points[5][0] * math.sin(126 * math.pi/180) + points[5][1] * math.cos(126 * math.pi/180)
-        self.leg_positions[5][2] = points[5][2] - 14
+        self.leg_positions[5][2] = points[5][2] - 14 + self.leg_z_offsets[5]
 
     def execute_gait(self, x, y, angle, steps=4, speed=1.0, hip_swing=0.0):
         """Generic gait execution wrapper."""
