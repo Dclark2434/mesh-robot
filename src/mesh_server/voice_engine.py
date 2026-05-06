@@ -118,12 +118,19 @@ elif config.TTS_ENGINE == "chatterbox":
             os.environ["HF_TOKEN"] = config.HF_TOKEN
             
         try:
-            from chatterbox.tts_turbo import ChatterboxTurboTTS
+            # Try current known path
+            try:
+                from chatterbox.tts_turbo import ChatterboxTurboTTS
+            except ImportError:
+                # Fallback: try direct import from chatterbox
+                from chatterbox import ChatterboxTurboTTS
+                
             # ChatterboxTurboTTS has the correct REPO_ID hardcoded ("ResembleAI/chatterbox-turbo")
             tts_engine = ChatterboxTurboTTS.from_pretrained(device)
             logger.info("ChatterboxTurboTTS Engine Loaded.")
-        except ImportError:
-            logger.error("Could not import ChatterboxTurboTTS. Ensure chatterbox-tts is installed correctly.")
+        except ImportError as e:
+            logger.error(f"Could not import ChatterboxTurboTTS. Error: {e}")
+            logger.info("Try running: pip install chatterbox-tts --upgrade")
             tts_engine = None
         except Exception as e:
             logger.error(f"Failed to load Chatterbox Turbo: {e}")

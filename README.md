@@ -140,7 +140,7 @@ git clone https://github.com/Dclark2434/mesh-robot.git
 cd mesh-robot
 
 # Install system deps
-sudo apt update && sudo apt install python3.11-venv python3.11-tk sox libsox-fmt-all ffmpeg -y
+sudo apt update && sudo apt install python3-tk sox libsox-fmt-all ffmpeg libportaudio2 libasound2-dev nvidia-cuda-toolkit -y
 
 # Setup and install
 python3.11 -m venv venv

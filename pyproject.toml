@@ -15,33 +15,32 @@ dependencies = [
     "numpy",
     "scipy",
     "Pillow",
-    "pytest"
+    "pytest",
+    "fastapi",
+    "uvicorn",
+    "python-multipart",
+    "customtkinter",
+    "python-dotenv",
+    "sounddevice",
+    "soundfile",
+    "opencv-python",
+    "google-genai"
 ]
 
 [project.optional-dependencies]
 server = [
-    "fastapi",
-    "uvicorn",
-    "python-multipart",
-    "soundfile",
     "faster-whisper",
-    "google-genai",
     "f5-tts",
     "chatterbox-tts",
     "torch",
     "torchaudio",
-    "torchvision",
-    "customtkinter",
-    "python-dotenv"
+    "torchvision"
 ]
 
 client = [
-    "sounddevice",
-    "soundfile",
 ]
 
 robot = [
-    "sounddevice",
     "rpi-ws281x",
     "spidev",
     "smbus2",

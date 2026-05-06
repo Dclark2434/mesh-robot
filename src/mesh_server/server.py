@@ -26,13 +26,6 @@ from mesh_server import config
 voice_engine.warmup()
 
 logger = get_logger("mesh_server")
-app = FastAPI(title="M.E.S.H. Server")
-
-@app.middleware("http")
-async def add_process_time_header(request, call_next):
-    request.state.start_time = time.time()
-    response = await call_next(request)
-    return response
 
 # --- STATE ---
 USER_STATES = {}
@@ -46,9 +39,13 @@ SESSION_STATS = {
     "total": []
 }
 
-@app.on_event("shutdown")
-def print_latency_report():
-    """Prints a statistical report of session latency upon exit."""
+from contextlib import asynccontextmanager
+
+@asynccontextmanager
+async def lifespan(app: FastAPI):
+    # Startup logic can go here
+    yield
+    # Shutdown logic: Prints a statistical report of session latency upon exit.
     from statistics import mean
     
     print("\n" + "="*60)
@@ -60,7 +57,6 @@ def print_latency_report():
     print(row_fmt.format(*headers))
     print("-" * 60)
     
-    # Updated metric list with TTS Total
     for metric in ["stt", "llm", "ttfb", "tts_tot", "total"]:
         data = SESSION_STATS[metric]
         if data:
@@ -76,6 +72,14 @@ def print_latency_report():
             print(f"{metric.upper():<15} | 0     | N/A     | N/A     | N/A")
             
     print("="*60 + "\n")
+
+app = FastAPI(title="M.E.S.H. Server", lifespan=lifespan)
+
+@app.middleware("http")
+async def add_process_time_header(request, call_next):
+    request.state.start_time = time.time()
+    response = await call_next(request)
+    return response
 
 # --- STREAM LOGIC ---
 

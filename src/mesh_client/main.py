@@ -36,6 +36,9 @@ SERVER_URL = os.environ.get("MESH_SERVER_URL", f"http://192.168.4.80:{DEFAULT_SE
 THRESHOLD = float(os.environ.get("MESH_THRESHOLD", 0.12))
 PLAYBACK_RATE = 24000  # TTS output sample rate (Chatterbox/ElevenLabs)
 SILENCE_LIMIT = float(os.environ.get("MESH_SILENCE_LIMIT", 2.5))
+AUDIO_DEVICE_ID = os.environ.get("MESH_AUDIO_DEVICE") # Optional device index
+if AUDIO_DEVICE_ID:
+    AUDIO_DEVICE_ID = int(AUDIO_DEVICE_ID)
 
 def print_banner():
     from colorama import Fore, Style
@@ -81,6 +84,7 @@ class AudioPlayer:
             channels=self._channels,
             dtype='float32',
             callback=self._callback,
+            device=AUDIO_DEVICE_ID,
             blocksize=1024,
             latency='low'
         )
