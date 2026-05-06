@@ -15,6 +15,10 @@ from scipy.io.wavfile import write
 from typing import Generator
 import re
 import cv2
+from dotenv import load_dotenv
+
+# Load .env if present
+load_dotenv()
 
 # Client imports
 
@@ -36,7 +40,8 @@ SERVER_URL = os.environ.get("MESH_SERVER_URL", f"http://192.168.4.80:{DEFAULT_SE
 THRESHOLD = float(os.environ.get("MESH_THRESHOLD", 0.12))
 PLAYBACK_RATE = 24000  # TTS output sample rate (Chatterbox/ElevenLabs)
 SILENCE_LIMIT = float(os.environ.get("MESH_SILENCE_LIMIT", 2.5))
-AUDIO_DEVICE_ID = os.environ.get("MESH_AUDIO_DEVICE") # Optional device index
+# Default to 1 (USB) if not specified, otherwise use system default (None)
+AUDIO_DEVICE_ID = os.environ.get("MESH_AUDIO_DEVICE", "1") 
 if AUDIO_DEVICE_ID:
     AUDIO_DEVICE_ID = int(AUDIO_DEVICE_ID)
 
