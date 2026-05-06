@@ -1,4 +1,5 @@
 import sounddevice as sd
+import soundfile as sf
 import threading
 import json
 import numpy as np
@@ -11,7 +12,7 @@ import os
 import sys
 import shutil
 import struct
-from scipy.io.wavfile import write, read
+from scipy.io.wavfile import write
 from typing import Optional, Generator
 import re
 import cv2
@@ -34,8 +35,8 @@ logger = get_logger("mesh_client")
 # --- CONFIGURATION ---
 SERVER_URL = os.environ.get("MESH_SERVER_URL", f"http://127.0.0.1:{DEFAULT_SERVER_PORT}/interact")
 THRESHOLD = float(os.environ.get("MESH_THRESHOLD", 0.2))
+PLAYBACK_RATE = 24000  # TTS output sample rate (Chatterbox/ElevenLabs)
 SILENCE_LIMIT = float(os.environ.get("MESH_SILENCE_LIMIT", 2.5))
-ALSA_DEVICE = os.environ.get("MESH_ALSA_DEVICE")
 
 def print_banner():
     from colorama import Fore, Style
@@ -51,83 +52,133 @@ def print_banner():
     """
     print(banner)
 
-# --- PLAYBACK ENGINES ---
-
-def play_wav_windows(wav_data: bytes):
-    """Utility to play a single WAV buffer on Windows via SoundDevice (Avoids PowerShell overhead)."""
-    if not wav_data.startswith(b"RIFF"): return
-    try:
-        # Use scipy to read the in-memory WAV bytes
-        # read returns (sample_rate, data)
-        rate, data = read(io.BytesIO(wav_data))
-        
-        # Determine device (optional, uses default if None)
-        sd.play(data, samplerate=rate)
-        sd.wait() # Block until playback finishes to maintain sync
-        
-    except Exception as e:
-        logger.error(f"SoundDevice Playback Error: {e}")
-        # Fallback to PowerShell if SD fails?
-        # For now, let's assume SD works since we are using it for Input.
+# --- PLAYBACK ENGINE (Zero-Disk, In-Memory) ---
 
 # Global State Flags
 is_speaking = threading.Event()
 
-def play_wav_linux(wav_data: bytes, alsa_device: Optional[str] = None):
-    """Utility to play a single WAV buffer on Linux via pw-play (Primary) or aplay (Fallback)."""
-    logger.info(f"play_wav_linux called with {len(wav_data)} bytes")
-    if not wav_data.startswith(b"RIFF"): 
-        logger.warning("Data does not start with RIFF")
-        return
-    temp_filename = f"temp_recv_{int(time.time() * 1000)}.wav"
-    abs_filepath = os.path.abspath(temp_filename)
+class AudioPlayer:
+    """
+    High-performance audio player that streams decoded samples directly
+    to the sound hardware via a persistent sd.OutputStream.
     
-    logger.info(f"Playing {len(wav_data)} bytes...")
+    Zero disk I/O: WAV bytes are decoded in RAM via soundfile.
+    Zero process spawning: No subprocess calls (pw-play, aplay).
+    The OutputStream is opened once at boot and kept alive.
+    """
+    def __init__(self, samplerate=PLAYBACK_RATE, channels=1):
+        self._samplerate = samplerate
+        self._channels = channels
+        self._queue = queue.Queue()
+        self._buffer = np.zeros((0, channels), dtype='float32')
+        self._lock = threading.Lock()
+        self._stream = None
+        self._active = threading.Event()  # True when audio is queued/playing
     
-    try:
-        with open(abs_filepath, "wb") as f:
-            f.write(wav_data)
+    def start(self):
+        """Open the persistent output stream. Call once at boot."""
+        self._stream = sd.OutputStream(
+            samplerate=self._samplerate,
+            channels=self._channels,
+            dtype='float32',
+            callback=self._callback,
+            blocksize=1024,
+            latency='low'
+        )
+        self._stream.start()
+        logger.info(f"AudioPlayer: OutputStream opened ({self._samplerate}Hz, {self._channels}ch, low-latency)")
+    
+    def stop(self):
+        """Shutdown the output stream."""
+        if self._stream:
+            self._stream.stop()
+            self._stream.close()
+            self._stream = None
+    
+    def _callback(self, outdata, frames, time_info, status):
+        """Called by the audio driver. Pulls samples from internal buffer/queue."""
+        if status:
+            logger.warning(f"Playback Status: {status}")
         
-        # 1. Attempt Primary: PipeWire (pw-play)
-        # Using subprocess.run to verify success/failure (capturing stderr)
+        needed = frames
+        written = 0
+        
+        with self._lock:
+            while needed > 0:
+                # Pull from leftover buffer first
+                if len(self._buffer) > 0:
+                    take = min(needed, len(self._buffer))
+                    outdata[written:written + take] = self._buffer[:take]
+                    self._buffer = self._buffer[take:]
+                    written += take
+                    needed -= take
+                else:
+                    # Try to get next chunk from queue
+                    try:
+                        chunk = self._queue.get_nowait()
+                        self._buffer = chunk
+                    except queue.Empty:
+                        # No more data — fill remainder with silence
+                        outdata[written:] = 0
+                        self._active.clear()
+                        return
+            
+            # If we filled the entire frame, we're still active
+            if not self._queue.empty() or len(self._buffer) > 0:
+                self._active.set()
+    
+    def play_wav_bytes(self, wav_data: bytes):
+        """
+        Decode a complete WAV buffer in RAM and push samples to the playback queue.
+        Non-blocking: returns immediately after queueing.
+        """
+        if not wav_data or len(wav_data) < 44:  # Minimum WAV header size
+            return
+        
         try:
-            cmd = ["pw-play", abs_filepath]
-            result = subprocess.run(cmd, capture_output=True, text=True) # text=True for string output
+            # Decode WAV entirely in memory using C-level libsndfile
+            data, rate = sf.read(io.BytesIO(wav_data), dtype='float32')
             
-            if result.returncode != 0:
-                logger.warning(f"pw-play failed (rc={result.returncode}): {result.stderr.strip()}")
-                raise Exception("pw-play failure")
-                
+            # Ensure 2D array (samples, channels)
+            if data.ndim == 1:
+                data = data.reshape(-1, 1)
+            
+            # Resample if the WAV rate doesn't match our output stream
+            if rate != self._samplerate:
+                from scipy.signal import resample_poly
+                from math import gcd
+                g = gcd(int(rate), self._samplerate)
+                up = self._samplerate // g
+                down = int(rate) // g
+                data = resample_poly(data, up, down, axis=0).astype('float32')
+            
+            self._active.set()
+            self._queue.put(data)
+            
         except Exception as e:
-            # 2. Attempt Fallback: ALSA (aplay)
-            logger.info("Falling back to ALSA (aplay)...")
-            cmd = ["aplay", "-q", "-t", "wav"]
-            if alsa_device:
-                dev = alsa_device.replace("hw:", "plughw:", 1) if alsa_device.startswith("hw:") else alsa_device
-                cmd.extend(["-D", dev])
-            cmd.append(abs_filepath)
-            
-            # Run fallback, still capturing output to diagnose if that fails too
-            result_alsa = subprocess.run(cmd, capture_output=True, text=True)
-            if result_alsa.returncode != 0:
-                logger.error(f"aplay also failed (rc={result_alsa.returncode}): {result_alsa.stderr.strip()}")
-
-    finally:
-        if os.path.exists(abs_filepath):
-            try: os.remove(abs_filepath)
-            except: pass
-
-def play_wav(wav_data: bytes):
-    """Platform-agnostic WAV player."""
-    if sys.platform == "win32":
-        play_wav_windows(wav_data)
-    else:
-        play_wav_linux(wav_data, ALSA_DEVICE)
+            logger.error(f"AudioPlayer decode error: {e}")
+    
+    def play_wav_blocking(self, wav_data: bytes):
+        """
+        Decode and play a WAV buffer, blocking until playback completes.
+        Used for boot sounds and other synchronous audio.
+        """
+        self.play_wav_bytes(wav_data)
+        self.wait_until_done()
+    
+    def wait_until_done(self):
+        """Block until the playback queue is fully drained."""
+        while self._active.is_set() or not self._queue.empty():
+            time.sleep(0.05)
+    
+    @property
+    def is_playing(self):
+        return self._active.is_set() or not self._queue.empty()
 
 # --- STREAMING ENGINE ---
 
-def stream_audio_response(response: requests.Response, leds, cmd_callback=None):
-    """Streams audio segments from server and plays them, executing commands if found."""
+def stream_audio_response(response: requests.Response, leds, player: AudioPlayer, cmd_callback=None):
+    """Streams audio segments from server, decodes in-memory, and pushes to AudioPlayer."""
     logger.info("Response stream started...")
     
     # CRITICAL: Hold speaking lock for entire stream + buffer
@@ -139,12 +190,8 @@ def stream_audio_response(response: requests.Response, leds, cmd_callback=None):
     expected_size = 0
     
     try:
-        # Match JSON commands: {"action":...} with optional newline
-        command_pattern = re.compile(rb'(\{"action":.*?\})(\n)?')
-    
         for chunk in response.iter_content(chunk_size=4096): 
             if not chunk: continue
-            # logger.debug(f"Received stream chunk: {len(chunk)} bytes")
             buffer += chunk
             
             # 1. Scan for Commands manually (Regex can be flaky on binary)
@@ -153,9 +200,6 @@ def stream_audio_response(response: requests.Response, leds, cmd_callback=None):
                 if start_idx == -1:
                     break
                 
-                # Found start, look for end
-                # We assume simple JSON object ending with } or }\n
-                # Safest is to find "}" after start
                 end_idx = buffer.find(b'}', start_idx)
                 if end_idx == -1:
                     break # Wait for more data
@@ -169,27 +213,19 @@ def stream_audio_response(response: requests.Response, leds, cmd_callback=None):
                     if cmd_callback: 
                         cmd_callback(cmd)
                     
-                    # Remove from buffer
-                    # Note: There might be a \n after match, it will be treated as garbage later (fine)
                     buffer = buffer[:start_idx] + buffer[end_idx+1:]
 
-                    # SPECIAL CASE: "see" action
-                    # If we are asked to see, we must silent the current stream (which contains hallucinated context)
-                    # and jump straight to the vision loop.
+                    # SPECIAL CASE: "see" action — abort stream to prevent hallucination
                     if cmd.get("action") == "see":
-                        logger.info("Vision Command Detected: Aborting current audio stream to prevent hallucination.")
-                        # Drain buffer
+                        logger.info("Vision Command Detected: Aborting current audio stream.")
                         buffer = b""
-                        return # Exit function immediately
+                        return
                     
                 except Exception as e:
                     logger.error(f"Manual Parse Failed: {e}")
-                    # We should probably discard this attempt to avoid infinite loop
-                    # checking the same invalid bytes?
-                    # For now, assume if it looks like {"action" it's valid.
                     break 
     
-            # 2. Parse WAV headers
+            # 2. Parse WAV headers and decode in-memory
             while True:
                 if expected_size == 0:
                     riff_idx = buffer.find(b"RIFF")
@@ -199,31 +235,32 @@ def stream_audio_response(response: requests.Response, leds, cmd_callback=None):
                     if len(buffer) < riff_idx + 8:
                         break 
                     
-                    # Discard garbage (Log it!)
+                    # Discard garbage before RIFF
                     if riff_idx > 0:
-                        garbage = buffer[:riff_idx]
-                        if len(garbage) > 4: # Ignore small newlines
-                             pass
                         buffer = buffer[riff_idx:]
                     
                     val = struct.unpack("<I", buffer[4:8])[0]
                     expected_size = val + 8
-                    # logger.info(f"WAV Detected. Size: {expected_size}")
                 
                 if expected_size > 0:
                     if len(buffer) >= expected_size:
                         wav_data = buffer[:expected_size]
                         buffer = buffer[expected_size:] 
                         expected_size = 0 
-                        play_wav(wav_data)
+                        # ZERO-DISK: Decode in RAM and push to audio hardware
+                        player.play_wav_bytes(wav_data)
                     else:
                         break
+        
+        # Wait for all queued audio to finish playing
+        player.wait_until_done()
+                        
     finally:
         # POST-SPEECH COOL DOWN
         # Wait a moment for room echoes to die down
         time.sleep(1.0)
         
-        # Drain queue of any self-hearing
+        # Drain mic queue of any self-hearing
         while not audio_queue.empty():
             try: audio_queue.get_nowait()
             except queue.Empty: break
@@ -266,6 +303,11 @@ def main():
     
     logger.info("Hardware Initialized.")
 
+    # Initialize Audio Player (Zero-Disk, Persistent OutputStream)
+    player = AudioPlayer(samplerate=PLAYBACK_RATE, channels=1)
+    player.start()
+    logger.info("AudioPlayer: Ready.")
+
     # Boot Sound & Animation
     # logger.info("Playing Boot Sound...")
     # play_wav(boot_sound_data)
@@ -300,8 +342,8 @@ def main():
             try:
                 with open(startup_wav, "rb") as f:
                     wav_data = f.read()
-                # Play in thread so we can move simultaneously
-                threading.Thread(target=play_wav, args=(wav_data,), daemon=True).start()
+                # Play non-blocking so we can move simultaneously
+                player.play_wav_bytes(wav_data)
             except Exception as e:
                 logger.error(f"Startup Audio Failed: {e}")
         
@@ -605,7 +647,7 @@ def main():
                 if r.status_code == 200:
                     leds.set_state(LEDState.SPEAKING)
                     head.look_up(20)
-                    stream_audio_response(r, leds, on_server_command)
+                    stream_audio_response(r, leds, player, on_server_command)
                     
                     last_activity_time = time.time()
                     
@@ -797,7 +839,7 @@ def main():
                                     if r.status_code == 200:
                                         leds.set_state(LEDState.SPEAKING)
                                         head.look_up(20)
-                                        stream_audio_response(r, leds, on_server_command)
+                                        stream_audio_response(r, leds, player, on_server_command)
                                         logger.info(f"[LATENCY] Round-trip: {time.time() - start_time:.2f}s")
                                         
                                         # DEFERRED ACTION CHECK

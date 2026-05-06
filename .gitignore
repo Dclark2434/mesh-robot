@@ -5,6 +5,7 @@ win_env/
 venv-win/
 venv/
 venv-client/
+venv-native/
 .venv/
 env/
 input_buffer/
