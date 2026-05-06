@@ -168,25 +168,24 @@ async def interact_generator(audio_bytes, image_bytes=None, text_prompt=None, te
         # Add buffer (2.0s) to account for 'Ack' sound playback and reaction time
         USER_STATES[user_id] = time.time() + 2.0
         
-        # Feedback on trigger
-        ack_bytes = voice_engine.get_prebaked_sound(ack_type)
-        if ack_bytes:
-            logger.info(f"[FEEDBACK] Yielding {ack_type} sound...")
-            yield ack_bytes
+        # Feedback on trigger (DISABLED: measuring raw latency)
+        # ack_bytes = voice_engine.get_prebaked_sound(ack_type)
+        # if ack_bytes:
+        #     logger.info(f"[FEEDBACK] Yielding {ack_type} sound...")
+        #     yield ack_bytes
         
         if len(remaining_command) < 2: return 
     elif is_focused:
         # If already focused, only say "Checking..." for longer commands
         USER_STATES[user_id] = time.time()
-        ack_bytes = voice_engine.get_prebaked_sound("processing")
-        
         # Suppress feedback for automated vision requests
         # Why? Because the robot just clicked the camera, no need to beep again.
-        is_automated_vision = "describe what you see" in clean_input and "image" in clean_input
+        # is_automated_vision = "describe what you see" in clean_input and "image" in clean_input
         
-        if ack_bytes and not is_poke and not is_automated_vision:
-             logger.info(f"[FEEDBACK] Yielding processing sound (Focused mode)...")
-             yield ack_bytes
+        # (DISABLED: measuring raw latency)
+        # if ack_bytes and not is_poke and not is_automated_vision:
+        #      logger.info(f"[FEEDBACK] Yielding processing sound (Focused mode)...")
+        #      yield ack_bytes
     else:
         logger.debug(f"[IGNORED] {clean_input}")
         yield json.dumps({"status": "ignored"}).encode()
