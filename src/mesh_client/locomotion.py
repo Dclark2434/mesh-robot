@@ -11,7 +11,7 @@ class LocomotionController:
     def __init__(self, servo_ctrl: ServoController, imu=None):
         self.servo = servo_ctrl
         self.imu = imu
-        self.body_height = -50 # Adjusted to -50. Lower center of gravity. (Prev: -60)
+        self.body_height = -40 # Raised to -40 for better ground clearance. (Prev: -50)
         # Body and Leg geometry (from Freenove control.py)
         # Note: These values are specific to the Freenove Big Hexapod
         self.body_points = [
@@ -26,8 +26,8 @@ class LocomotionController:
         
         # Individual Leg Offsets (Fine Tuning)
         # [FrontRight, MidRight, RearRight, RearLeft, MidLeft, FrontLeft]
-        # Positive = Lower, Negative = Higher
-        self.leg_z_offsets = [0, 0, 0, 0, 0, -10] # 10mm boost to Front Left to stop dragging
+        # Positive = Higher Lift
+        self.leg_z_offsets = [0, 0, 0, 0, 0, 30] # Aggressive 30mm boost to Front Left
         
         # Dynamic Gait Parameters (Traction Control)
         self.body_pitch = 0.0 # Lean Forward/Back (Degrees)
@@ -248,11 +248,8 @@ class LocomotionController:
         """Generic gait execution wrapper."""
         # Dynamic Z-Step
         # User Req: Higher lift to avoid dragging + High Step at low speed
-        # Base Lift: 45mm (Fast/Min) -> up to 85mm (Slow)
-        # Speed 0.5 -> 85mm
-        # Speed 1.0 -> 75mm
-        # Speed 1.5 -> 65mm
-        z_step = max(45, 95 - (speed * 20))
+        # Base Lift: 65mm (Min) -> up to 105mm (Slow)
+        z_step = max(65, 115 - (speed * 20))
         
         # Turn Boost: Turning causes lateral drag if feet don't clear carpet
         if abs(angle) > 0:
