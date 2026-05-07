@@ -24,13 +24,12 @@ MESH is a "Brain" for Freenove Big Hexapod robots. It features a custom speech-t
 ## Key Features
 
 - **Dual Brain Core**: Seamlessly toggle between Google Gemini (Cloud) and Ollama (Local).
-- **Pro-Grade Voice**: ElevenLabs integration for expressive speech (laughs, sighs) with seamless fallback to F5-TTS (Local and free).
-- **Advanced TTS**: State-of-the-art voice cloning via F5-TTS or Chatterbox.
-- **Real-time Senses**: Whisper-powered STT for hands-free interaction.
-- **Vision System**: Image analysis and commentary. - Active development...
-- **Custom Identity**: Configurable cynical, dry, and military-aware persona.
-- **Command Engine**: Integrated stubs for hardware control (walking, scanning, etc.).
-- **Server Launcher GUI**: Launching server includes a GUI to help guide users through launching server with correct environment variables and api keys.
+- **Multi-Personality Engine**: Switch between distinct personas (**MESH**, **Rocky**, **TARS**) via the GUI.
+- **Dynamic Voice Cloning**: Automatic reference audio swapping based on personality (`mesh.wav`, `rocky.wav`, `tars.wav`).
+- **Succession Planning**: Advanced command engine that executes complex, multi-step plans sequentially.
+- **Pro-Grade Voice**: ElevenLabs integration for expressive speech (laughs, sighs) with seamless fallback to F5-TTS or Chatterbox.
+- **Real-time Senses**: Whisper-powered STT and Mono-camera vision analysis.
+- **Server Launcher GUI v1.2**: For managing API keys, personalities, and system initialization.
 
 ### Voice Engine Comparison
 
@@ -52,7 +51,8 @@ You can control M.E.S.H. using natural language. Below are the supported capabil
 
 ### Movement
 - **Walk**: "Walk forward 5 steps", "Move ahead".
-- **Turn**: "Turn left", "Turn right", "Spin around".
+- **Turn**: "Turn left", "Turn right", "Spin around" (Standardized to 180-degree turn).
+- **Strafe**: "Step left", "Strafe right".
 - **Back up**: "Back up", "Walk backward".
 
 ### Head
@@ -72,12 +72,15 @@ You can control M.E.S.H. using natural language. Below are the supported capabil
   - *Note: Auto-relaxes after 10s of inactivity.*
 - **Reset / Lay Flat**: "Reset posture", "Lay flat". (Safe installation pose for picking up).
 
-### Comedic Timing
+### Comedic Timing & Gestures
 The robot can "act" while speaking by embedding Action Tags in its response.
 - "Scanning for intelligent life. [ACTION: LOOK_LEFT] [ACTION: LOOK_RIGHT] ...Negative."
-- "Self-destruct in 3... 2... [ACTION: BUZZER_ALARM] ...Kidding."
+- "Fist-bump! [ACTION: WAVE]"
+- "I am excited! [ACTION: TIPPY_TAP]"
 - "Look at this mess. [ACTION: LOOK_DOWN] Disappointing."
-- "Power management engaged. [ACTION: RELAX] Don't wake me."
+
+### Succession Planning
+If you give multiple commands at once (e.g., *"Walk forward 3 steps, then turn around and wave"*), M.E.S.H. will generate a sequential execution plan and perform them one by one.
 
 ### Expressive Audio (ElevenLabs and Chatterbox Turbo Only)
 When using the elevenlabs voice engine, the robot uses audio tags to add emotion.
@@ -110,6 +113,7 @@ Control M.E.S.H. via environment variables.
 
 | Variable | Default | Description |
 |----------|---------|-------------|
+| `MESH_PERSONALITY` | `mesh` | Current persona (`mesh`, `rocky`, `tars`). |
 | `USE_GEMINI` | `True` | Use Google Gemini Flash (Cloud). `False` for local Ollama. |
 | `USE_ELEVENLABS` | `False` | Use ElevenLabs API. `False` for local F5/XTTS. |
 | `USE_F5_TTS` | `True` | Use F5-TTS (SOTA). `False` for XTTS v2 (Legacy). |
@@ -149,7 +153,7 @@ pip install -e .[server] --index-url https://download.pytorch.org/whl/cu121 --ex
 
 ```
 > [!TIP]
-> If you replace `src/mesh_server/reference.wav`, you MUST re-run `bake_sounds.py` to regenerate the system sounds in the new voice. Otherwise your robot will have split personality.
+> **Voice Customization**: Drop a `.wav` file into `src/mesh_server/personalities/` named after your personality (e.g., `rocky.wav`) to use a custom voice for that character. If no specific file is found, it falls back to the default `reference.wav`.
 
 ```bash
 # Start the brain (GUI Launcher)
