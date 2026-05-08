@@ -212,8 +212,10 @@ class MeshWebRTCClient:
                 level = np.abs(mono_data).mean()
                 print(f"Mic Heartbeat - Frame {frame_count}, Level: {level:.2f}")
 
+            # NEW: LiveKit 1.x requires samples_per_channel
+            samples_per_channel = len(mono_data)
             asyncio.run_coroutine_threadsafe(
-                self.audio_source.capture_frame(rtc.AudioFrame(mono_data.tobytes(), SAMPLE_RATE, CHANNELS)),
+                self.audio_source.capture_frame(rtc.AudioFrame(mono_data.tobytes(), SAMPLE_RATE, CHANNELS, samples_per_channel)),
                 self.loop
             )
 
@@ -235,7 +237,9 @@ class MeshWebRTCClient:
         """Receive from LiveKit and play to sounddevice."""
         logger.info("Audio Playback started...")
         audio_stream = rtc.AudioStream(track)
-        async for frame in audio_stream:
+        async for event in audio_stream:
+            # Handle both AudioFrame and AudioFrameEvent
+            frame = event.frame if hasattr(event, "frame") else event
             self.playback_stream.write(np.frombuffer(frame.data, dtype='int16'))
 
     async def run(self):
