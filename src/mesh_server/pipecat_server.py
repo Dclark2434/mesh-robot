@@ -224,18 +224,11 @@ async def main():
     tts = EmbeddedChatterboxTTS()
     action_processor = ActionTagProcessor(transport)
 
-    # 6. Pipeline with Tracers
+    # 6. Pipeline (TEST MODE)
     pipeline = Pipeline([
         transport.input(),
         Tracer("A"),
-        aggregator,
         Tracer("B"),
-        llm,
-        Tracer("C"),
-        action_processor,
-        Tracer("D"),
-        tts,
-        Tracer("E"),
         transport.output()
     ])
 
