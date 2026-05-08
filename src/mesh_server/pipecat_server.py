@@ -40,6 +40,7 @@ class ActionTagProcessor(FrameProcessor):
         self._buffer = ""
 
     async def process_frame(self, frame: Frame, direction: FrameDirection):
+        logger.debug(f"ActionTagProcessor: Processing frame {type(frame).__name__}")
         if isinstance(frame, LLMTextFrame):
             text = frame.text
             self._buffer += text
@@ -64,12 +65,7 @@ class ActionTagProcessor(FrameProcessor):
                 # Remove from buffer to prevent it being sent to TTS
                 self._buffer = self._buffer.replace(f"[ACTION: {action_str}]", "")
             
-            # Also clean vocal tags if necessary, though Chatterbox handles them
-            # For now, we only strip the ACTION tags so the TTS doesn't read them
-            
             # Push the cleaned text forward
-            # Note: We need to be careful with partial tags at the end of the buffer
-            # If the buffer ends with '[', we wait.
             clean_text = self._buffer
             if '[' in clean_text and ']' not in clean_text[clean_text.rfind('['):]:
                 # Partial tag detected at the end, keep it in buffer
@@ -83,7 +79,7 @@ class ActionTagProcessor(FrameProcessor):
                 logger.info(f"LLM Output (cleaned): {sendable_text}")
                 await self.push_frame(LLMTextFrame(sendable_text))
         else:
-            await super().process_frame(frame, direction)
+            await self.push_frame(frame, direction)
 
 async def main():
     # Ensure LiveKit credentials are present
@@ -116,7 +112,6 @@ async def main():
     )
 
     # 2. Multimodal Context Aggregator
-    # This collects raw audio and appends it to the LLM context as a 'Part'
     from pipecat.processors.aggregators.llm_context import LLMContext
     from pipecat.processors.aggregators.llm_response_universal import LLMUserAggregator
     
@@ -127,26 +122,20 @@ async def main():
             self._frame_count = 0
 
         async def push_aggregation(self):
-            # This is called by the turn controller when the user stops speaking
             if self._audio_buffer:
                 logger.info(f"Aggregating {len(self._audio_buffer)} frames for Gemini.")
-                # Native audio injection
                 await self._context.add_audio_frames_message(audio_frames=self._audio_buffer)
                 self._audio_buffer = []
-                # Push the updated context frame to the pipeline
                 await self.push_context_frame()
-                # Return the aggregation (audio doesn't have text, but we return a placeholder)
                 return "Audio Message"
             return ""
 
         async def process_frame(self, frame, direction):
-            from pipecat.frames.frames import AudioRawFrame, UserStartedSpeakingFrame
-            
+            logger.debug(f"MultimodalAggregator: Processing frame {type(frame).__name__}")
             if isinstance(frame, AudioRawFrame):
                 self._audio_buffer.append(frame)
                 self._frame_count += 1
                 if self._frame_count % 100 == 0:
-                    # Server-side volume check
                     level = np.abs(np.frombuffer(frame.audio, dtype=np.int16)).mean()
                     logger.info(f"Server receiving audio - Frame {self._frame_count}, Level: {level:.2f}")
                 await super().process_frame(frame, direction)
@@ -164,11 +153,12 @@ async def main():
     
     aggregator = MultimodalAudioAggregator(context)
 
-    # 3. LLM (Gemini 3.0 Flash - Standard API)
+    # 3. LLM (Gemini)
+    MODEL_NAME = "gemini-1.5-flash" if config.GEMINI_MODEL_NAME == "gemini-3-flash-preview" else config.GEMINI_MODEL_NAME
     llm = GoogleLLMService(
         api_key=config.GEMINI_API_KEY,
         settings=GoogleLLMService.Settings(
-            model=config.GEMINI_MODEL_NAME # gemini-3-flash-preview
+            model=MODEL_NAME
         )
     )
 
@@ -201,6 +191,7 @@ async def main():
     # Handle interruptions & UI state
     @transport.event_handler("on_participant_started_speaking")
     async def on_vad_start(transport, participant):
+        logger.info(f"VAD: {participant.identity} started speaking. Cancelling current task.")
         # If Rocky is currently in the middle of a thought, note the interruption
         # so he can react to it in his next turn.
         logger.info("User started speaking, interrupting...")
