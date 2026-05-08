@@ -35,16 +35,36 @@ CHANNELS = 1
 
 class MeshWebRTCClient:
     def __init__(self):
-        self.loop = asyncio.get_event_loop()
-        # Hardware
+        # Hardware (Deferred init)
+        self.leds = None
+        self.sc = None
+        self.head = None
+        self.loco = None
+        self.anim = None
+        self.dispatcher = None
+        
+        # LiveKit (Deferred init)
+        self.room = None
+        self.audio_source = None
+        self.audio_track = None
+        self.playback_stream = None
+        self.loop = None
+
+    async def _init_hardware(self):
+        """Initialize hardware within the async loop."""
+        logger.info("Initializing Hardware...")
         self.leds = LEDManager()
         self.sc = ServoController()
         self.head = HeadController(self.sc)
-        self.loco = LocomotionController(self.sc, None) # No IMU for simple client
+        self.loco = LocomotionController(self.sc, None)
         self.anim = AnimationController(self.loco, self.head)
         self.dispatcher = CommandDispatcher()
-        
-        # LiveKit
+        self._register_commands()
+
+    async def _init_livekit(self):
+        """Initialize LiveKit within the async loop."""
+        logger.info("Initializing LiveKit objects...")
+        self.loop = asyncio.get_running_loop()
         self.room = rtc.Room()
         self.audio_source = rtc.AudioSource(SAMPLE_RATE, CHANNELS)
         self.audio_track = rtc.LocalAudioTrack.create_audio_track("mic", self.audio_source)
@@ -52,17 +72,14 @@ class MeshWebRTCClient:
         # Audio Playback
         logger.info(f"Opening Output Stream on device: {AUDIO_OUT_DEVICE if AUDIO_OUT_DEVICE is not None else 'default'}")
         self.playback_stream = sd.OutputStream(
-            samplerate=24000, # Matches Chatterbox output
+            samplerate=24000, 
             channels=1,
             dtype='int16',
-            blocksize=480, # 20ms at 24kHz
+            blocksize=480,
             device=AUDIO_OUT_DEVICE
         )
         self.playback_stream.start()
-        
-        # Register commands
-        self._register_commands()
-        
+
     def _register_commands(self):
         # Register all known actions to the dispatcher
         commands = [
@@ -72,7 +89,6 @@ class MeshWebRTCClient:
             "nod", "shake", "smh", "roll_eyes", "laugh", "bow", "wiggle",
             "relax", "stand_by", "reset", "lay_flat"
         ]
-        
         for cmd in commands:
             self.dispatcher.register(cmd, lambda p, c=cmd: self._handle_physical_action(c, p))
 
@@ -184,10 +200,9 @@ class MeshWebRTCClient:
             if status:
                 print(f"!! Mic Status: {status}")
             
-            # Convert Stereo (2ch) to Mono (1ch) if necessary
-            # indata shape is (frames, channels)
+            # Convert Stereo (2ch) to Mono (1ch)
             if indata.shape[1] > 1:
-                mono_data = indata[:, 0] # Just take left channel
+                mono_data = indata[:, 0]
             else:
                 mono_data = indata.flatten()
 
@@ -203,7 +218,6 @@ class MeshWebRTCClient:
             )
 
         try:
-            # Note: We request 2 channels because many USB mics on Pi are stereo-only hardware
             with sd.InputStream(
                 samplerate=SAMPLE_RATE, 
                 channels=2, 
@@ -222,10 +236,11 @@ class MeshWebRTCClient:
         logger.info("Audio Playback started...")
         audio_stream = rtc.AudioStream(track)
         async for frame in audio_stream:
-            # frame.data is bytes (int16 usually)
             self.playback_stream.write(np.frombuffer(frame.data, dtype='int16'))
 
     async def run(self):
+        await self._init_hardware()
+        await self._init_livekit()
         await self.connect()
         self.leds.set_state(LEDState.IDLE)
         while self.room.isconnected():
