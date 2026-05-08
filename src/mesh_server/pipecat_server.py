@@ -224,11 +224,30 @@ async def main():
     tts = EmbeddedChatterboxTTS()
     action_processor = ActionTagProcessor(transport)
 
-    # 6. Pipeline (TEST MODE)
+    class Tracer(FrameProcessor):
+        def __init__(self, name: str):
+            super().__init__()
+            self._name = name
+
+        async def process_frame(self, frame: Frame, direction: FrameDirection):
+            logger.info(f"[TRACER:{self._name}] Received {type(frame).__name__}")
+            await self.push_frame(frame, direction)
+            logger.info(f"[TRACER:{self._name}] Pushed {type(frame).__name__}")
+
+    # (Previous classes like MultimodalAudioAggregator, ActionTagProcessor, and EmbeddedChatterboxTTS are already defined above)
+
+    # 6. Pipeline with Tracers
     pipeline = Pipeline([
         transport.input(),
         Tracer("A"),
+        aggregator,
         Tracer("B"),
+        llm,
+        Tracer("C"),
+        action_processor,
+        Tracer("D"),
+        tts,
+        Tracer("E"),
         transport.output()
     ])
 
