@@ -118,22 +118,25 @@ async def main():
             super().__init__(context)
             self._audio_buffer = []
 
+        async def push_aggregation(self):
+            # This is called by the turn controller when the user stops speaking
+            if self._audio_buffer:
+                logger.info(f"Aggregated {len(self._audio_buffer)} audio frames for Gemini analysis.")
+                # Native audio injection
+                await self._context.add_audio_frames_message(audio_frames=self._audio_buffer)
+                self._audio_buffer = []
+                # Push the updated context frame to the pipeline
+                await self.push_context_frame()
+                # Return the aggregation (audio doesn't have text, but we return a placeholder)
+                return "Audio Message"
+            return ""
+
         async def process_frame(self, frame, direction):
-            from pipecat.frames.frames import AudioRawFrame, UserStartedSpeakingFrame, UserStoppedSpeakingFrame, LLMContextFrame
-            
+            from pipecat.frames.frames import AudioRawFrame, UserStartedSpeakingFrame
             if isinstance(frame, AudioRawFrame):
                 self._audio_buffer.append(frame)
             elif isinstance(frame, UserStartedSpeakingFrame):
                 self._audio_buffer = []
-                await super().process_frame(frame, direction)
-            elif isinstance(frame, UserStoppedSpeakingFrame):
-                if self._audio_buffer:
-                    # Create the native audio message for Gemini
-                    logger.info(f"Aggregated {len(self._audio_buffer)} audio frames for Gemini analysis.")
-                    await self._context.add_audio_frames_message(audio_frames=self._audio_buffer)
-                    self._audio_buffer = []
-                    # Push context to LLM
-                    await self.push_frame(LLMContextFrame(self._context))
                 await super().process_frame(frame, direction)
             else:
                 await super().process_frame(frame, direction)
