@@ -187,14 +187,18 @@ async def main():
     ))
 
     # Handle participant connection for proactive greeting
+    greeting_triggered = False
+
     @transport.event_handler("on_participant_connected")
     async def on_participant_connected(transport, participant):
-        # Handle both string identity and participant object
+        nonlocal greeting_triggered
         identity = participant if isinstance(participant, str) else getattr(participant, "identity", "unknown")
         logger.info(f"Participant connected: {identity}")
-        if identity == "MESH-Robot":
-            logger.info("Robot joined. Triggering proactive greeting...")
+        
+        if not greeting_triggered:
+            logger.info(f"First participant ({identity}) joined. Triggering proactive greeting...")
             await task.queue_frame(LLMContextFrame(context))
+            greeting_triggered = True
 
     runner = PipelineRunner()
     
