@@ -110,9 +110,10 @@ async def main():
 
     # 2. Multimodal Context Aggregator
     # This collects raw audio and appends it to the LLM context as a 'Part'
-    from pipecat.processors.aggregators.llm_context import LLMContext, LLMUserContextAggregator
+    from pipecat.processors.aggregators.llm_context import LLMContext
+    from pipecat.processors.aggregators.llm_response_universal import LLMUserAggregator
     
-    class MultimodalAudioAggregator(LLMUserContextAggregator):
+    class MultimodalAudioAggregator(LLMUserAggregator):
         def __init__(self, context: LLMContext):
             super().__init__(context)
             self._audio_buffer = []
