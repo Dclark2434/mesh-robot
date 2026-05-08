@@ -3,6 +3,7 @@ import asyncio
 import os
 import re
 import sys
+import numpy as np
 from typing import List
 
 from pipecat.frames.frames import (
@@ -117,11 +118,12 @@ async def main():
         def __init__(self, context: LLMContext):
             super().__init__(context)
             self._audio_buffer = []
+            self._frame_count = 0
 
         async def push_aggregation(self):
             # This is called by the turn controller when the user stops speaking
             if self._audio_buffer:
-                logger.info(f"Aggregated {len(self._audio_buffer)} audio frames for Gemini analysis.")
+                logger.info(f"Aggregating {len(self._audio_buffer)} frames for Gemini.")
                 # Native audio injection
                 await self._context.add_audio_frames_message(audio_frames=self._audio_buffer)
                 self._audio_buffer = []
@@ -133,9 +135,17 @@ async def main():
 
         async def process_frame(self, frame, direction):
             from pipecat.frames.frames import AudioRawFrame, UserStartedSpeakingFrame
+            
             if isinstance(frame, AudioRawFrame):
                 self._audio_buffer.append(frame)
+                self._frame_count += 1
+                if self._frame_count % 100 == 0:
+                    # Server-side volume check
+                    level = np.abs(np.frombuffer(frame.audio, dtype=np.int16)).mean()
+                    logger.debug(f"Server receiving audio - Frame {self._frame_count}, Level: {level:.2f}")
+                await super().process_frame(frame, direction)
             elif isinstance(frame, UserStartedSpeakingFrame):
+                logger.info("VAD Trigger: User started speaking.")
                 self._audio_buffer = []
                 await super().process_frame(frame, direction)
             else:
