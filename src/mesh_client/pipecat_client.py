@@ -242,18 +242,44 @@ class MeshWebRTCClient:
             frame = event.frame if hasattr(event, "frame") else event
             self.playback_stream.write(np.frombuffer(frame.data, dtype='int16'))
 
+    async def shutdown(self):
+        """Graceful cleanup."""
+        logger.info("Shutting down client...")
+        if self.room and self.room.isconnected():
+            await self.room.disconnect()
+        
+        if self.playback_stream:
+            try:
+                self.playback_stream.stop()
+                self.playback_stream.close()
+            except:
+                pass
+            
+        if self.sc:
+            self.sc.relax()
+        
+        if self.leds:
+            self.leds.set_state(LEDState.IDLE)
+        logger.info("Cleanup complete.")
+
     async def run(self):
-        await self._init_hardware()
-        await self._init_livekit()
-        await self.connect()
-        self.leds.set_state(LEDState.IDLE)
-        while self.room.isconnected():
-            await asyncio.sleep(1.0)
+        try:
+            await self._init_hardware()
+            await self._init_livekit()
+            await self.connect()
+            self.leds.set_state(LEDState.IDLE)
+            while self.room.isconnected():
+                await asyncio.sleep(1.0)
+        finally:
+            await self.shutdown()
 
 if __name__ == "__main__":
     # Quick Device Audit
     print("\n--- AUDIO DEVICE AUDIT ---")
-    print(sd.query_devices())
+    try:
+        print(sd.query_devices())
+    except Exception as e:
+        print(f"Could not query devices: {e}")
     print(f"Target IN Device: {AUDIO_IN_DEVICE}")
     print(f"Target OUT Device: {AUDIO_OUT_DEVICE}")
     print("--------------------------\n")
@@ -262,4 +288,6 @@ if __name__ == "__main__":
     try:
         asyncio.run(client.run())
     except KeyboardInterrupt:
-        logger.info("Shutting down...")
+        pass # run()'s finally block handles it
+    except Exception as e:
+        logger.error(f"Main Loop Error: {e}")
