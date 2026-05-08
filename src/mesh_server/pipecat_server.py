@@ -186,26 +186,15 @@ async def main():
         enable_metrics=True
     ))
 
-    # Handle interruptions & UI state
+    # Handle participant connection for proactive greeting
     @transport.event_handler("on_participant_connected")
     async def on_participant_connected(transport, participant):
-        logger.info(f"Participant connected: {participant.identity}")
-        if participant.identity == "MESH-Robot":
+        # Handle both string identity and participant object
+        identity = participant if isinstance(participant, str) else getattr(participant, "identity", "unknown")
+        logger.info(f"Participant connected: {identity}")
+        if identity == "MESH-Robot":
             logger.info("Robot joined. Triggering proactive greeting...")
             await task.queue_frame(LLMContextFrame(context))
-
-    @transport.event_handler("on_participant_started_speaking")
-    async def on_vad_start(transport, participant):
-        logger.info(f"VAD: {participant.identity} started speaking. Cancelling current task.")
-        # If Rocky is currently in the middle of a thought, note the interruption
-        # so he can react to it in his next turn.
-        logger.info("User started speaking, interrupting...")
-        context.add_message({"role": "system", "content": "The user interrupted you. Feel free to be slightly annoyed or surprised in your next response if it fits your personality."})
-        await task.cancel() # Interrupt current response
-
-    @transport.event_handler("on_participant_stopped_speaking")
-    async def on_vad_stop(transport, participant):
-        logger.info("User stopped speaking.")
 
     runner = PipelineRunner()
     
