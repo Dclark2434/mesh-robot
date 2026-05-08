@@ -80,6 +80,7 @@ class ActionTagProcessor(FrameProcessor):
                 self._buffer = ""
             
             if sendable_text:
+                logger.info(f"LLM Output (cleaned): {sendable_text}")
                 await self.push_frame(LLMTextFrame(sendable_text))
         else:
             await super().process_frame(frame, direction)
@@ -107,7 +108,11 @@ async def main():
         url=config.LIVEKIT_URL,
         token=token,
         room_name="mesh-robot-room",
-        params=LiveKitParams(vad=SileroVADAnalyzer())
+        params=LiveKitParams(
+            audio_out_enabled=True,
+            audio_out_sample_rate=24000,
+            vad=SileroVADAnalyzer()
+        )
     )
 
     # 2. Multimodal Context Aggregator
