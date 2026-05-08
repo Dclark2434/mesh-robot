@@ -72,3 +72,7 @@ class ChatterboxTTSService(TTSService):
         # Assuming standard LLMTextFrame or similar
         async for audio_frame in self.run_tts(frame.text):
             await self.push_frame(audio_frame)
+
+    async def process_frame(self, frame, direction):
+        logger.info(f"ChatterboxTTS: Processing frame {type(frame).__name__}")
+        await super().process_frame(frame, direction)
