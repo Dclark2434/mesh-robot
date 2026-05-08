@@ -170,8 +170,10 @@ async def main():
 
         async def process_frame(self, frame: Frame, direction: FrameDirection):
             logger.info(f"[TRACER:{self._name}] Received {type(frame).__name__}")
-            await self.push_frame(frame, direction)
+            await super().process_frame(frame, direction)
             logger.info(f"[TRACER:{self._name}] Pushed {type(frame).__name__}")
+
+    # (Keep Aggregator and ActionTagProcessor as they were, but double check they use super())
 
     # 4. TTS (Chatterbox Turbo - Embedded for diagnostic)
     from pipecat.services.tts_service import TTSService
