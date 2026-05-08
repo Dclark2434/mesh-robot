@@ -163,21 +163,75 @@ async def main():
         )
     )
 
-    # 4. TTS (Chatterbox Turbo)
-    tts = ChatterboxTTSService()
+    class Tracer(FrameProcessor):
+        def __init__(self, name: str):
+            super().__init__()
+            self._name = name
 
-    # 5. Action Processor
+        async def process_frame(self, frame: Frame, direction: FrameDirection):
+            logger.info(f"[TRACER:{self._name}] Received {type(frame).__name__}")
+            await self.push_frame(frame, direction)
+            logger.info(f"[TRACER:{self._name}] Pushed {type(frame).__name__}")
+
+    # 4. TTS (Chatterbox Turbo - Embedded for diagnostic)
+    from pipecat.services.tts_service import TTSService
+    from pipecat.frames.frames import TTSAudioRawFrame
+    import torch
+    
+    class EmbeddedChatterboxTTS(TTSService):
+        def __init__(self, **kwargs):
+            super().__init__(**kwargs)
+            self._device = "cuda" if torch.cuda.is_available() else "cpu"
+            self._sample_rate = 24000
+            self._engine = None
+            self._load_engine()
+
+        def _load_engine(self):
+            try:
+                from chatterbox.tts_turbo import ChatterboxTurboTTS
+                logger.info(f"Initializing Chatterbox Turbo on {self._device}...")
+                self._engine = ChatterboxTurboTTS.from_pretrained(self._device)
+                logger.info("Chatterbox Turbo loaded successfully.")
+            except Exception as e:
+                logger.error(f"Failed to load Chatterbox: {e}")
+
+        async def run_tts(self, text: str):
+            if not self._engine: return
+            try:
+                import asyncio
+                audio_tensor = await asyncio.to_thread(self._engine.generate, text, temperature=0.8)
+                if hasattr(audio_tensor, "cpu"):
+                    wav = audio_tensor.squeeze().cpu().numpy()
+                else:
+                    wav = audio_tensor
+                audio_int16 = (wav * 32767).astype(np.int16).tobytes()
+                yield TTSAudioRawFrame(audio=audio_int16, sample_rate=self._sample_rate, num_channels=1)
+            except Exception as e:
+                logger.error(f"TTS error: {e}")
+
+        async def handle_text_frame(self, frame, context_id=None):
+            async for audio_frame in self.run_tts(frame.text):
+                await self.push_frame(audio_frame)
+
+        async def process_frame(self, frame, direction):
+            logger.info(f"EmbeddedChatterbox: Processing frame {type(frame).__name__}")
+            await super().process_frame(frame, direction)
+
+    tts = EmbeddedChatterboxTTS()
     action_processor = ActionTagProcessor(transport)
 
-    # 6. Pipeline
-    # Pipeline flow: 
-    # Transport In (Audio) -> Aggregator (WAV Packager) -> LLM (Standard Multimodal) -> Action Processor -> TTS -> Transport Out
+    # 6. Pipeline with Tracers
     pipeline = Pipeline([
         transport.input(),
+        Tracer("A"),
         aggregator,
+        Tracer("B"),
         llm,
+        Tracer("C"),
         action_processor,
+        Tracer("D"),
         tts,
+        Tracer("E"),
         transport.output()
     ])
 
