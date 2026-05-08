@@ -154,11 +154,10 @@ async def main():
     aggregator = MultimodalAudioAggregator(context)
 
     # 3. LLM (Gemini)
-    MODEL_NAME = "gemini-1.5-flash" if config.GEMINI_MODEL_NAME == "gemini-3-flash-preview" else config.GEMINI_MODEL_NAME
     llm = GoogleLLMService(
         api_key=config.GEMINI_API_KEY,
         settings=GoogleLLMService.Settings(
-            model=MODEL_NAME
+            model="gemini-3-flash-preview"
         )
     )
 
@@ -185,10 +184,14 @@ async def main():
         enable_metrics=True
     ))
 
-    # Proactive Welcome: Make Rocky introduce himself immediately
-    await task.queue_frame(LLMContextFrame(context))
-
     # Handle interruptions & UI state
+    @transport.event_handler("on_participant_connected")
+    async def on_participant_connected(transport, participant):
+        logger.info(f"Participant connected: {participant.identity}")
+        if participant.identity == "MESH-Robot":
+            logger.info("Robot joined. Triggering proactive greeting...")
+            await task.queue_frame(LLMContextFrame(context))
+
     @transport.event_handler("on_participant_started_speaking")
     async def on_vad_start(transport, participant):
         logger.info(f"VAD: {participant.identity} started speaking. Cancelling current task.")
