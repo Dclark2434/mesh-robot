@@ -125,30 +125,30 @@ async def main():
             self._frame_count = 0
 
         async def process_frame(self, frame: Frame, direction: FrameDirection):
-            print(f"[AGGREGATOR] Received {type(frame).__name__}")
+            # print(f"[AGGREGATOR] Received {type(frame).__name__}") # Silencing for noise, but keeping others
             if isinstance(frame, AudioRawFrame):
                 self._audio_buffer.append(frame)
                 self._frame_count += 1
                 if self._frame_count % 100 == 0:
                     level = np.abs(np.frombuffer(frame.audio, dtype=np.int16)).mean()
                     print(f"[AGGREGATOR] Audio Level: {level:.2f}")
-                
-                # For multimodal, we don't necessarily push the raw audio forward 
-                # unless the LLM expects it. Gemini multimodal expects it via the context.
-                await super().process_frame(frame, direction)
+                await self.push_frame(frame, direction)
             elif isinstance(frame, UserStartedSpeakingFrame):
-                print("[AGGREGATOR] User started speaking, clearing buffer.")
+                print("VAD: [START] User started speaking.")
                 self._audio_buffer = []
-                await super().process_frame(frame, direction)
+                await self.push_frame(frame, direction)
             elif isinstance(frame, UserStoppedSpeakingFrame):
-                print("[AGGREGATOR] User stopped speaking, pushing to Gemini.")
+                print("VAD: [STOP] User stopped speaking. Pushing context to Gemini.")
                 if self._audio_buffer:
+                    logger.info(f"Aggregating {len(self._audio_buffer)} frames for Gemini.")
                     await self._context.add_audio_frames_message(audio_frames=self._audio_buffer)
                     self._audio_buffer = []
                     await self.push_frame(LLMContextFrame(self._context))
-                await super().process_frame(frame, direction)
+                await self.push_frame(frame, direction)
             else:
-                await super().process_frame(frame, direction)
+                if not isinstance(frame, AudioRawFrame):
+                    print(f"[AGGREGATOR] Passing control frame: {type(frame).__name__}")
+                await self.push_frame(frame, direction)
 
     # Initialize Context
     context = LLMContext(messages=[
