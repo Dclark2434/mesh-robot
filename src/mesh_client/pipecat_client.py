@@ -35,6 +35,7 @@ CHANNELS = 1
 
 class MeshWebRTCClient:
     def __init__(self):
+        self.loop = asyncio.get_event_loop()
         # Hardware
         self.leds = LEDManager()
         self.sc = ServoController()
@@ -49,7 +50,7 @@ class MeshWebRTCClient:
         self.audio_track = rtc.LocalAudioTrack.create_audio_track("mic", self.audio_source)
         
         # Audio Playback
-        logger.info(f"Opening Output Stream on device: {AUDIO_OUT_DEVICE or 'default'}")
+        logger.info(f"Opening Output Stream on device: {AUDIO_OUT_DEVICE if AUDIO_OUT_DEVICE is not None else 'default'}")
         self.playback_stream = sd.OutputStream(
             samplerate=24000, # Matches Chatterbox output
             channels=1,
@@ -181,25 +182,31 @@ class MeshWebRTCClient:
         def callback(indata, frames, time, status):
             nonlocal frame_count
             if status:
-                logger.warning(f"Mic Status: {status}")
+                print(f"!! Mic Status: {status}")
             
-            # Debug: Log every 100 frames to verify the mic is alive
+            # Convert Stereo (2ch) to Mono (1ch) if necessary
+            # indata shape is (frames, channels)
+            if indata.shape[1] > 1:
+                mono_data = indata[:, 0] # Just take left channel
+            else:
+                mono_data = indata.flatten()
+
+            # Heartbeat print
             frame_count += 1
-            if frame_count % 100 == 0:
-                # Calculate simple RMS for volume level debugging
-                # (Using absolute mean as a simple volume proxy)
-                level = np.abs(indata).mean()
-                logger.info(f"Mic Activity Heartbeat - Frame {frame_count}, Avg Level: {level:.2f}")
+            if frame_count % 50 == 0:
+                level = np.abs(mono_data).mean()
+                print(f"Mic Heartbeat - Frame {frame_count}, Level: {level:.2f}")
 
             asyncio.run_coroutine_threadsafe(
-                self.audio_source.capture_frame(rtc.AudioFrame(indata.tobytes(), SAMPLE_RATE, CHANNELS)),
-                asyncio.get_event_loop()
+                self.audio_source.capture_frame(rtc.AudioFrame(mono_data.tobytes(), SAMPLE_RATE, CHANNELS)),
+                self.loop
             )
 
         try:
+            # Note: We request 2 channels because many USB mics on Pi are stereo-only hardware
             with sd.InputStream(
                 samplerate=SAMPLE_RATE, 
-                channels=CHANNELS, 
+                channels=2, 
                 dtype='int16', 
                 device=AUDIO_IN_DEVICE,
                 callback=callback
@@ -208,6 +215,7 @@ class MeshWebRTCClient:
                     await asyncio.sleep(1.0)
         except Exception as e:
             logger.error(f"Microphone Stream Error: {e}")
+            print(f"CRITICAL: Mic Stream Failed: {e}")
 
     async def _play_audio(self, track):
         """Receive from LiveKit and play to sounddevice."""
