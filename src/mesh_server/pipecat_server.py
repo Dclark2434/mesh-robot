@@ -40,6 +40,7 @@ class ActionTagProcessor(FrameProcessor):
         super().__init__()
         self._transport = transport
         self._buffer = ""
+        self._started = True
 
     async def process_frame(self, frame: Frame, direction: FrameDirection):
         logger.info(f"ActionTagProcessor: Processing frame {type(frame).__name__}")
@@ -123,6 +124,7 @@ async def main():
             self._context = context
             self._audio_buffer = []
             self._frame_count = 0
+            self._started = True
 
         async def process_frame(self, frame: Frame, direction: FrameDirection):
             # print(f"[AGGREGATOR] Received {type(frame).__name__}") # Silencing for noise, but keeping others
@@ -165,15 +167,6 @@ async def main():
         )
     )
 
-    class Tracer(FrameProcessor):
-        def __init__(self, name: str):
-            super().__init__()
-            self._name = name
-
-        async def process_frame(self, frame: Frame, direction: FrameDirection):
-            logger.info(f"[TRACER:{self._name}] Received {type(frame).__name__}")
-            await super().process_frame(frame, direction)
-            logger.info(f"[TRACER:{self._name}] Pushed {type(frame).__name__}")
 
     # (Keep Aggregator and ActionTagProcessor as they were, but double check they use super())
 
@@ -189,6 +182,7 @@ async def main():
             self._sample_rate = 24000
             self._engine = None
             self._load_engine()
+            self._started = True
 
         def _load_engine(self):
             try:
@@ -229,6 +223,7 @@ async def main():
         def __init__(self, name: str):
             super().__init__()
             self._name = name
+            self._started = True
 
         async def process_frame(self, frame: Frame, direction: FrameDirection):
             logger.info(f"[TRACER:{self._name}] Received {type(frame).__name__}")
