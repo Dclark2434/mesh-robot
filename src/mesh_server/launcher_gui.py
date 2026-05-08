@@ -113,6 +113,31 @@ class MeshLauncher(ctk.CTk):
         start_eleven_voice = os.getenv("ELEVENLABS_VOICE_ID", "")
         if start_eleven_voice: self.eleven_voice_entry.insert(0, start_eleven_voice)
 
+        # LiveKit Section
+        self.livekit_frame = ctk.CTkFrame(self.scroll_frame)
+        self.livekit_frame.grid(row=3, column=0, padx=10, pady=10, sticky="ew")
+        
+        ctk.CTkLabel(self.livekit_frame, text="Live Pipeline (Pipecat)", font=("Arial", 16, "bold")).pack(pady=5)
+        
+        self.use_pipecat_var = ctk.BooleanVar(value=os.getenv("USE_PIPECAT", "False") == "True")
+        self.pipecat_switch = ctk.CTkSwitch(self.livekit_frame, text="Enable Real-Time WebRTC Pipeline", variable=self.use_pipecat_var)
+        self.pipecat_switch.pack(pady=10)
+        
+        self.livekit_url_entry = ctk.CTkEntry(self.livekit_frame, placeholder_text="LiveKit URL (ws://...)", width=300)
+        start_lk_url = os.getenv("LIVEKIT_URL", "ws://localhost:7880")
+        if start_lk_url: self.livekit_url_entry.insert(0, start_lk_url)
+        self.livekit_url_entry.pack(pady=5)
+        
+        self.livekit_key_entry = ctk.CTkEntry(self.livekit_frame, placeholder_text="LiveKit API Key", width=300)
+        start_lk_key = os.getenv("LIVEKIT_API_KEY", "")
+        if start_lk_key: self.livekit_key_entry.insert(0, start_lk_key)
+        self.livekit_key_entry.pack(pady=5)
+        
+        self.livekit_secret_entry = ctk.CTkEntry(self.livekit_frame, placeholder_text="LiveKit API Secret", width=300, show="*")
+        start_lk_secret = os.getenv("LIVEKIT_API_SECRET", "")
+        if start_lk_secret: self.livekit_secret_entry.insert(0, start_lk_secret)
+        self.livekit_secret_entry.pack(pady=5)
+
         # 3. Create Controllers (Now safe to trigger callbacks)
         self.brain_seg = ctk.CTkSegmentedButton(self.brain_frame, values=["Gemini", "Ollama"], variable=self.brain_var, command=self.toggle_brain_inputs)
         self.brain_seg.pack(pady=5)
@@ -205,6 +230,11 @@ class MeshLauncher(ctk.CTk):
         env_dict["CHATTERBOX_MODEL"] = chatterbox_model
         env_dict["HF_TOKEN"] = hf_token
         env_dict["MESH_PERSONALITY"] = persona
+        
+        env_dict["USE_PIPECAT"] = str(self.use_pipecat_var.get())
+        env_dict["LIVEKIT_URL"] = self.livekit_url_entry.get()
+        env_dict["LIVEKIT_API_KEY"] = self.livekit_key_entry.get()
+        env_dict["LIVEKIT_API_SECRET"] = self.livekit_secret_entry.get()
 
         # Write back
         with open(self.env_path, "w") as f:
@@ -214,6 +244,8 @@ class MeshLauncher(ctk.CTk):
         print("Configuration saved to .env")
 
     def launch_system(self):
+        # Capture the state before destroying the window
+        self.should_use_pipecat = self.use_pipecat_var.get()
         self.save_env()
         print("Sanity Check: System Initializing...")
         self.should_launch = True
@@ -226,8 +258,15 @@ if __name__ == "__main__":
     
     # Process Launch Logic (Runs after GUI finishes)
     if getattr(app, 'should_launch', False):
-        server_path = os.path.join(os.path.dirname(os.path.abspath(__file__)), "server.py")
-        print("\n[LAUNCHER] Starting Server...")
+        use_pipecat = getattr(app, 'should_use_pipecat', False)
+        if use_pipecat:
+             server_script = "pipecat_server.py"
+             print("\n[LAUNCHER] Starting Real-Time Pipecat Pipeline...")
+        else:
+             server_script = "server.py"
+             print("\n[LAUNCHER] Starting Legacy HTTP Server...")
+             
+        server_path = os.path.join(os.path.dirname(os.path.abspath(__file__)), server_script)
         try:
             # We use call/run here because we are now in the main thread (no GUI to freeze)
             subprocess.run([sys.executable, server_path], check=True)
