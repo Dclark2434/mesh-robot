@@ -11,6 +11,8 @@ from pipecat.frames.frames import (
     Frame,
     LLMTextFrame,
     LLMContextFrame,
+    UserStartedSpeakingFrame,
+    UserStoppedSpeakingFrame,
     EndFrame,
     CancelFrame,
     StartFrame
@@ -79,7 +81,7 @@ class ActionTagProcessor(FrameProcessor):
                 logger.info(f"LLM Output (cleaned): {sendable_text}")
                 await self.push_frame(LLMTextFrame(sendable_text))
         else:
-            await self.push_frame(frame, direction)
+            await super().process_frame(frame, direction)
 
 async def main():
     # Ensure LiveKit credentials are present
