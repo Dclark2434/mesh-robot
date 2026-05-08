@@ -74,5 +74,6 @@ class ChatterboxTTSService(TTSService):
             await self.push_frame(audio_frame)
 
     async def process_frame(self, frame, direction):
-        logger.info(f"ChatterboxTTS: Processing frame {type(frame).__name__}")
+        logger.info(f"ChatterboxTTS: Received frame {type(frame).__name__}")
         await super().process_frame(frame, direction)
+        logger.info(f"ChatterboxTTS: Pushed frame {type(frame).__name__}")
