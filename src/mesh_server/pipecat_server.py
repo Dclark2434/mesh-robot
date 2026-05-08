@@ -247,9 +247,10 @@ async def main():
         transport.output()
     ])
 
-    task = PipelineTask(pipeline, params=PipelineParams(
+    task = PipelineTask(pipeline, PipelineParams(
         allow_interruptions=True,
-        enable_metrics=True
+        enable_metrics=True,
+        enable_rtvi=False
     ))
 
     # Handle participant connection for proactive greeting
