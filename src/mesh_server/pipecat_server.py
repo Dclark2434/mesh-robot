@@ -81,7 +81,7 @@ class ActionTagProcessor(FrameProcessor):
                 logger.info(f"LLM Output (cleaned): {sendable_text}")
                 await self.push_frame(LLMTextFrame(sendable_text))
         else:
-            await super().process_frame(frame, direction)
+            await self.push_frame(frame, direction)
 
 async def main():
     # Ensure LiveKit credentials are present
@@ -218,8 +218,9 @@ async def main():
                 await self.push_frame(audio_frame)
 
         async def process_frame(self, frame, direction):
-            logger.info(f"EmbeddedChatterbox: Processing frame {type(frame).__name__}")
-            await super().process_frame(frame, direction)
+            logger.info(f"EmbeddedChatterbox: Received frame {type(frame).__name__}")
+            await self.push_frame(frame, direction)
+            logger.info(f"EmbeddedChatterbox: Pushed frame {type(frame).__name__}")
 
     tts = EmbeddedChatterboxTTS()
     action_processor = ActionTagProcessor(transport)
