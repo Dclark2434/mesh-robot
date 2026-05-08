@@ -117,33 +117,35 @@ async def main():
     from pipecat.processors.aggregators.llm_context import LLMContext
     from pipecat.processors.aggregators.llm_response_universal import LLMUserAggregator
     
-    class MultimodalAudioAggregator(LLMUserAggregator):
+    class MultimodalAudioAggregator(FrameProcessor):
         def __init__(self, context: LLMContext):
-            super().__init__(context)
+            super().__init__()
+            self._context = context
             self._audio_buffer = []
             self._frame_count = 0
 
-        async def push_aggregation(self):
-            if self._audio_buffer:
-                logger.info(f"Aggregating {len(self._audio_buffer)} frames for Gemini.")
-                await self._context.add_audio_frames_message(audio_frames=self._audio_buffer)
-                self._audio_buffer = []
-                await self.push_context_frame()
-                return "Audio Message"
-            return ""
-
-        async def process_frame(self, frame, direction):
-            logger.info(f"MultimodalAggregator: Processing frame {type(frame).__name__}")
+        async def process_frame(self, frame: Frame, direction: FrameDirection):
+            print(f"[AGGREGATOR] Received {type(frame).__name__}")
             if isinstance(frame, AudioRawFrame):
                 self._audio_buffer.append(frame)
                 self._frame_count += 1
                 if self._frame_count % 100 == 0:
                     level = np.abs(np.frombuffer(frame.audio, dtype=np.int16)).mean()
-                    logger.info(f"Server receiving audio - Frame {self._frame_count}, Level: {level:.2f}")
+                    print(f"[AGGREGATOR] Audio Level: {level:.2f}")
+                
+                # For multimodal, we don't necessarily push the raw audio forward 
+                # unless the LLM expects it. Gemini multimodal expects it via the context.
                 await super().process_frame(frame, direction)
             elif isinstance(frame, UserStartedSpeakingFrame):
-                logger.info("VAD Trigger: User started speaking.")
+                print("[AGGREGATOR] User started speaking, clearing buffer.")
                 self._audio_buffer = []
+                await super().process_frame(frame, direction)
+            elif isinstance(frame, UserStoppedSpeakingFrame):
+                print("[AGGREGATOR] User stopped speaking, pushing to Gemini.")
+                if self._audio_buffer:
+                    await self._context.add_audio_frames_message(audio_frames=self._audio_buffer)
+                    self._audio_buffer = []
+                    await self.push_frame(LLMContextFrame(self._context))
                 await super().process_frame(frame, direction)
             else:
                 await super().process_frame(frame, direction)
