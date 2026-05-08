@@ -24,6 +24,12 @@ LIVEKIT_API_SECRET = os.getenv("LIVEKIT_API_SECRET", "secret")
 ROOM_NAME = "mesh-robot-room"
 PARTICIPANT_NAME = "MESH-Robot"
 
+# Audio Hardware Indices
+AUDIO_IN_DEVICE = os.getenv("MESH_AUDIO_IN_DEVICE")
+if AUDIO_IN_DEVICE: AUDIO_IN_DEVICE = int(AUDIO_IN_DEVICE)
+AUDIO_OUT_DEVICE = os.getenv("MESH_AUDIO_OUT_DEVICE")
+if AUDIO_OUT_DEVICE: AUDIO_OUT_DEVICE = int(AUDIO_OUT_DEVICE)
+
 SAMPLE_RATE = 16000 # Standard for VAD/LLM
 CHANNELS = 1
 
@@ -43,11 +49,13 @@ class MeshWebRTCClient:
         self.audio_track = rtc.LocalAudioTrack.create_audio_track("mic", self.audio_source)
         
         # Audio Playback
+        logger.info(f"Opening Output Stream on device: {AUDIO_OUT_DEVICE or 'default'}")
         self.playback_stream = sd.OutputStream(
             samplerate=24000, # Matches Chatterbox output
             channels=1,
             dtype='int16',
-            blocksize=480 # 20ms at 24kHz
+            blocksize=480, # 20ms at 24kHz
+            device=AUDIO_OUT_DEVICE
         )
         self.playback_stream.start()
         
@@ -167,19 +175,33 @@ class MeshWebRTCClient:
 
     async def _record_audio(self):
         """Capture from sounddevice and push to LiveKit."""
-        logger.info("Starting Microphone capture...")
+        logger.info(f"Starting Microphone capture on device: {AUDIO_IN_DEVICE or 'default'}...")
         
+        frame_count = 0
         def callback(indata, frames, time, status):
+            nonlocal frame_count
             if status:
                 logger.warning(f"Mic Status: {status}")
-            # Convert float32 to int16 for LiveKit if necessary, 
-            # but sounddevice can provide int16
+            
+            # Debug: Log every 100 frames to verify the mic is alive
+            frame_count += 1
+            if frame_count % 100 == 0:
+                # Calculate simple RMS for volume level debugging
+                rms = np.sqrt(np.mean(indata.astype(float)**2))
+                logger.debug(f"Mic Active - Frame {frame_count}, Level: {rms:.2f}")
+
             asyncio.run_coroutine_threadsafe(
                 self.audio_source.capture_frame(rtc.AudioFrame(indata.tobytes(), SAMPLE_RATE, CHANNELS)),
                 asyncio.get_event_loop()
             )
 
-        with sd.InputStream(samplerate=SAMPLE_RATE, channels=CHANNELS, dtype='int16', callback=callback):
+        with sd.InputStream(
+            samplerate=SAMPLE_RATE, 
+            channels=CHANNELS, 
+            dtype='int16', 
+            device=AUDIO_IN_DEVICE,
+            callback=callback
+        ):
             while self.room.isconnected():
                 await asyncio.sleep(1.0)
 
