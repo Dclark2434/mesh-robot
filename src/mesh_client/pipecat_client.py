@@ -175,7 +175,7 @@ class MeshWebRTCClient:
 
     async def _record_audio(self):
         """Capture from sounddevice and push to LiveKit."""
-        logger.info(f"Starting Microphone capture on device: {AUDIO_IN_DEVICE or 'default'}...")
+        logger.info(f"Starting Microphone capture on device: {AUDIO_IN_DEVICE if AUDIO_IN_DEVICE is not None else 'default'}...")
         
         frame_count = 0
         def callback(indata, frames, time, status):
@@ -187,26 +187,31 @@ class MeshWebRTCClient:
             frame_count += 1
             if frame_count % 100 == 0:
                 # Calculate simple RMS for volume level debugging
-                rms = np.sqrt(np.mean(indata.astype(float)**2))
-                logger.debug(f"Mic Active - Frame {frame_count}, Level: {rms:.2f}")
+                # (Using absolute mean as a simple volume proxy)
+                level = np.abs(indata).mean()
+                logger.info(f"Mic Activity Heartbeat - Frame {frame_count}, Avg Level: {level:.2f}")
 
             asyncio.run_coroutine_threadsafe(
                 self.audio_source.capture_frame(rtc.AudioFrame(indata.tobytes(), SAMPLE_RATE, CHANNELS)),
                 asyncio.get_event_loop()
             )
 
-        with sd.InputStream(
-            samplerate=SAMPLE_RATE, 
-            channels=CHANNELS, 
-            dtype='int16', 
-            device=AUDIO_IN_DEVICE,
-            callback=callback
-        ):
-            while self.room.isconnected():
-                await asyncio.sleep(1.0)
+        try:
+            with sd.InputStream(
+                samplerate=SAMPLE_RATE, 
+                channels=CHANNELS, 
+                dtype='int16', 
+                device=AUDIO_IN_DEVICE,
+                callback=callback
+            ):
+                while self.room.isconnected():
+                    await asyncio.sleep(1.0)
+        except Exception as e:
+            logger.error(f"Microphone Stream Error: {e}")
 
     async def _play_audio(self, track):
         """Receive from LiveKit and play to sounddevice."""
+        logger.info("Audio Playback started...")
         audio_stream = rtc.AudioStream(track)
         async for frame in audio_stream:
             # frame.data is bytes (int16 usually)
@@ -219,6 +224,13 @@ class MeshWebRTCClient:
             await asyncio.sleep(1.0)
 
 if __name__ == "__main__":
+    # Quick Device Audit
+    print("\n--- AUDIO DEVICE AUDIT ---")
+    print(sd.query_devices())
+    print(f"Target IN Device: {AUDIO_IN_DEVICE}")
+    print(f"Target OUT Device: {AUDIO_OUT_DEVICE}")
+    print("--------------------------\n")
+    
     client = MeshWebRTCClient()
     try:
         asyncio.run(client.run())
