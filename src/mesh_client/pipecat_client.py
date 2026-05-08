@@ -53,35 +53,78 @@ class MeshWebRTCClient:
         
         # Register commands
         self._register_commands()
-
-    def _register_commands(self):
-        # Reuse the existing hardware command logic
-        from mesh_client.main import execute_hardware_command
-        # Note: We need a wrapper because main.py's execute_hardware_command 
-        # depends on local variables. We'll implement a clean version here or import correctly.
         
-        # For this integration, we'll map common robot actions
+    def _register_commands(self):
+        # Register all known actions to the dispatcher
         commands = [
             "walk", "walk_forward", "move_forward", "move_backward", 
             "turn_left", "turn_right", "look_left", "look_right", 
             "look_down", "look_up", "look_center", "wave", "tap", 
-            "nod", "shake", "smh", "roll_eyes", "laugh", "bow", "wiggle"
+            "nod", "shake", "smh", "roll_eyes", "laugh", "bow", "wiggle",
+            "relax", "stand_by", "reset", "lay_flat"
         ]
         
-        # Simple mapping to locomotion/animation
         for cmd in commands:
             self.dispatcher.register(cmd, lambda p, c=cmd: self._handle_physical_action(c, p))
 
     def _handle_physical_action(self, action, param):
-        logger.info(f"Physical Action: {action} ({param})")
-        # Logic to trigger anim/loco
-        if action == "wave": self.anim.hand_wave()
-        elif action == "laugh": self.anim.laugh()
-        elif action == "nod": self.anim.nod_yes()
-        elif action == "shake": self.anim.shake_no()
-        elif action == "wiggle": self.anim.palp_wiggle()
-        elif action == "look_center": self.head.look_neutral()
-        # Add more as needed...
+        import re
+        import time
+        logger.info(f"Command Execution: {action} (Param: {param})")
+        
+        # Normalize steps from param
+        steps = 4
+        if param:
+            match = re.search(r'\d+', str(param))
+            if match:
+                steps = min(int(match.group()), 60)
+
+        try:
+            # Movement Actions
+            if action in ["walk", "walk_forward", "move_forward", "move_backward", "turn_left", "turn_right"]:
+                target_pitch = 10.0 if "forward" in action or action == "walk" else (-10.0 if "backward" in action else 0.0)
+                self.loco.body_pitch = target_pitch
+                
+                if action in ["walk", "walk_forward", "move_forward"]:
+                    self.loco.move_forward(steps, speed=1.5)
+                elif action == "move_backward":
+                    self.loco.move_backward(steps, speed=1.5)
+                elif action == "turn_left":
+                    self.loco.turn_left(steps, speed=1.5)
+                elif action == "turn_right":
+                    self.loco.turn_right(steps, speed=1.5)
+                
+                time.sleep(0.2)
+                self.loco.body_pitch = 0.0
+                return
+
+            # Head Actions
+            if action == "look_left": self.head.look_left()
+            elif action == "look_right": self.head.look_right()
+            elif action == "look_down": self.head.look_down()
+            elif action == "look_up": self.head.look_up()
+            elif action == "look_center": self.head.look_neutral()
+            
+            # Animation/Emote Actions
+            elif action == "wave": self.anim.hand_wave()
+            elif action == "laugh": self.anim.laugh()
+            elif action == "nod": self.anim.nod_yes()
+            elif action == "shake": self.anim.shake_no()
+            elif action == "smh": self.anim.smh()
+            elif action == "roll_eyes": self.anim.eye_roll()
+            elif action == "wiggle": self.anim.palp_wiggle()
+            elif action == "bow": self.anim.bow()
+            
+            # System Actions
+            elif action in ["relax", "stand_by"]:
+                self.head.look_neutral()
+                time.sleep(0.5)
+                self.sc.relax()
+            elif action in ["reset", "lay_flat"]:
+                self.loco.reset_posture_flat()
+                
+        except Exception as e:
+            logger.error(f"Hardware Error ({action}): {e}")
 
     async def connect(self):
         # Generate Token
