@@ -10,6 +10,7 @@ from pipecat.frames.frames import (
     AudioRawFrame,
     Frame,
     LLMTextFrame,
+    LLMContextFrame,
     EndFrame,
     CancelFrame,
     StartFrame
@@ -142,7 +143,7 @@ async def main():
                 if self._frame_count % 100 == 0:
                     # Server-side volume check
                     level = np.abs(np.frombuffer(frame.audio, dtype=np.int16)).mean()
-                    logger.debug(f"Server receiving audio - Frame {self._frame_count}, Level: {level:.2f}")
+                    logger.info(f"Server receiving audio - Frame {self._frame_count}, Level: {level:.2f}")
                 await super().process_frame(frame, direction)
             elif isinstance(frame, UserStartedSpeakingFrame):
                 logger.info("VAD Trigger: User started speaking.")
@@ -188,6 +189,9 @@ async def main():
         allow_interruptions=True,
         enable_metrics=True
     ))
+
+    # Proactive Welcome: Make Rocky introduce himself immediately
+    await task.queue_frame(LLMContextFrame(context))
 
     # Handle interruptions & UI state
     @transport.event_handler("on_participant_started_speaking")
