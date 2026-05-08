@@ -42,7 +42,7 @@ class ActionTagProcessor(FrameProcessor):
         self._buffer = ""
 
     async def process_frame(self, frame: Frame, direction: FrameDirection):
-        logger.debug(f"ActionTagProcessor: Processing frame {type(frame).__name__}")
+        logger.info(f"ActionTagProcessor: Processing frame {type(frame).__name__}")
         if isinstance(frame, LLMTextFrame):
             text = frame.text
             self._buffer += text
@@ -133,7 +133,7 @@ async def main():
             return ""
 
         async def process_frame(self, frame, direction):
-            logger.debug(f"MultimodalAggregator: Processing frame {type(frame).__name__}")
+            logger.info(f"MultimodalAggregator: Processing frame {type(frame).__name__}")
             if isinstance(frame, AudioRawFrame):
                 self._audio_buffer.append(frame)
                 self._frame_count += 1
