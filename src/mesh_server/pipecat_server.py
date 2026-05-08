@@ -13,9 +13,9 @@ from pipecat.frames.frames import (
     CancelFrame,
     StartFrame
 )
-from pipecat.pipeline.pipeline import Pipeline, PipelineParams
+from pipecat.pipeline.pipeline import Pipeline
 from pipecat.pipeline.runner import PipelineRunner
-from pipecat.pipeline.task import PipelineTask
+from pipecat.pipeline.task import PipelineTask, PipelineParams
 from pipecat.services.google.llm import GoogleLLMService
 from pipecat.transports.livekit.transport import LiveKitTransport
 from pipecat.processors.frame_processor import FrameProcessor, FrameDirection
