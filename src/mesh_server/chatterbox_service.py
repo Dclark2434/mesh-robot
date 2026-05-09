@@ -16,6 +16,8 @@ class ChatterboxTTSService(TTSService):
         self._sample_rate = 24000
         self._engine = None
         self._load_engine()
+        # Bypass Pipecat's internal started check which often fails due to class identity issues
+        self._FrameProcessor__started = True
 
     def _load_engine(self):
         try:
@@ -46,34 +48,27 @@ class ChatterboxTTSService(TTSService):
             kwargs["audio_prompt_path"] = config.REFERENCE_AUDIO
 
         try:
-            # Chatterbox generate is synchronous, but we are in an async method.
-            # For better performance in Pipecat, we could run this in a threadpool.
-            # But since it's GPU accelerated, it might be fast enough to run directly
-            # if we are careful. However, to stay safe with Pipecat's loop:
             import asyncio
             audio_tensor = await asyncio.to_thread(self._engine.generate, text, **kwargs)
             
-            # Convert tensor to raw PCM 16-bit bytes
             if hasattr(audio_tensor, "cpu"):
                 wav = audio_tensor.squeeze().cpu().numpy()
             else:
                 wav = audio_tensor
             
-            # Normalize and convert to int16
             audio_int16 = (wav * 32767).astype(np.int16).tobytes()
-            
             yield TTSAudioRawFrame(audio=audio_int16, sample_rate=self._sample_rate, num_channels=1)
             
         except Exception as e:
             logger.error(f"Chatterbox synthesis error: {e}")
 
     async def handle_text_frame(self, frame, context_id=None):
-        # Pipecat 0.1.x/0.2.x uses different frame handling
-        # Assuming standard LLMTextFrame or similar
         async for audio_frame in self.run_tts(frame.text):
             await self.push_frame(audio_frame)
 
     async def process_frame(self, frame, direction):
+        if type(frame).__name__ == "StartFrame":
+            self._FrameProcessor__started = True
+        
         logger.info(f"ChatterboxTTS: Received frame {type(frame).__name__}")
         await super().process_frame(frame, direction)
-        logger.info(f"ChatterboxTTS: Pushed frame {type(frame).__name__}")
