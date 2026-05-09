@@ -120,3 +120,7 @@ LIVEKIT_API_KEY = os.getenv("LIVEKIT_API_KEY")
 LIVEKIT_API_SECRET = os.getenv("LIVEKIT_API_SECRET")
 PIPECAT_VAD_THRESHOLD = float(os.getenv("PIPECAT_VAD_THRESHOLD", "0.5"))
 GEMINI_MODEL_NAME = "gemini-3-flash-preview"
+
+# ElevenLabs Configuration
+ELEVENLABS_API_KEY = os.getenv("ELEVENLABS_API_KEY", "")
+ELEVENLABS_VOICE_ID = os.getenv("ELEVENLABS_VOICE_ID", "pNInz6obpg8nEByWscsy") # Default Rocky-like voice

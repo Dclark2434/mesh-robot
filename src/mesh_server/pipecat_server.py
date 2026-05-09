@@ -28,7 +28,7 @@ from pipecat.processors.aggregators.llm_context import LLMContext
 
 from mesh_common.logging import get_logger
 from mesh_server import config
-from mesh_server.chatterbox_service import ChatterboxTTSService
+# from mesh_server.chatterbox_service import ChatterboxTTSService
 
 logger = get_logger("pipecat_server")
 
@@ -146,6 +146,8 @@ async def main():
         {"role": "system", "content": config.SYSTEM_PROMPT + "\n\nCRITICAL: You are receiving raw audio input. Analyze the user's voice and respond as Rocky. Keep responses short, punchy, and excited. Use 'Amaze!' frequently. Use [ACTION: ...] tags liberally within your speech."}
     ])
     
+    from pipecat.services.elevenlabs import ElevenLabsTTSService
+    
     aggregator = MultimodalAudioAggregator(context)
     llm = GoogleLLMService(
         api_key=config.GEMINI_API_KEY,
@@ -153,7 +155,10 @@ async def main():
             model="gemini-3-flash-preview"
         )
     )
-    tts = ChatterboxTTSService()
+    tts = ElevenLabsTTSService(
+        api_key=config.ELEVENLABS_API_KEY,
+        voice_id=config.ELEVENLABS_VOICE_ID
+    )
     action_processor = ActionTagProcessor(transport)
 
     pipeline = Pipeline([
