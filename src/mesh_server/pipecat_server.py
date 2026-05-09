@@ -8,11 +8,14 @@ from typing import List
 
 from pipecat.frames.frames import (
     AudioRawFrame,
+    UserAudioRawFrame,
     Frame,
     LLMTextFrame,
     LLMContextFrame,
     UserStartedSpeakingFrame,
     UserStoppedSpeakingFrame,
+    BotStartedSpeakingFrame,
+    BotStoppedSpeakingFrame,
     EndFrame,
     CancelFrame,
     StartFrame
@@ -92,15 +95,16 @@ class MultimodalAudioAggregator(MESHFrameProcessor):
         self._frame_count = 0
 
     async def process_frame(self, frame: Frame, direction: FrameDirection):
+        logger.debug(f"Aggregator received: {type(frame).__name__}")
         if type(frame).__name__ == "StartFrame":
             self._FrameProcessor__started = True
 
-        if isinstance(frame, AudioRawFrame):
+        if isinstance(frame, (AudioRawFrame, UserAudioRawFrame)):
             self._audio_buffer.append(frame)
             self._frame_count += 1
-            if self._frame_count % 100 == 0:
+            if self._frame_count % 20 == 0:
                 level = np.abs(np.frombuffer(frame.audio, dtype=np.int16)).mean()
-                logger.debug(f"Server receiving audio - Level: {level:.2f}")
+                logger.info(f"AUDIO IN: Level={level:.2f}")
             await self.push_frame(frame, direction)
         elif isinstance(frame, UserStartedSpeakingFrame):
             logger.info("VAD: User started speaking.")
@@ -137,7 +141,9 @@ async def main():
         params=LiveKitParams(
             audio_out_enabled=True,
             audio_out_sample_rate=24000,
-            vad=SileroVADAnalyzer()
+            audio_in_enabled=True,
+            audio_in_sample_rate=16000,
+            vad=SileroVADAnalyzer(threshold=config.PIPECAT_VAD_THRESHOLD)
         )
     )
 
