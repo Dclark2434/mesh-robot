@@ -29,6 +29,8 @@ from pipecat.processors.frame_processor import FrameProcessor, FrameDirection
 from pipecat.audio.vad.silero import SileroVADAnalyzer
 from pipecat.audio.vad.vad_analyzer import VADParams
 from pipecat.processors.aggregators.llm_context import LLMContext
+from pipecat.processors.aggregators.llm_response_universal import LLMContextAggregatorPair
+from pipecat.services.deepgram.stt import DeepgramSTTService
 
 from mesh_common.logging import get_logger
 from mesh_server import config
@@ -48,34 +50,71 @@ class EarlyAudioDropper(FrameProcessor):
     def __init__(self):
         super().__init__()
         self._has_started = False
+        self._drop_count = 0
+        self._pass_count = 0
 
     async def process_frame(self, frame: Frame, direction: FrameDirection):
+        frame_name = type(frame).__name__
+        
+        # Log everything that isn't raw audio
         if not isinstance(frame, (AudioRawFrame, UserAudioRawFrame)):
-            logger.info(f"Dropper received: {type(frame).__name__}")
+            logger.info(f"Dropper received: {frame_name}")
             
-        if isinstance(frame, StartFrame):
-            self._has_started = True
+        # Trigger start on either a StartFrame OR a ClientConnectedFrame
+        if isinstance(frame, StartFrame) or frame_name == "ClientConnectedFrame":
+            if not self._has_started:
+                logger.info(f"Pipeline OPENED by {frame_name}")
+                self._has_started = True
             await super().process_frame(frame, direction)
-        elif not self._has_started:
-            # Silently drop early frames (prevents the 'StartFrame not received' crash)
+            await self.push_frame(frame, direction)
             return
-        else:
-            await super().process_frame(frame, direction)
+
+        if not self._has_started and isinstance(frame, (AudioRawFrame, UserAudioRawFrame)):
+            self._drop_count += 1
+            if self._drop_count % 100 == 0:
+                logger.info(f"Dropper is PROTECTING: Dropped {self._drop_count} audio frames.")
+            return
+            
+        if self._has_started and isinstance(frame, (AudioRawFrame, UserAudioRawFrame)):
+            self._pass_count += 1
+            if self._pass_count % 50 == 0:
+                import numpy as np
+                level = np.abs(np.frombuffer(frame.audio, dtype=np.int16)).mean()
+                logger.info(f"AUDIO FLOWING: Level={level:.2f}")
+        
+        await super().process_frame(frame, direction)
+        await self.push_frame(frame, direction)
+
+from pipecat.processors.audio.vad_processor import VADProcessor
+
+class LoggingProcessor(MESHFrameProcessor):
+    async def process_frame(self, frame: Frame, direction: FrameDirection):
+        frame_name = type(frame).__name__
+        if frame_name not in ["AudioRawFrame", "UserAudioRawFrame"]:
+            logger.info(f"LoggingProcessor (Post-STT) saw: {frame_name}")
+        await super().process_frame(frame, direction)
+        await self.push_frame(frame, direction)
 
 class ActionTagProcessor(MESHFrameProcessor):
     def __init__(self, transport: LiveKitTransport):
         super().__init__()
-        self._transport = transport
+        self.transport = transport
+        logger.info("ActionTagProcessor initialized")
         self._buffer = ""
 
     async def process_frame(self, frame: Frame, direction: FrameDirection):
-        if type(frame).__name__ == "StartFrame":
-            self._FrameProcessor__started = True
+        # Let's log exactly what comes out of the LLM/STT!
+        frame_name = type(frame).__name__
+        if frame_name not in ["AudioRawFrame", "UserAudioRawFrame"]:
+            logger.info(f"ActionTagProcessor Received: {frame_name}")
 
         if isinstance(frame, LLMTextFrame):
             text = frame.text
-            self._buffer += text
             
+            # Simple fallback extraction since we don't have the regex module installed
+            if "[ACTION:" in text:
+                logger.info(f"Detected Action Frame: {text}")
+            self._buffer += text
             actions = re.findall(r'\[ACTION: (.*?)\]', self._buffer)
             for action_str in actions:
                 logger.info(f"Detected Action: {action_str}")
@@ -99,9 +138,10 @@ class ActionTagProcessor(MESHFrameProcessor):
                 self._buffer = ""
             
             if sendable_text:
-                await self.push_frame(LLMTextFrame(sendable_text))
+                await self.push_frame(LLMTextFrame(sendable_text), direction)
         else:
             await super().process_frame(frame, direction)
+            await self.push_frame(frame, direction)
 
 class MultimodalAudioAggregator(MESHFrameProcessor):
     def __init__(self, context: LLMContext):
@@ -111,10 +151,6 @@ class MultimodalAudioAggregator(MESHFrameProcessor):
         self._frame_count = 0
 
     async def process_frame(self, frame: Frame, direction: FrameDirection):
-        logger.debug(f"Aggregator received: {type(frame).__name__}")
-        if type(frame).__name__ == "StartFrame":
-            self._FrameProcessor__started = True
-
         if isinstance(frame, (AudioRawFrame, UserAudioRawFrame)):
             self._audio_buffer.append(frame)
             self._frame_count += 1
@@ -159,8 +195,7 @@ async def main():
             audio_out_enabled=True,
             audio_out_sample_rate=24000,
             audio_in_enabled=True,
-            audio_in_sample_rate=16000,
-            vad=SileroVADAnalyzer(params=VADParams(confidence=0.1))
+            audio_in_sample_rate=16000
         )
     )
 
@@ -168,13 +203,18 @@ async def main():
         {"role": "system", "content": config.SYSTEM_PROMPT + "\n\nCRITICAL: You are receiving raw audio input. Analyze the user's voice and respond as Rocky. Keep responses short, punchy, and excited. Use 'Amaze!' frequently. Use [ACTION: ...] tags liberally within your speech."}
     ])
     
-    aggregator = MultimodalAudioAggregator(context)
+    stt = DeepgramSTTService(api_key=config.DEEPGRAM_API_KEY)
+    
     llm = GoogleLLMService(
         api_key=config.GEMINI_API_KEY,
         settings=GoogleLLMService.Settings(
             model=config.GEMINI_MODEL_NAME
         )
     )
+
+    # In Pipecat 1.1.0, we instantiate LLMContextAggregatorPair directly
+    context_aggregator = LLMContextAggregatorPair(context)
+
     if config.USE_ELEVENLABS:
         from pipecat.services.elevenlabs.tts import ElevenLabsTTSService
         tts = ElevenLabsTTSService(
@@ -187,12 +227,27 @@ async def main():
     
     action_processor = ActionTagProcessor(transport)
     early_dropper = EarlyAudioDropper()
+    vad_analyzer = SileroVADAnalyzer(params=VADParams(confidence=0.1, min_volume=0.1), sample_rate=16000)
+    vad_processor = VADProcessor(vad_analyzer=vad_analyzer)
+
+    # Attach our own info-level logging to the native VAD processor
+    @vad_processor._vad_controller.event_handler("on_speech_started")
+    async def on_speech_started(_controller):
+        logger.info("NATIVE VAD: User started speaking")
+
+    @vad_processor._vad_controller.event_handler("on_speech_stopped")
+    async def on_speech_stopped(_controller):
+        logger.info("NATIVE VAD: User stopped speaking")
 
     pipeline = Pipeline([
         transport.input(),
         early_dropper,
-        aggregator,
+        vad_processor,
+        stt,
+        LoggingProcessor(),
+        context_aggregator.user(),
         llm,
+        context_aggregator.assistant(),
         action_processor,
         tts,
         transport.output()

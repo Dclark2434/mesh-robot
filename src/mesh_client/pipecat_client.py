@@ -202,9 +202,10 @@ class MeshWebRTCClient:
             
             # Convert Stereo (2ch) to Mono (1ch) and apply digital gain
             if indata.shape[1] > 1:
-                mono_data = indata[:, 0] * 2.0
+                # Multiply and cast back to int16 to avoid float64 upcasting!
+                mono_data = np.clip(indata[:, 0].astype(np.int32) * 2, -32768, 32767).astype(np.int16)
             else:
-                mono_data = indata.flatten() * 2.0
+                mono_data = np.clip(indata.flatten().astype(np.int32) * 2, -32768, 32767).astype(np.int16)
 
             # Heartbeat print
             frame_count += 1

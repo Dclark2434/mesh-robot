@@ -138,6 +138,11 @@ class MeshLauncher(ctk.CTk):
         if start_lk_secret: self.livekit_secret_entry.insert(0, start_lk_secret)
         self.livekit_secret_entry.pack(pady=5)
 
+        self.deepgram_key_entry = ctk.CTkEntry(self.livekit_frame, placeholder_text="Deepgram API Key (STT)", width=300)
+        start_dg_key = os.getenv("DEEPGRAM_API_KEY", "")
+        if start_dg_key: self.deepgram_key_entry.insert(0, start_dg_key)
+        self.deepgram_key_entry.pack(pady=5)
+
         # 3. Create Controllers (Now safe to trigger callbacks)
         self.brain_seg = ctk.CTkSegmentedButton(self.brain_frame, values=["Gemini", "Ollama"], variable=self.brain_var, command=self.toggle_brain_inputs)
         self.brain_seg.pack(pady=5)
@@ -235,6 +240,7 @@ class MeshLauncher(ctk.CTk):
         env_dict["LIVEKIT_URL"] = self.livekit_url_entry.get()
         env_dict["LIVEKIT_API_KEY"] = self.livekit_key_entry.get()
         env_dict["LIVEKIT_API_SECRET"] = self.livekit_secret_entry.get()
+        env_dict["DEEPGRAM_API_KEY"] = self.deepgram_key_entry.get()
 
         # Write back
         with open(self.env_path, "w") as f:
