@@ -194,6 +194,7 @@ class MeshWebRTCClient:
         """Capture from sounddevice and push to LiveKit."""
         logger.info(f"Starting Microphone capture on device: {AUDIO_IN_DEVICE if AUDIO_IN_DEVICE is not None else 'default'}...")
         
+        loop = asyncio.get_running_loop()
         audio_queue = asyncio.Queue()
         frame_count = 0
         
@@ -217,7 +218,7 @@ class MeshWebRTCClient:
                 print(f"Mic Heartbeat - Frame {frame_count}, Mean: {level:.2f}, Peak: {peak}")
 
             # Non-blocking threadsafe queue push
-            self.loop.call_soon_threadsafe(audio_queue.put_nowait, mono_data.tobytes())
+            loop.call_soon_threadsafe(audio_queue.put_nowait, mono_data.tobytes())
 
         async def _consume_audio():
             while self.room.isconnected():

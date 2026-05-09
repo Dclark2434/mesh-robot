@@ -75,6 +75,10 @@ class EarlyAudioDropper(FrameProcessor):
             
         if self._has_started and isinstance(frame, (AudioRawFrame, UserAudioRawFrame)):
             self._pass_count += 1
+            if self._pass_count % 50 == 0:
+                import numpy as np
+                level = np.abs(np.frombuffer(frame.audio, dtype=np.int16)).mean()
+                logger.info(f"AUDIO FLOWING: Level={level:.2f}")
         
         await super().process_frame(frame, direction)
         await self.push_frame(frame, direction)
@@ -187,7 +191,7 @@ async def main():
     stt = DeepgramSTTService(
         api_key=config.DEEPGRAM_API_KEY,
         settings=DeepgramSTTService.Settings(
-            interim_results=False,
+            interim_results=True,
             endpointing=300
         )
     )
