@@ -47,41 +47,7 @@ class MESHFrameProcessor(FrameProcessor):
     async def process_frame(self, frame: Frame, direction: FrameDirection):
         await super().process_frame(frame, direction)
 
-class EarlyAudioDropper(FrameProcessor):
-    """Safely absorbs audio frames arriving from the robot before the pipeline is ready."""
-    def __init__(self):
-        super().__init__()
-        self._has_started = False
-        self._drop_count = 0
-        self._pass_count = 0
 
-    async def process_frame(self, frame: Frame, direction: FrameDirection):
-        frame_name = type(frame).__name__
-        
-        # Trigger start on either a StartFrame OR a ClientConnectedFrame
-        if isinstance(frame, StartFrame) or frame_name == "ClientConnectedFrame":
-            if not self._has_started:
-                logger.info(f"Pipeline OPENED by {frame_name}")
-                self._has_started = True
-            await super().process_frame(frame, direction)
-            await self.push_frame(frame, direction)
-            return
-
-        if not self._has_started and isinstance(frame, (AudioRawFrame, UserAudioRawFrame)):
-            self._drop_count += 1
-            if self._drop_count % 100 == 0:
-                logger.info(f"Dropper is PROTECTING: Dropped {self._drop_count} audio frames.")
-            return
-            
-        if self._has_started and isinstance(frame, (AudioRawFrame, UserAudioRawFrame)):
-            self._pass_count += 1
-            if self._pass_count % 50 == 0:
-                import numpy as np
-                level = np.abs(np.frombuffer(frame.audio, dtype=np.int16)).mean()
-                logger.info(f"AUDIO FLOWING: Level={level:.2f}")
-        
-        await super().process_frame(frame, direction)
-        await self.push_frame(frame, direction)
 
 from pipecat.processors.audio.vad_processor import VADProcessor
 
@@ -224,7 +190,6 @@ async def main():
         tts = ChatterboxTTSService()
     
     action_processor = ActionTagProcessor(transport)
-    early_dropper = EarlyAudioDropper()
     # Set stop_secs to 0.8s so it doesn't cut off words if the user pauses slightly.
     vad_analyzer = SileroVADAnalyzer(
         params=VADParams(confidence=0.1, min_volume=0.1, stop_secs=0.8), 
@@ -243,7 +208,6 @@ async def main():
 
     pipeline = Pipeline([
         transport.input(),
-        early_dropper,
         vad_processor,
         stt,
         context_aggregator.user(),

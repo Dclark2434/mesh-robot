@@ -222,15 +222,21 @@ class MeshWebRTCClient:
             data_bytes = mono_data.tobytes()
             audio_frame = rtc.AudioFrame(data_bytes, SAMPLE_RATE, CHANNELS, samples_per_channel)
             
-            # Non-blocking threadsafe queue push. We MUST push `data_bytes` to keep it alive
-            # until capture_frame finishes, otherwise the Rust FFI reads garbage collected memory (silence)
+            # Non-blocking threadsafe queue push
             loop.call_soon_threadsafe(audio_queue.put_nowait, (audio_frame, data_bytes))
 
         async def _consume_audio():
+            keepalive_buffer = []
             while self.room.isconnected():
                 try:
                     frame, data_bytes = await audio_queue.get()
                     await self.audio_source.capture_frame(frame)
+                    
+                    # Keep the memory alive long enough for the Rust network thread to send it!
+                    keepalive_buffer.append(data_bytes)
+                    if len(keepalive_buffer) > 100:  # Keep last 2 seconds of audio in memory
+                        keepalive_buffer.pop(0)
+                        
                 except Exception as e:
                     logger.error(f"Audio Consumer Error: {e}")
 
