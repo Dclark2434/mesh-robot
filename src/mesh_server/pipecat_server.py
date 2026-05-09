@@ -184,7 +184,7 @@ async def main():
 
     @transport.event_handler("on_participant_connected")
     async def on_participant_connected(transport, participant):
-        logger.info(f"Participant joined: {participant.identity}. Sending greeting.")
+        logger.info(f"Participant joined: {participant}. Sending greeting.")
         await task.queue_frames([LLMTextFrame("Amaze! I'm online and ready to rock!")])
 
     runner = PipelineRunner()
