@@ -223,11 +223,15 @@ class MeshWebRTCClient:
             )
 
         try:
+            # WebRTC Opus requires exactly 10ms (160 samples at 16kHz) or 20ms chunks.
+            # Without this, sounddevice picks random sizes, causing LiveKit to silently drop frames
+            # and causing input overflows from calling run_coroutine_threadsafe too often.
             with sd.InputStream(
                 samplerate=SAMPLE_RATE, 
                 channels=2, 
                 dtype='int16', 
                 device=AUDIO_IN_DEVICE,
+                blocksize=320,  # 20ms chunks (320 frames at 16kHz)
                 callback=callback
             ):
                 while self.room.isconnected():
