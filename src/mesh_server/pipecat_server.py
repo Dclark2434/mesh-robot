@@ -153,7 +153,7 @@ async def main():
         )
     )
     if config.USE_ELEVENLABS:
-        from pipecat.services.elevenlabs import ElevenLabsTTSService
+        from pipecat.services.elevenlabs.tts import ElevenLabsTTSService
         tts = ElevenLabsTTSService(
             api_key=config.ELEVENLABS_API_KEY,
             voice_id=config.ELEVENLABS_VOICE_ID
