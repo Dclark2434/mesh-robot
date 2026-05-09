@@ -201,7 +201,8 @@ class MeshWebRTCClient:
         def callback(indata, frames, time, status):
             nonlocal frame_count
             if status:
-                print(f"!! Mic Status: {status}")
+                # In WSL, intermittent "input overflow" is common due to virtualized audio latency
+                pass
             
             # Convert Stereo (2ch) to Mono (1ch) and apply digital gain
             # Multiplying by 10 to significantly boost quiet microphones
@@ -217,33 +218,19 @@ class MeshWebRTCClient:
                 peak = np.abs(mono_data).max()
                 print(f"Mic Heartbeat - Frame {frame_count}, Mean: {level:.2f}, Peak: {peak}")
 
-            # Create the Rust AudioFrame inside the callback thread (like original code)
-            samples_per_channel = len(mono_data)
-            data_bytes = mono_data.tobytes()
-            audio_frame = rtc.AudioFrame(data_bytes, SAMPLE_RATE, CHANNELS, samples_per_channel)
-            
-            # Non-blocking threadsafe queue push
-            loop.call_soon_threadsafe(audio_queue.put_nowait, (audio_frame, data_bytes))
-
-        async def _consume_audio():
-            keepalive_buffer = []
-            while self.room.isconnected():
-                try:
-                    frame, data_bytes = await audio_queue.get()
-                    await self.audio_source.capture_frame(frame)
-                    
-                    # Keep the memory alive long enough for the Rust network thread to send it!
-                    keepalive_buffer.append(data_bytes)
-                    if len(keepalive_buffer) > 100:  # Keep last 2 seconds of audio in memory
-                        keepalive_buffer.pop(0)
-                        
-                except Exception as e:
-                    logger.error(f"Audio Consumer Error: {e}")
+            # Canonical LiveKit audio injection
+            try:
+                audio_frame = rtc.AudioFrame(
+                    data=mono_data.tobytes(),
+                    sample_rate=SAMPLE_RATE,
+                    num_channels=CHANNELS,
+                    samples_per_channel=len(mono_data)
+                )
+                asyncio.run_coroutine_threadsafe(self.audio_source.capture_frame(audio_frame), loop)
+            except Exception as e:
+                logger.error(f"Error capturing frame: {e}")
 
         try:
-            # Start consumer task
-            consumer_task = asyncio.create_task(_consume_audio())
-            
             with sd.InputStream(
                 samplerate=SAMPLE_RATE, 
                 channels=2, 
@@ -255,7 +242,6 @@ class MeshWebRTCClient:
                 while self.room.isconnected():
                     await asyncio.sleep(1.0)
                     
-            consumer_task.cancel()
         except Exception as e:
             logger.error(f"Microphone Stream Error: {e}")
             print(f"CRITICAL: Mic Stream Failed: {e}")

@@ -1,4 +1,3 @@
-
 import asyncio
 import os
 import re
@@ -192,30 +191,29 @@ async def main():
     action_processor = ActionTagProcessor(transport)
     # Set stop_secs to 0.8s so it doesn't cut off words if the user pauses slightly.
     vad_analyzer = SileroVADAnalyzer(
-        params=VADParams(confidence=0.1, min_volume=0.1, stop_secs=0.8), 
+        params=VADParams(confidence=0.1, min_volume=0.01, stop_secs=0.8), 
         sample_rate=16000
     )
-    vad_processor = VADProcessor(vad_analyzer=vad_analyzer)
 
-    # Attach our own info-level logging to the native VAD processor
-    @vad_processor._vad_controller.event_handler("on_speech_started")
-    async def on_speech_started(_controller):
-        logger.info("NATIVE VAD: User started speaking")
-
-    @vad_processor._vad_controller.event_handler("on_speech_stopped")
-    async def on_speech_stopped(_controller):
-        logger.info("NATIVE VAD: User stopped speaking")
+    context = LLMContext(messages=[
+        {"role": "system", "content": config.SYSTEM_PROMPT + "\n\nCRITICAL: You are receiving raw audio input. Analyze the user's voice and respond as Rocky. Keep responses short, punchy, and excited. Use 'Amaze!' frequently. Use [ACTION: ...] tags liberally within your speech."}
+    ])
+    context_aggregator = LLMContextAggregatorPair(
+        context=context,
+        user_params=LLMUserAggregatorParams(
+            vad_analyzer=vad_analyzer,
+        )
+    )
 
     pipeline = Pipeline([
         transport.input(),
-        vad_processor,
         stt,
         context_aggregator.user(),
         llm,
-        context_aggregator.assistant(),
         action_processor,
         tts,
-        transport.output()
+        transport.output(),
+        context_aggregator.assistant()
     ])
 
     task = PipelineTask(
