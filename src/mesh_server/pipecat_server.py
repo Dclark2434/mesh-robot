@@ -178,7 +178,8 @@ async def main():
         params=PipelineParams(
             enable_metrics=False
         ),
-        enable_rtvi=False
+        enable_rtvi=False,
+        idle_timeout_secs=None
     )
 
     @transport.event_handler("on_participant_connected")

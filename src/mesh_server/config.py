@@ -37,11 +37,12 @@ MEMORY_FILE = os.path.join(DATA_DIR, "mesh_memory.json")
 
 # Gemini Config
 GEMINI_API_KEY = os.getenv("GEMINI_API_KEY")
+GEMINI_MODEL_NAME = "gemini-3-flash-preview"
 
 # ElevenLabs Config
 USE_ELEVENLABS = os.getenv("USE_ELEVENLABS", "False") == "True"
-ELEVENLABS_API_KEY = os.getenv("ELEVENLABS_API_KEY")
-ELEVENLABS_VOICE_ID = os.getenv("ELEVENLABS_VOICE_ID", "21m00Tcm4TlvDq8ikWAM")
+ELEVENLABS_API_KEY = os.getenv("ELEVENLABS_API_KEY", "")
+ELEVENLABS_VOICE_ID = os.getenv("ELEVENLABS_VOICE_ID", "pNInz6obpg8nEByWscsy") # Default Rocky-like voice
 
 # Hugging Face Config
 HF_TOKEN = os.getenv("HF_TOKEN")
@@ -119,9 +120,3 @@ LIVEKIT_URL = os.getenv("LIVEKIT_URL", "ws://localhost:7880")
 LIVEKIT_API_KEY = os.getenv("LIVEKIT_API_KEY")
 LIVEKIT_API_SECRET = os.getenv("LIVEKIT_API_SECRET")
 PIPECAT_VAD_THRESHOLD = float(os.getenv("PIPECAT_VAD_THRESHOLD", "0.5"))
-USE_ELEVENLABS = os.getenv("USE_ELEVENLABS", "False") == "True"
-GEMINI_MODEL_NAME = "gemini-3-flash-preview"
-
-# ElevenLabs Configuration
-ELEVENLABS_API_KEY = os.getenv("ELEVENLABS_API_KEY", "")
-ELEVENLABS_VOICE_ID = os.getenv("ELEVENLABS_VOICE_ID", "pNInz6obpg8nEByWscsy") # Default Rocky-like voice
