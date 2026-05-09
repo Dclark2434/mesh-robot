@@ -55,15 +55,17 @@ class ActionTagProcessor(MESHFrameProcessor):
     def __init__(self, transport: LiveKitTransport):
         super().__init__()
         self.transport = transport
-        self._buffer = ""
         logger.info("ActionTagProcessor initialized")
+        self._buffer = ""
 
-async def process_frame(self, frame: Frame, direction: FrameDirection):
+    async def process_frame(self, frame: Frame, direction: FrameDirection):
         if isinstance(frame, LLMTextFrame):
-            # 1. Add raw text to buffer
-            self._buffer += frame.text
+            text = frame.text
             
-            # 2. Extract actions while brackets are intact
+            # Simple fallback extraction since we don't have the regex module installed
+            if "[ACTION:" in text:
+                logger.info(f"Detected Action Frame: {text}")
+            self._buffer += text
             actions = re.findall(r'\[ACTION: (.*?)\]', self._buffer)
             for action_str in actions:
                 logger.info(f"Detected Action: {action_str}")
@@ -78,27 +80,26 @@ async def process_frame(self, frame: Frame, direction: FrameDirection):
                     "param": param
                 }))
                 self._buffer = self._buffer.replace(f"[ACTION: {action_str}]", "")
-
-            # 3. Guard against partial tags (don't send text if we're mid-tag)
-            if '[' in self._buffer and ']' not in self._buffer[self._buffer.rfind('['):]:
-                sendable_text = self._buffer[:self._buffer.rfind('[')]
-                self._buffer = self._buffer[self._buffer.rfind('['):]
-            else:
-                sendable_text = self._buffer
-                self._buffer = ""
-
-            if sendable_text:
-                # 4. Cleanup JSON junk from speech only
-                # Strips braces, quotes, and common JSON keys
-                clean_speech = re.sub(r'["{}]', '', sendable_text)
-                clean_speech = re.sub(r'(action:|response:|param:|plan:|memory:)', '', clean_speech, flags=re.IGNORECASE)
-                clean_speech = clean_speech.strip()
                 
-                if clean_speech:
-                    logger.info(f"Pushing to TTS: {clean_speech}")
-                    await self.push_frame(LLMTextFrame(clean_speech), direction)
+            memories = re.findall(r'\[MEMORY: (.*?)\]', self._buffer)
+            for mem_str in memories:
+                logger.info(f"Detected Memory: {mem_str}")
+                # Future: Save memory to disk/context
+                self._buffer = self._buffer.replace(f"[MEMORY: {mem_str}]", "")
+            
+            clean_text = self._buffer
+            if '[' in clean_text and ']' not in clean_text[clean_text.rfind('['):]:
+                sendable_text = clean_text[:clean_text.rfind('[')]
+                self._buffer = clean_text[clean_text.rfind('['):]
+            else:
+                sendable_text = clean_text
+                self._buffer = ""
+            
+            if sendable_text:
+                await self.push_frame(LLMTextFrame(sendable_text), direction)
         else:
             await super().process_frame(frame, direction)
+            await self.push_frame(frame, direction)
 
 class MultimodalAudioAggregator(MESHFrameProcessor):
     def __init__(self, context: LLMContext):

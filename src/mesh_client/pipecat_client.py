@@ -69,16 +69,7 @@ class MeshWebRTCClient:
         self.audio_source = rtc.AudioSource(SAMPLE_RATE, CHANNELS)
         self.audio_track = rtc.LocalAudioTrack.create_audio_track("mic", self.audio_source)
         
-        # Audio Playback
-        logger.info(f"Opening Output Stream on device: {AUDIO_OUT_DEVICE if AUDIO_OUT_DEVICE is not None else 'default'}")
-        self.playback_stream = sd.OutputStream(
-            samplerate=24000, 
-            channels=1,
-            dtype='int16',
-            device=AUDIO_OUT_DEVICE,
-            blocksize=480
-        )
-        self.playback_stream.start()
+        # Audio Playback stream will be dynamically initialized upon receiving the first frame.
 
     def _register_commands(self):
         # Register all known actions to the dispatcher
@@ -253,6 +244,19 @@ class MeshWebRTCClient:
         async for event in audio_stream:
             # Handle both AudioFrame and AudioFrameEvent
             frame = event.frame if hasattr(event, "frame") else event
+            
+            if self.playback_stream is None:
+                sr = getattr(frame, 'sample_rate', 48000)
+                ch = getattr(frame, 'num_channels', 1)
+                logger.info(f"Dynamically initializing playback stream at {sr} Hz, {ch} channels")
+                self.playback_stream = sd.OutputStream(
+                    samplerate=sr,
+                    channels=ch,
+                    dtype='int16',
+                    device=AUDIO_OUT_DEVICE
+                )
+                self.playback_stream.start()
+                
             self.playback_stream.write(np.frombuffer(frame.data, dtype='int16'))
 
     async def shutdown(self):
