@@ -212,7 +212,8 @@ class MeshWebRTCClient:
             frame_count += 1
             if frame_count % 50 == 0:
                 level = np.abs(mono_data).mean()
-                print(f"Mic Heartbeat - Frame {frame_count}, Level: {level:.2f}")
+                peak = np.abs(mono_data).max()
+                print(f"Mic Heartbeat - Frame {frame_count}, Mean: {level:.2f}, Peak: {peak}")
 
             # NEW: LiveKit 1.x requires samples_per_channel
             samples_per_channel = len(mono_data)
