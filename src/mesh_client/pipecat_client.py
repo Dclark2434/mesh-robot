@@ -194,7 +194,9 @@ class MeshWebRTCClient:
         """Capture from sounddevice and push to LiveKit."""
         logger.info(f"Starting Microphone capture on device: {AUDIO_IN_DEVICE if AUDIO_IN_DEVICE is not None else 'default'}...")
         
+        audio_queue = asyncio.Queue()
         frame_count = 0
+        
         def callback(indata, frames, time, status):
             nonlocal frame_count
             if status:
@@ -203,7 +205,6 @@ class MeshWebRTCClient:
             # Convert Stereo (2ch) to Mono (1ch) and apply digital gain
             # Multiplying by 10 to significantly boost quiet microphones
             if indata.shape[1] > 1:
-                # Multiply and cast back to int16 to avoid float64 upcasting!
                 mono_data = np.clip(indata[:, 0].astype(np.int32) * 10, -32768, 32767).astype(np.int16)
             else:
                 mono_data = np.clip(indata.flatten().astype(np.int32) * 10, -32768, 32767).astype(np.int16)
@@ -215,17 +216,24 @@ class MeshWebRTCClient:
                 peak = np.abs(mono_data).max()
                 print(f"Mic Heartbeat - Frame {frame_count}, Mean: {level:.2f}, Peak: {peak}")
 
-            # NEW: LiveKit 1.x requires samples_per_channel
-            samples_per_channel = len(mono_data)
-            asyncio.run_coroutine_threadsafe(
-                self.audio_source.capture_frame(rtc.AudioFrame(mono_data.tobytes(), SAMPLE_RATE, CHANNELS, samples_per_channel)),
-                self.loop
-            )
+            # Non-blocking threadsafe queue push
+            self.loop.call_soon_threadsafe(audio_queue.put_nowait, mono_data.tobytes())
+
+        async def _consume_audio():
+            while self.room.isconnected():
+                try:
+                    data = await audio_queue.get()
+                    samples_per_channel = len(data) // 2 # 2 bytes per int16 sample
+                    await self.audio_source.capture_frame(
+                        rtc.AudioFrame(data, SAMPLE_RATE, CHANNELS, samples_per_channel)
+                    )
+                except Exception as e:
+                    logger.error(f"Audio Consumer Error: {e}")
 
         try:
-            # WebRTC Opus requires exactly 10ms (160 samples at 16kHz) or 20ms chunks.
-            # Without this, sounddevice picks random sizes, causing LiveKit to silently drop frames
-            # and causing input overflows from calling run_coroutine_threadsafe too often.
+            # Start consumer task
+            consumer_task = asyncio.create_task(_consume_audio())
+            
             with sd.InputStream(
                 samplerate=SAMPLE_RATE, 
                 channels=2, 
@@ -236,6 +244,8 @@ class MeshWebRTCClient:
             ):
                 while self.room.isconnected():
                     await asyncio.sleep(1.0)
+                    
+            consumer_task.cancel()
         except Exception as e:
             logger.error(f"Microphone Stream Error: {e}")
             print(f"CRITICAL: Mic Stream Failed: {e}")
