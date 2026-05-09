@@ -75,7 +75,8 @@ class MeshWebRTCClient:
             samplerate=24000, 
             channels=1,
             dtype='int16',
-            device=AUDIO_OUT_DEVICE
+            device=AUDIO_OUT_DEVICE,
+            blocksize=480
         )
         self.playback_stream.start()
 

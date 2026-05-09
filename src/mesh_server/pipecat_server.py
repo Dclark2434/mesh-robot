@@ -58,12 +58,12 @@ class ActionTagProcessor(MESHFrameProcessor):
         self._buffer = ""
         logger.info("ActionTagProcessor initialized")
 
-    async def process_frame(self, frame: Frame, direction: FrameDirection):
+async def process_frame(self, frame: Frame, direction: FrameDirection):
         if isinstance(frame, LLMTextFrame):
-            # 1. Add raw text to buffer first so brackets stay intact for extraction
+            # 1. Add raw text to buffer
             self._buffer += frame.text
             
-            # 2. Find and extract actions while brackets still exist
+            # 2. Extract actions while brackets are intact
             actions = re.findall(r'\[ACTION: (.*?)\]', self._buffer)
             for action_str in actions:
                 logger.info(f"Detected Action: {action_str}")
@@ -77,28 +77,26 @@ class ActionTagProcessor(MESHFrameProcessor):
                     "action": action,
                     "param": param
                 }))
-                # Remove the full tag from buffer
                 self._buffer = self._buffer.replace(f"[ACTION: {action_str}]", "")
 
-            # 3. Handle partial tags and cleanup
+            # 3. Guard against partial tags (don't send text if we're mid-tag)
             if '[' in self._buffer and ']' not in self._buffer[self._buffer.rfind('['):]:
-                # We have a partial tag (e.g., "[ACTI"), hold it in buffer
                 sendable_text = self._buffer[:self._buffer.rfind('[')]
                 self._buffer = self._buffer[self._buffer.rfind('['):]
             else:
                 sendable_text = self._buffer
                 self._buffer = ""
 
-            # 4. NOW scrub the hallucinated JSON junk from the sendable text only
             if sendable_text:
-                # Remove quotes, braces, and JSON keys from the speech output
-                sendable_text = re.sub(r'["{}]', '', sendable_text)
-                sendable_text = re.sub(r'(action:|response:|param:|plan:|memory:)', '', sendable_text, flags=re.IGNORECASE)
-                sendable_text = sendable_text.strip()
+                # 4. Cleanup JSON junk from speech only
+                # Strips braces, quotes, and common JSON keys
+                clean_speech = re.sub(r'["{}]', '', sendable_text)
+                clean_speech = re.sub(r'(action:|response:|param:|plan:|memory:)', '', clean_speech, flags=re.IGNORECASE)
+                clean_speech = clean_speech.strip()
                 
-                if sendable_text:
-                    await self.push_frame(LLMTextFrame(sendable_text), direction)
-
+                if clean_speech:
+                    logger.info(f"Pushing to TTS: {clean_speech}")
+                    await self.push_frame(LLMTextFrame(clean_speech), direction)
         else:
             await super().process_frame(frame, direction)
 
