@@ -55,17 +55,15 @@ class ActionTagProcessor(MESHFrameProcessor):
     def __init__(self, transport: LiveKitTransport):
         super().__init__()
         self.transport = transport
-        logger.info("ActionTagProcessor initialized")
         self._buffer = ""
+        logger.info("ActionTagProcessor initialized")
 
     async def process_frame(self, frame: Frame, direction: FrameDirection):
         if isinstance(frame, LLMTextFrame):
-            text = frame.text
+            # 1. Add raw text to buffer first so brackets stay intact for extraction
+            self._buffer += frame.text
             
-            # Simple fallback extraction since we don't have the regex module installed
-            if "[ACTION:" in text:
-                logger.info(f"Detected Action Frame: {text}")
-            self._buffer += text
+            # 2. Find and extract actions while brackets still exist
             actions = re.findall(r'\[ACTION: (.*?)\]', self._buffer)
             for action_str in actions:
                 logger.info(f"Detected Action: {action_str}")
@@ -79,21 +77,30 @@ class ActionTagProcessor(MESHFrameProcessor):
                     "action": action,
                     "param": param
                 }))
+                # Remove the full tag from buffer
                 self._buffer = self._buffer.replace(f"[ACTION: {action_str}]", "")
-            
-            clean_text = self._buffer
-            if '[' in clean_text and ']' not in clean_text[clean_text.rfind('['):]:
-                sendable_text = clean_text[:clean_text.rfind('[')]
-                self._buffer = clean_text[clean_text.rfind('['):]
+
+            # 3. Handle partial tags and cleanup
+            if '[' in self._buffer and ']' not in self._buffer[self._buffer.rfind('['):]:
+                # We have a partial tag (e.g., "[ACTI"), hold it in buffer
+                sendable_text = self._buffer[:self._buffer.rfind('[')]
+                self._buffer = self._buffer[self._buffer.rfind('['):]
             else:
-                sendable_text = clean_text
+                sendable_text = self._buffer
                 self._buffer = ""
-            
+
+            # 4. NOW scrub the hallucinated JSON junk from the sendable text only
             if sendable_text:
-                await self.push_frame(LLMTextFrame(sendable_text), direction)
+                # Remove quotes, braces, and JSON keys from the speech output
+                sendable_text = re.sub(r'["{}]', '', sendable_text)
+                sendable_text = re.sub(r'(action:|response:|param:|plan:|memory:)', '', sendable_text, flags=re.IGNORECASE)
+                sendable_text = sendable_text.strip()
+                
+                if sendable_text:
+                    await self.push_frame(LLMTextFrame(sendable_text), direction)
+
         else:
             await super().process_frame(frame, direction)
-            await self.push_frame(frame, direction)
 
 class MultimodalAudioAggregator(MESHFrameProcessor):
     def __init__(self, context: LLMContext):
@@ -190,7 +197,7 @@ async def main():
         {"role": "system", "content": config.SYSTEM_PROMPT + "\n\nCRITICAL: You are receiving raw audio input. Analyze the user's voice and respond as Rocky. Keep responses short, punchy, and excited. Use 'Amaze!' frequently. Use [ACTION: ...] tags liberally within your speech."}
     ])
     
-    context_aggregator = LLMContextAggregatorPair(
+    user_aggregator, assistant_aggregator = LLMContextAggregatorPair(
         context=context,
         user_params=LLMUserAggregatorParams(
             vad_analyzer=vad_analyzer,
@@ -201,12 +208,12 @@ async def main():
     pipeline = Pipeline([
         transport.input(),
         stt,
-        context_aggregator.user(),
+        user_aggregator,
         llm,
         action_processor,
         tts,
         transport.output(),
-        context_aggregator.assistant()
+        assistant_aggregator
     ])
 
     task = PipelineTask(
