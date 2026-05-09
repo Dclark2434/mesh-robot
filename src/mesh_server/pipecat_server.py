@@ -165,11 +165,13 @@ async def main():
         transport.output()
     ])
 
-    task = PipelineTask(pipeline, PipelineParams(
-        allow_interruptions=True,
-        enable_metrics=False,
+    task = PipelineTask(
+        pipeline,
+        params=PipelineParams(
+            enable_metrics=False
+        ),
         enable_rtvi=False
-    ))
+    )
 
     @transport.event_handler("on_participant_connected")
     async def on_participant_connected(transport, participant):
