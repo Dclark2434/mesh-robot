@@ -195,7 +195,7 @@ async def main():
         {"role": "system", "content": config.SYSTEM_PROMPT + "\n\nCRITICAL: You are receiving raw audio input. Analyze the user's voice and respond as Rocky. Keep responses short, punchy, and excited. Use 'Amaze!' frequently. Use [ACTION: ...] tags liberally within your speech."}
     ])
     
-    user_aggregator, assistant_aggregator = LLMContextAggregatorPair(
+    context_aggregator = LLMContextAggregatorPair(
         context=context,
         user_params=LLMUserAggregatorParams(
             vad_analyzer=vad_analyzer,
@@ -206,12 +206,12 @@ async def main():
     pipeline = Pipeline([
         transport.input(),
         stt,
-        user_aggregator,
+        context_aggregator.user(),
         llm,
         action_processor,
         tts,
         transport.output(),
-        assistant_aggregator
+        context_aggregator.assistant()
     ])
 
     task = PipelineTask(
