@@ -200,11 +200,11 @@ class MeshWebRTCClient:
             if status:
                 print(f"!! Mic Status: {status}")
             
-            # Convert Stereo (2ch) to Mono (1ch)
+            # Convert Stereo (2ch) to Mono (1ch) and apply digital gain
             if indata.shape[1] > 1:
-                mono_data = indata[:, 0]
+                mono_data = indata[:, 0] * 2.0
             else:
-                mono_data = indata.flatten()
+                mono_data = indata.flatten() * 2.0
 
             # Heartbeat print
             frame_count += 1

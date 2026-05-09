@@ -34,3 +34,5 @@ reference/
 build/
 dist/
 *.log
+
+venv-test

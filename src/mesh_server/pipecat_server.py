@@ -24,9 +24,10 @@ from pipecat.pipeline.pipeline import Pipeline
 from pipecat.pipeline.runner import PipelineRunner
 from pipecat.pipeline.task import PipelineTask, PipelineParams
 from pipecat.services.google.llm import GoogleLLMService
-from pipecat.transports.livekit.transport import LiveKitTransport
+from pipecat.transports.livekit.transport import LiveKitTransport, LiveKitParams
 from pipecat.processors.frame_processor import FrameProcessor, FrameDirection
 from pipecat.audio.vad.silero import SileroVADAnalyzer
+from pipecat.audio.vad.vad_analyzer import VADParams
 from pipecat.processors.aggregators.llm_context import LLMContext
 
 from mesh_common.logging import get_logger
@@ -35,16 +36,31 @@ from mesh_server import config
 logger = get_logger("pipecat_server")
 
 class MESHFrameProcessor(FrameProcessor):
-    """Base class for MESH processors to handle Pipecat initialization quirks."""
+    """Base class for MESH processors."""
     def __init__(self, **kwargs):
         super().__init__(**kwargs)
-        # Bypass Pipecat internal started check (private mangled variable)
-        self._FrameProcessor__started = True
 
     async def process_frame(self, frame: Frame, direction: FrameDirection):
-        if type(frame).__name__ == "StartFrame":
-            self._FrameProcessor__started = True
         await super().process_frame(frame, direction)
+
+class EarlyAudioDropper(FrameProcessor):
+    """Safely absorbs audio frames arriving from the robot before the pipeline is ready."""
+    def __init__(self):
+        super().__init__()
+        self._has_started = False
+
+    async def process_frame(self, frame: Frame, direction: FrameDirection):
+        if not isinstance(frame, (AudioRawFrame, UserAudioRawFrame)):
+            logger.info(f"Dropper received: {type(frame).__name__}")
+            
+        if isinstance(frame, StartFrame):
+            self._has_started = True
+            await super().process_frame(frame, direction)
+        elif not self._has_started:
+            # Silently drop early frames (prevents the 'StartFrame not received' crash)
+            return
+        else:
+            await super().process_frame(frame, direction)
 
 class ActionTagProcessor(MESHFrameProcessor):
     def __init__(self, transport: LiveKitTransport):
@@ -118,6 +134,8 @@ class MultimodalAudioAggregator(MESHFrameProcessor):
                 await self.push_frame(LLMContextFrame(self._context))
             await self.push_frame(frame, direction)
         else:
+            if not isinstance(frame, (AudioRawFrame, UserAudioRawFrame)):
+                logger.info(f"Pipeline Frame: {type(frame).__name__}")
             await super().process_frame(frame, direction)
 
 async def main():
@@ -133,7 +151,6 @@ async def main():
         .to_jwt()
     )
 
-    from pipecat.transports.livekit.transport import LiveKitParams
     transport = LiveKitTransport(
         url=config.LIVEKIT_URL,
         token=token,
@@ -143,7 +160,7 @@ async def main():
             audio_out_sample_rate=24000,
             audio_in_enabled=True,
             audio_in_sample_rate=16000,
-            vad=SileroVADAnalyzer(threshold=config.PIPECAT_VAD_THRESHOLD)
+            vad=SileroVADAnalyzer(params=VADParams(confidence=0.1))
         )
     )
 
@@ -155,7 +172,7 @@ async def main():
     llm = GoogleLLMService(
         api_key=config.GEMINI_API_KEY,
         settings=GoogleLLMService.Settings(
-            model="gemini-3-flash-preview"
+            model=config.GEMINI_MODEL_NAME
         )
     )
     if config.USE_ELEVENLABS:
@@ -169,9 +186,11 @@ async def main():
         tts = ChatterboxTTSService()
     
     action_processor = ActionTagProcessor(transport)
+    early_dropper = EarlyAudioDropper()
 
     pipeline = Pipeline([
         transport.input(),
+        early_dropper,
         aggregator,
         llm,
         action_processor,
