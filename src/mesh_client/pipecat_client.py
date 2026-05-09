@@ -217,17 +217,20 @@ class MeshWebRTCClient:
                 peak = np.abs(mono_data).max()
                 print(f"Mic Heartbeat - Frame {frame_count}, Mean: {level:.2f}, Peak: {peak}")
 
-            # Non-blocking threadsafe queue push
-            loop.call_soon_threadsafe(audio_queue.put_nowait, mono_data.tobytes())
+            # Create the Rust AudioFrame inside the callback thread (like original code)
+            samples_per_channel = len(mono_data)
+            data_bytes = mono_data.tobytes()
+            audio_frame = rtc.AudioFrame(data_bytes, SAMPLE_RATE, CHANNELS, samples_per_channel)
+            
+            # Non-blocking threadsafe queue push. We MUST push `data_bytes` to keep it alive
+            # until capture_frame finishes, otherwise the Rust FFI reads garbage collected memory (silence)
+            loop.call_soon_threadsafe(audio_queue.put_nowait, (audio_frame, data_bytes))
 
         async def _consume_audio():
             while self.room.isconnected():
                 try:
-                    data = await audio_queue.get()
-                    samples_per_channel = len(data) // 2 # 2 bytes per int16 sample
-                    await self.audio_source.capture_frame(
-                        rtc.AudioFrame(data, SAMPLE_RATE, CHANNELS, samples_per_channel)
-                    )
+                    frame, data_bytes = await audio_queue.get()
+                    await self.audio_source.capture_frame(frame)
                 except Exception as e:
                     logger.error(f"Audio Consumer Error: {e}")
 
