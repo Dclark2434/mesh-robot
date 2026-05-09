@@ -31,6 +31,7 @@ from pipecat.processors.aggregators.llm_context import LLMContext
 from pipecat.processors.aggregators.llm_response_universal import LLMContextAggregatorPair, LLMUserAggregatorParams
 from pipecat.turns.user_turn_strategies import UserTurnStrategies
 from pipecat.turns.user_start import MinWordsUserTurnStartStrategy
+from pipecat.turns.user_mute import AlwaysUserMuteStrategy
 from pipecat.services.deepgram.stt import DeepgramSTTService
 
 from mesh_common.logging import get_logger
@@ -72,11 +73,12 @@ class ActionTagProcessor(MESHFrameProcessor):
                 action = parts[0].strip().lower()
                 param = parts[1].strip() if len(parts) > 1 else None
                 
-                await self._transport.send_data({
+                import json
+                await self.transport.send_message(json.dumps({
                     "type": "action", 
                     "action": action,
                     "param": param
-                })
+                }))
                 self._buffer = self._buffer.replace(f"[ACTION: {action_str}]", "")
             
             clean_text = self._buffer
@@ -149,10 +151,6 @@ async def main():
         )
     )
 
-    context = LLMContext(messages=[
-        {"role": "system", "content": config.SYSTEM_PROMPT + "\n\nCRITICAL: You are receiving raw audio input. Analyze the user's voice and respond as Rocky. Keep responses short, punchy, and excited. Use 'Amaze!' frequently. Use [ACTION: ...] tags liberally within your speech."}
-    ])
-    
     stt = DeepgramSTTService(
         api_key=config.DEEPGRAM_API_KEY,
         settings=DeepgramSTTService.Settings(
@@ -168,21 +166,14 @@ async def main():
         )
     )
 
-    # In Pipecat 1.1.0, we instantiate LLMContextAggregatorPair directly
-    context_aggregator = LLMContextAggregatorPair(
-        context,
-        user_params=LLMUserAggregatorParams(
-            user_turn_strategies=UserTurnStrategies(
-                start=[MinWordsUserTurnStartStrategy(min_words=2)],
-            )
-        )
-    )
-
     if config.USE_ELEVENLABS:
         from pipecat.services.elevenlabs.tts import ElevenLabsTTSService
         tts = ElevenLabsTTSService(
             api_key=config.ELEVENLABS_API_KEY,
-            voice_id=config.ELEVENLABS_VOICE_ID
+            sample_rate=24000,
+            settings=ElevenLabsTTSService.Settings(
+                voice=config.ELEVENLABS_VOICE_ID
+            )
         )
     else:
         from mesh_server.chatterbox_service import ChatterboxTTSService
@@ -198,10 +189,12 @@ async def main():
     context = LLMContext(messages=[
         {"role": "system", "content": config.SYSTEM_PROMPT + "\n\nCRITICAL: You are receiving raw audio input. Analyze the user's voice and respond as Rocky. Keep responses short, punchy, and excited. Use 'Amaze!' frequently. Use [ACTION: ...] tags liberally within your speech."}
     ])
+    
     context_aggregator = LLMContextAggregatorPair(
         context=context,
         user_params=LLMUserAggregatorParams(
             vad_analyzer=vad_analyzer,
+            user_mute_strategies=[AlwaysUserMuteStrategy()]
         )
     )
 
@@ -219,7 +212,8 @@ async def main():
     task = PipelineTask(
         pipeline,
         params=PipelineParams(
-            enable_metrics=False
+            enable_metrics=False,
+            audio_out_sample_rate=24000
         ),
         enable_rtvi=False,
         idle_timeout_secs=None

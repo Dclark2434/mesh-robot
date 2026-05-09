@@ -72,10 +72,9 @@ class MeshWebRTCClient:
         # Audio Playback
         logger.info(f"Opening Output Stream on device: {AUDIO_OUT_DEVICE if AUDIO_OUT_DEVICE is not None else 'default'}")
         self.playback_stream = sd.OutputStream(
-            samplerate=24000, 
+            samplerate=48000, 
             channels=1,
             dtype='int16',
-            blocksize=480,
             device=AUDIO_OUT_DEVICE
         )
         self.playback_stream.start()
