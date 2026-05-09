@@ -119,6 +119,7 @@ LIVEKIT_URL = os.getenv("LIVEKIT_URL", "ws://localhost:7880")
 LIVEKIT_API_KEY = os.getenv("LIVEKIT_API_KEY")
 LIVEKIT_API_SECRET = os.getenv("LIVEKIT_API_SECRET")
 PIPECAT_VAD_THRESHOLD = float(os.getenv("PIPECAT_VAD_THRESHOLD", "0.5"))
+USE_ELEVENLABS = os.getenv("USE_ELEVENLABS", "False") == "True"
 GEMINI_MODEL_NAME = "gemini-3-flash-preview"
 
 # ElevenLabs Configuration
