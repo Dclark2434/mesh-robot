@@ -188,12 +188,12 @@ async def main():
     action_processor = ActionTagProcessor(transport)
     # Set stop_secs to 0.8s so it doesn't cut off words if the user pauses slightly.
     vad_analyzer = SileroVADAnalyzer(
-        params=VADParams(confidence=0.1, min_volume=0.01, stop_secs=0.8), 
+        params=VADParams(confidence=0.5, min_volume=0.09, stop_secs=1), 
         sample_rate=16000
     )
 
     context = LLMContext(messages=[
-        {"role": "system", "content": config.SYSTEM_PROMPT + "\n\nCRITICAL: You are receiving raw audio input. Analyze the user's voice and respond as Rocky. Keep responses short, punchy, and excited. Use 'Amaze!' frequently. Use [ACTION: ...] tags liberally within your speech."}
+        {"role": "system", "content": config.SYSTEM_PROMPT + "\n\nCRITICAL:Keep responses short, punchy, and excited. Use [ACTION: ...] tags liberally within your speech."}
     ])
     
     context_aggregator = LLMContextAggregatorPair(
