@@ -178,7 +178,7 @@ async def main():
             api_key=config.ELEVENLABS_API_KEY,
             sample_rate=24000,
             settings=ElevenLabsTTSService.Settings(
-                voice=config.ELEVENLABS_VOICE_ID
+                voice=config.ELEVENLABS_VOICE_ID             
             )
         )
     else:
