@@ -220,6 +220,23 @@ class MeshWebRTCClient:
                 # In WSL, intermittent "input overflow" is common due to virtualized audio latency
                 pass
             
+            # CLIENT-SIDE ECHO SUPPRESSION:
+            # When the bot is speaking, send silence to prevent the mic from
+            # picking up the speaker output and causing self-interruption.
+            if self._is_speaking:
+                silence = np.zeros(frames, dtype=np.int16)
+                try:
+                    audio_frame = rtc.AudioFrame(
+                        data=silence.tobytes(),
+                        sample_rate=SAMPLE_RATE,
+                        num_channels=CHANNELS,
+                        samples_per_channel=frames
+                    )
+                    asyncio.run_coroutine_threadsafe(self.audio_source.capture_frame(audio_frame), loop)
+                except Exception:
+                    pass
+                return
+            
             # Convert Stereo (2ch) to Mono (1ch) and apply digital gain
             # Multiplying by 10 to significantly boost quiet microphones
             if indata.shape[1] > 1:
@@ -266,6 +283,10 @@ class MeshWebRTCClient:
         """Receive from LiveKit and play to sounddevice."""
         logger.info("Audio Playback started...")
         audio_stream = rtc.AudioStream(track)
+        silent_frame_count = 0
+        SILENCE_THRESHOLD = 100       # Amplitude below this = silence
+        SILENCE_FRAMES_TO_STOP = 10   # ~200ms of silence at 20ms/frame = bot stopped
+        
         async for event in audio_stream:
             # Handle both AudioFrame and AudioFrameEvent
             frame = event.frame if hasattr(event, "frame") else event
@@ -282,12 +303,26 @@ class MeshWebRTCClient:
                 )
                 self.playback_stream.start()
             
-            # Detect non-silent audio to set SPEAKING state
             samples = np.frombuffer(frame.data, dtype='int16')
-            if not self._is_speaking and np.max(np.abs(samples)) > 100:
-                self._is_speaking = True
-                self.leds.set_state(LEDState.SPEAKING)
-                logger.debug("LED -> SPEAKING")
+            peak = np.max(np.abs(samples)) if len(samples) > 0 else 0
+            
+            if peak > SILENCE_THRESHOLD:
+                # Non-silent audio: bot is speaking
+                silent_frame_count = 0
+                if not self._is_speaking:
+                    self._is_speaking = True
+                    self.leds.set_state(LEDState.SPEAKING)
+                    logger.debug("LED -> SPEAKING")
+            else:
+                # Silent frame
+                if self._is_speaking:
+                    silent_frame_count += 1
+                    if silent_frame_count >= SILENCE_FRAMES_TO_STOP:
+                        self._is_speaking = False
+                        self.leds.set_state(LEDState.IDLE)
+                        logger.debug("LED -> IDLE (silence detected)")
+                        # Brief cooldown so residual echo doesn't trigger mic
+                        await asyncio.sleep(0.3)
             
             self.playback_stream.write(samples)
         
