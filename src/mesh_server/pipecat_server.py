@@ -101,6 +101,34 @@ class ActionTagProcessor(MESHFrameProcessor):
             await super().process_frame(frame, direction)
             await self.push_frame(frame, direction)
 
+class LEDStateProcessor(MESHFrameProcessor):
+    """Sends LED state updates to the client based on pipeline events."""
+    def __init__(self, transport: LiveKitTransport):
+        super().__init__()
+        self.transport = transport
+
+    async def process_frame(self, frame: Frame, direction: FrameDirection):
+        import json
+        
+        if isinstance(frame, UserStartedSpeakingFrame):
+            await self.transport.send_message(json.dumps({
+                "type": "led", "state": "listening"
+            }))
+        elif isinstance(frame, UserStoppedSpeakingFrame):
+            await self.transport.send_message(json.dumps({
+                "type": "led", "state": "thinking"
+            }))
+        elif isinstance(frame, BotStartedSpeakingFrame):
+            await self.transport.send_message(json.dumps({
+                "type": "led", "state": "speaking"
+            }))
+        elif isinstance(frame, BotStoppedSpeakingFrame):
+            await self.transport.send_message(json.dumps({
+                "type": "led", "state": "idle"
+            }))
+        
+        await self.push_frame(frame, direction)
+
 class MultimodalAudioAggregator(MESHFrameProcessor):
     def __init__(self, context: LLMContext):
         super().__init__()
@@ -186,6 +214,7 @@ async def main():
         tts = ChatterboxTTSService()
     
     action_processor = ActionTagProcessor(transport)
+    led_processor = LEDStateProcessor(transport)
     # Set stop_secs to 0.8s so it doesn't cut off words if the user pauses slightly.
     vad_analyzer = SileroVADAnalyzer(
         params=VADParams(confidence=0.5, min_volume=0.09, stop_secs=1), 
@@ -206,6 +235,7 @@ async def main():
 
     pipeline = Pipeline([
         transport.input(),
+        led_processor,
         stt,
         context_aggregator.user(),
         llm,

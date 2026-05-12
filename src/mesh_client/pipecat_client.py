@@ -49,6 +49,9 @@ class MeshWebRTCClient:
         self.audio_track = None
         self.playback_stream = None
         self.loop = None
+        
+        # LED State Tracking
+        self._is_speaking = False
 
     async def _init_hardware(self):
         """Initialize hardware within the async loop."""
@@ -166,7 +169,28 @@ class MeshWebRTCClient:
                     action = payload.get("action")
                     param = payload.get("param")
                     logger.info(f"Received Remote Action: {action} ({param})")
+                    
+                    # Handle LED actions directly
+                    if action == "led_on":
+                        self.leds.set_state(LEDState.LISTENING)
+                        return
+                    elif action == "led_off":
+                        self.leds.set_state(LEDState.IDLE)
+                        return
+                    elif action == "led_flash":
+                        self.leds.set_state(LEDState.ERROR)
+                        # Brief flash then return to current state
+                        import threading
+                        threading.Timer(0.5, lambda: self.leds.set_state(LEDState.IDLE)).start()
+                        return
+                    
                     self.dispatcher.push_plan([{"action": action, "param": param}])
+                elif payload.get("type") == "led":
+                    state_name = payload.get("state", "idle").upper()
+                    try:
+                        self.leds.set_state(LEDState[state_name])
+                    except KeyError:
+                        logger.warning(f"Unknown LED state: {state_name}")
             except Exception as e:
                 logger.error(f"Failed to parse data packet: {e}")
 
@@ -256,8 +280,21 @@ class MeshWebRTCClient:
                     device=AUDIO_OUT_DEVICE
                 )
                 self.playback_stream.start()
-                
-            self.playback_stream.write(np.frombuffer(frame.data, dtype='int16'))
+            
+            # Detect non-silent audio to set SPEAKING state
+            samples = np.frombuffer(frame.data, dtype='int16')
+            if not self._is_speaking and np.max(np.abs(samples)) > 100:
+                self._is_speaking = True
+                self.leds.set_state(LEDState.SPEAKING)
+                logger.debug("LED -> SPEAKING")
+            
+            self.playback_stream.write(samples)
+        
+        # Stream ended (track unsubscribed)
+        if self._is_speaking:
+            self._is_speaking = False
+            self.leds.set_state(LEDState.IDLE)
+            logger.debug("LED -> IDLE (stream ended)")
 
     async def shutdown(self):
         """Graceful cleanup."""
