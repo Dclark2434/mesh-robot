@@ -81,7 +81,7 @@ class MeshWebRTCClient:
             "turn_left", "turn_right", "look_left", "look_right", 
             "look_down", "look_up", "look_center", "wave", "tap", 
             "nod", "shake", "smh", "roll_eyes", "laugh", "bow", "wiggle",
-            "relax", "stand_by", "reset", "lay_flat"
+            "tippy_tap", "relax", "stand_by", "reset", "lay_flat"
         ]
         for cmd in commands:
             self.dispatcher.register(cmd, lambda p, c=cmd: self._handle_physical_action(c, p))
@@ -132,6 +132,7 @@ class MeshWebRTCClient:
             elif action == "smh": self.anim.smh()
             elif action == "roll_eyes": self.anim.eye_roll()
             elif action == "wiggle": self.anim.palp_wiggle()
+            elif action == "tippy_tap": self.anim.simple_idle_step()
             elif action == "bow": self.anim.bow()
             
             # System Actions
