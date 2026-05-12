@@ -28,7 +28,7 @@ from pipecat.processors.frame_processor import FrameProcessor, FrameDirection
 from pipecat.audio.vad.silero import SileroVADAnalyzer
 from pipecat.audio.vad.vad_analyzer import VADParams
 from pipecat.processors.aggregators.llm_context import LLMContext
-from pipecat.processors.aggregators.llm_response_universal import LLMContextAggregatorPair, LLMUserAggregatorParams
+from pipecat.processors.aggregators.llm_response_universal import LLMContextAggregatorPair, LLMUserAggregatorParams, LLMAssistantAggregatorParams
 from pipecat.turns.user_turn_strategies import UserTurnStrategies
 from pipecat.turns.user_start import MinWordsUserTurnStartStrategy
 from pipecat.turns.user_mute import AlwaysUserMuteStrategy
@@ -108,6 +108,7 @@ class LEDStateProcessor(MESHFrameProcessor):
         self.transport = transport
 
     async def process_frame(self, frame: Frame, direction: FrameDirection):
+        await super().process_frame(frame, direction)
         import json
         
         if isinstance(frame, UserStartedSpeakingFrame):
@@ -193,10 +194,13 @@ async def main():
         )
     )
     
+    system_prompt = config.SYSTEM_PROMPT + "\n\nCRITICAL:Keep responses short, punchy, and excited. Use [ACTION: ...] tags liberally within your speech."
+    
     llm = GoogleLLMService(
         api_key=config.GEMINI_API_KEY,
         settings=GoogleLLMService.Settings(
-            model=config.GEMINI_MODEL_NAME
+            model=config.GEMINI_MODEL_NAME,
+            system_instruction=system_prompt
         )
     )
 
@@ -221,15 +225,16 @@ async def main():
         sample_rate=16000
     )
 
-    context = LLMContext(messages=[
-        {"role": "system", "content": config.SYSTEM_PROMPT + "\n\nCRITICAL:Keep responses short, punchy, and excited. Use [ACTION: ...] tags liberally within your speech."}
-    ])
+    context = LLMContext()
     
     context_aggregator = LLMContextAggregatorPair(
         context=context,
         user_params=LLMUserAggregatorParams(
             vad_analyzer=vad_analyzer,
             user_mute_strategies=[AlwaysUserMuteStrategy()]
+        ),
+        assistant_params=LLMAssistantAggregatorParams(
+            enable_auto_context_summarization=True
         )
     )
 

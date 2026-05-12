@@ -78,7 +78,8 @@ class MeshWebRTCClient:
         # Register all known actions to the dispatcher
         commands = [
             "walk", "walk_forward", "move_forward", "move_backward", 
-            "turn_left", "turn_right", "look_left", "look_right", 
+            "turn_left", "turn_right", "strafe_left", "strafe_right",
+            "look_left", "look_right", 
             "look_down", "look_up", "look_center", "wave", "tap", 
             "nod", "shake", "smh", "roll_eyes", "laugh", "bow", "wiggle",
             "tippy_tap", "relax", "stand_by", "reset", "lay_flat"
@@ -100,7 +101,7 @@ class MeshWebRTCClient:
 
         try:
             # Movement Actions
-            if action in ["walk", "walk_forward", "move_forward", "move_backward", "turn_left", "turn_right"]:
+            if action in ["walk", "walk_forward", "move_forward", "move_backward", "turn_left", "turn_right", "strafe_left", "strafe_right"]:
                 target_pitch = 10.0 if "forward" in action or action == "walk" else (-10.0 if "backward" in action else 0.0)
                 self.loco.body_pitch = target_pitch
                 
@@ -108,9 +109,11 @@ class MeshWebRTCClient:
                     self.loco.move_forward(steps, speed=1.5)
                 elif action == "move_backward":
                     self.loco.move_backward(steps, speed=1.5)
-                elif action == "turn_left":
+                elif action in ["turn_left", "strafe_left"]:
+                    # strafe_left mapped to turn_left until proper strafe gait is implemented
                     self.loco.turn_left(steps, speed=1.5)
-                elif action == "turn_right":
+                elif action in ["turn_right", "strafe_right"]:
+                    # strafe_right mapped to turn_right until proper strafe gait is implemented
                     self.loco.turn_right(steps, speed=1.5)
                 
                 time.sleep(0.2)
