@@ -224,20 +224,9 @@ class MeshWebRTCClient:
                 pass
             
             # CLIENT-SIDE ECHO SUPPRESSION:
-            # When the bot is speaking, send silence to prevent the mic from
-            # picking up the speaker output and causing self-interruption.
+            # When the bot is speaking, skip mic capture entirely to prevent
+            # speaker output from being picked up and causing self-interruption.
             if self._is_speaking:
-                silence = np.zeros(frames, dtype=np.int16)
-                try:
-                    audio_frame = rtc.AudioFrame(
-                        data=silence.tobytes(),
-                        sample_rate=SAMPLE_RATE,
-                        num_channels=CHANNELS,
-                        samples_per_channel=frames
-                    )
-                    asyncio.run_coroutine_threadsafe(self.audio_source.capture_frame(audio_frame), loop)
-                except Exception:
-                    pass
                 return
             
             # Convert Stereo (2ch) to Mono (1ch) and apply digital gain
@@ -290,6 +279,10 @@ class MeshWebRTCClient:
         SILENCE_THRESHOLD = 100       # Amplitude below this = silence
         SILENCE_FRAMES_TO_STOP = 10   # ~200ms of silence at 20ms/frame = bot stopped
         
+        import time as _time
+        _speaking_ended_at = 0
+        ECHO_COOLDOWN = 0.3  # seconds after speaking ends before mic resumes
+        
         async for event in audio_stream:
             # Handle both AudioFrame and AudioFrameEvent
             frame = event.frame if hasattr(event, "frame") else event
@@ -322,10 +315,14 @@ class MeshWebRTCClient:
                     silent_frame_count += 1
                     if silent_frame_count >= SILENCE_FRAMES_TO_STOP:
                         self._is_speaking = False
+                        _speaking_ended_at = _time.monotonic()
                         self.leds.set_state(LEDState.IDLE)
                         logger.debug("LED -> IDLE (silence detected)")
-                        # Brief cooldown so residual echo doesn't trigger mic
-                        await asyncio.sleep(0.3)
+            
+            # Keep mic suppressed during echo cooldown (non-blocking)
+            if not self._is_speaking and _speaking_ended_at > 0:
+                if _time.monotonic() - _speaking_ended_at < ECHO_COOLDOWN:
+                    self._is_speaking = True  # Keep mic muted a bit longer
             
             self.playback_stream.write(samples)
         

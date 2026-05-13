@@ -219,9 +219,11 @@ async def main():
     
     action_processor = ActionTagProcessor(transport)
     led_processor = LEDStateProcessor(transport)
-    # Set stop_secs to 0.8s so it doesn't cut off words if the user pauses slightly.
+    # stop_secs=0.2 is Pipecat's recommended default. The smart turn analyzer uses
+    # transcription content (not just silence) to decide when the user is done.
+    # This keeps STT wait timeout positive: p99(0.35) - stop_secs(0.2) = 0.15s for Deepgram.
     vad_analyzer = SileroVADAnalyzer(
-        params=VADParams(confidence=0.5, min_volume=0.09, stop_secs=1), 
+        params=VADParams(confidence=0.6, min_volume=0.1, stop_secs=0.2), 
         sample_rate=16000
     )
 
