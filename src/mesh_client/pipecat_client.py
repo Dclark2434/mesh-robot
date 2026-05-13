@@ -52,6 +52,7 @@ class MeshWebRTCClient:
         
         # LED State Tracking
         self._is_speaking = False
+        self._echo_cooldown_until = 0  # monotonic timestamp; mic suppressed until this time
 
     async def _init_hardware(self):
         """Initialize hardware within the async loop."""
@@ -224,9 +225,10 @@ class MeshWebRTCClient:
                 pass
             
             # CLIENT-SIDE ECHO SUPPRESSION:
-            # When the bot is speaking, skip mic capture entirely to prevent
-            # speaker output from being picked up and causing self-interruption.
-            if self._is_speaking:
+            # When the bot is speaking OR during post-speech cooldown,
+            # skip mic capture to prevent echo feedback.
+            import time as _t
+            if self._is_speaking or _t.monotonic() < self._echo_cooldown_until:
                 return
             
             # Convert Stereo (2ch) to Mono (1ch) and apply digital gain
@@ -280,7 +282,6 @@ class MeshWebRTCClient:
         SILENCE_FRAMES_TO_STOP = 10   # ~200ms of silence at 20ms/frame = bot stopped
         
         import time as _time
-        _speaking_ended_at = 0
         ECHO_COOLDOWN = 0.3  # seconds after speaking ends before mic resumes
         
         async for event in audio_stream:
@@ -315,14 +316,10 @@ class MeshWebRTCClient:
                     silent_frame_count += 1
                     if silent_frame_count >= SILENCE_FRAMES_TO_STOP:
                         self._is_speaking = False
-                        _speaking_ended_at = _time.monotonic()
+                        # Set one-shot cooldown (mic stays suppressed 300ms after speech ends)
+                        self._echo_cooldown_until = _time.monotonic() + ECHO_COOLDOWN
                         self.leds.set_state(LEDState.IDLE)
                         logger.debug("LED -> IDLE (silence detected)")
-            
-            # Keep mic suppressed during echo cooldown (non-blocking)
-            if not self._is_speaking and _speaking_ended_at > 0:
-                if _time.monotonic() - _speaking_ended_at < ECHO_COOLDOWN:
-                    self._is_speaking = True  # Keep mic muted a bit longer
             
             self.playback_stream.write(samples)
         
