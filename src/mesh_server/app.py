@@ -50,7 +50,7 @@ from pipecat.turns.user_mute.mute_until_first_bot_complete_user_mute_strategy im
 )
 
 from mesh_common.logging import get_logger
-from mesh_common.protocol import Status, StatusMessage, encode
+from mesh_common.protocol import MessageType, Status, StatusMessage, decode, encode
 from mesh_server.expression.processors import (
     ActionTagProcessor,
     GestureDispatcher,
@@ -60,7 +60,9 @@ from mesh_server.expression.processors import (
 )
 from mesh_server.memory import MemoryStore
 from mesh_server.settings import DATA_DIR, Settings
+from mesh_server.vision.ambient import AmbientVision, SceneSummarizer
 from mesh_server.vision.feed import (
+    AmbientVisionProcessor,
     CameraFeed,
     CameraFeedProcessor,
     VisionContextPruner,
@@ -219,6 +221,16 @@ async def run() -> int:
 
     context = LLMContext(tools=vision_tools() if settings.vision_enabled else NOT_GIVEN)
 
+    # Ambient awareness: after the robot walks somewhere, a cheap one-shot call
+    # turns a frame into one sentence. Only that sentence enters the
+    # conversation, and only between turns -- see vision/ambient.py.
+    ambient = AmbientVision(
+        SceneSummarizer(settings.gemini_api_key, settings.ambient_model)
+        if settings.vision_enabled and settings.ambient_vision
+        else None
+    )
+    ambient_processor = AmbientVisionProcessor(ambient, feed, context)
+
     context_aggregator = LLMContextAggregatorPair(
         context=context,
         user_params=LLMUserAggregatorParams(
@@ -241,6 +253,7 @@ async def run() -> int:
             # Absorbs the video stream before it can travel any further, and
             # answers the model's requests to look.
             CameraFeedProcessor(feed),
+            ambient_processor,
             ListeningStatusProcessor(send),
             stt,
             context_aggregator.user(),
@@ -301,6 +314,25 @@ async def run() -> int:
         # LLMTextFrame into the pipeline *source*, where it flowed into STT and
         # the aggregator instead of ever reaching the voice.
         await task.queue_frame(TTSSpeakFrame("Hey! I'm online. What are we doing?"))
+
+    @transport.event_handler("on_data_received")
+    async def _on_robot_message(_transport, data, _participant_id) -> None:
+        """Handle a message from the robot.
+
+        Args:
+            _transport: The transport raising the event.
+            data: Raw payload.
+            _participant_id: Sender's SID.
+        """
+        payload = decode(data)
+        kind = payload.get("type")
+
+        if kind == MessageType.MOVED.value:
+            ambient_processor.on_moved()
+        elif kind == MessageType.TELEMETRY.value:
+            percent = payload.get("battery_percent")
+            if percent is not None and percent < 20:
+                logger.warning(f"Robot battery at {percent:.0f}%")
 
     @transport.event_handler("on_participant_disconnected")
     async def _on_left(_transport, participant) -> None:

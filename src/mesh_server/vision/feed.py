@@ -27,6 +27,7 @@ round trip, but only on turns where it actually looks.
 
 from __future__ import annotations
 
+import asyncio
 import time
 from dataclasses import dataclass
 from typing import Any
@@ -34,15 +35,18 @@ from typing import Any
 from pipecat.adapters.schemas.function_schema import FunctionSchema
 from pipecat.adapters.schemas.tools_schema import ToolsSchema
 from pipecat.frames.frames import (
+    BotStoppedSpeakingFrame,
     Frame,
     LLMFullResponseEndFrame,
     UserImageRawFrame,
     UserImageRequestFrame,
+    UserStartedSpeakingFrame,
 )
 from pipecat.processors.frame_processor import FrameDirection, FrameProcessor
 from pipecat.services.llm_service import FunctionCallParams
 
 from mesh_common.logging import get_logger
+from mesh_server.vision.ambient import replace_ambient_note
 from mesh_server.vision.context import DEFAULT_KEEP_IMAGES, collapse_old_images
 
 logger = get_logger("vision")
@@ -261,6 +265,86 @@ def make_look_handler(feed: CameraFeed):
         )
 
     return look
+
+
+class AmbientVisionProcessor(FrameProcessor):
+    """Applies ambient scene notes to context, at a moment that cannot hijack a turn.
+
+    The summarizing call runs in the background as soon as the robot reports it
+    has finished travelling. The resulting note is *not* applied immediately --
+    it waits for a point where the conversation is between turns, so it can
+    never end up as the most recent thing in context. Whatever sits nearest the
+    end dominates the reply, and the whole point of this feature is that the
+    scenery must not be what the robot replies about.
+
+    Both safe points land before the user's next transcript is aggregated, so
+    their actual words always come after the note.
+    """
+
+    def __init__(self, ambient, feed: CameraFeed, context) -> None:
+        """Create the processor.
+
+        Args:
+            ambient: The :class:`~mesh_server.vision.ambient.AmbientVision`
+                policy holder.
+            feed: Camera buffer to take the observation from.
+            context: The shared LLM context to write the note into.
+        """
+        super().__init__()
+        self._ambient = ambient
+        self._feed = feed
+        self._context = context
+        self._pending: str | None = None
+        self._task: asyncio.Task | None = None
+
+    def on_moved(self) -> None:
+        """Note that the robot has travelled, and look around if it is due.
+
+        Called from the transport's data handler. Returns immediately; the
+        summarizing call happens in the background so nothing in the
+        conversation waits on it.
+        """
+        if not self._ambient.should_look():
+            return
+        glimpse = self._feed.latest()
+        if glimpse is None:
+            return
+        if self._task and not self._task.done():
+            return
+        self._task = asyncio.create_task(self._observe(glimpse))
+
+    async def _observe(self, glimpse: Glimpse) -> None:
+        """Summarize a frame and hold the result until it is safe to apply.
+
+        Args:
+            glimpse: The frame to look at.
+        """
+        try:
+            note = await self._ambient.observe(glimpse.image, glimpse.size, glimpse.format)
+        except Exception as exc:
+            logger.debug(f"Ambient observation failed: {exc}")
+            return
+        if note:
+            self._pending = note
+
+    async def process_frame(self, frame: Frame, direction: FrameDirection) -> None:
+        """Apply a pending note between turns.
+
+        Args:
+            frame: Incoming frame.
+            direction: Direction of travel.
+        """
+        await super().process_frame(frame, direction)
+
+        if self._pending and isinstance(
+            frame, (BotStoppedSpeakingFrame, UserStartedSpeakingFrame)
+        ):
+            note, self._pending = self._pending, None
+            self._context.transform_messages(
+                lambda messages: replace_ambient_note(messages, note)
+            )
+
+        await self.push_frame(frame, direction)
 
 
 class VisionContextPruner(FrameProcessor):

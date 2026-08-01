@@ -29,6 +29,7 @@ class MessageType(str, Enum):
     STATUS = "status"        # brain -> robot: conversational state (drives LEDs)
     INTERRUPT = "interrupt"  # brain -> robot: drop queued speech, you were cut off
     TELEMETRY = "telemetry"  # robot -> brain: battery, IMU, posture
+    MOVED = "moved"          # robot -> brain: I travelled; the view has changed
 
 
 class Status(str, Enum):
@@ -76,6 +77,10 @@ class ActionSpec:
         speech_safe: Whether this is short enough to fire mid-sentence as an
             expressive gesture. Long locomotion is not.
         describe: One-line hint for the LLM's prompt.
+        travels: Whether performing this moves the robot somewhere else, as
+            opposed to merely pointing it differently. Turning the head changes
+            the view; walking changes where you are. Only the latter is worth
+            looking around after.
     """
 
     name: str
@@ -84,6 +89,7 @@ class ActionSpec:
     param: ParamKind = ParamKind.NONE
     speech_safe: bool = True
     describe: str = ""
+    travels: bool = False
 
 
 # Durations are measured from the animation implementations in mesh_client, not
@@ -109,11 +115,11 @@ ACTIONS: dict[str, ActionSpec] = {
         ActionSpec("laugh", Lane.BODY, 1.3, describe="bounce the body, laughing"),
         ActionSpec("bow", Lane.BODY, 3.5, speech_safe=False, describe="deep, slow bow"),
         ActionSpec("wiggle", Lane.BODY, 16.0, speech_safe=False, describe="full show-off wiggle display"),
-        # -- body: locomotion. Never mid-sentence. ---------------------------
-        ActionSpec("walk_forward", Lane.BODY, 4.0, ParamKind.STEPS, False, "walk forward N steps"),
-        ActionSpec("move_backward", Lane.BODY, 4.0, ParamKind.STEPS, False, "back up N steps"),
-        ActionSpec("turn_left", Lane.BODY, 4.0, ParamKind.STEPS, False, "turn left; 9 steps ~ 180 degrees"),
-        ActionSpec("turn_right", Lane.BODY, 4.0, ParamKind.STEPS, False, "turn right; 9 steps ~ 180 degrees"),
+        # -- body: locomotion. Never mid-sentence, and it changes where you are.
+        ActionSpec("walk_forward", Lane.BODY, 4.0, ParamKind.STEPS, False, "walk forward N steps", True),
+        ActionSpec("move_backward", Lane.BODY, 4.0, ParamKind.STEPS, False, "back up N steps", True),
+        ActionSpec("turn_left", Lane.BODY, 4.0, ParamKind.STEPS, False, "turn left; 9 steps ~ 180 degrees", True),
+        ActionSpec("turn_right", Lane.BODY, 4.0, ParamKind.STEPS, False, "turn right; 9 steps ~ 180 degrees", True),
         # -- body: posture ----------------------------------------------------
         ActionSpec("relax", Lane.BODY, 1.0, speech_safe=False, describe="power down servos and rest"),
         ActionSpec("reset", Lane.BODY, 1.5, speech_safe=False, describe="lie flat, safe to pick up"),
@@ -229,6 +235,25 @@ class InterruptMessage:
 
 
 @dataclass
+class MovedMessage:
+    """The robot finished travelling, so its surroundings may have changed.
+
+    Sent when a locomotion action completes rather than when it is dispatched:
+    a look taken mid-stride is of the floor going past.
+    """
+
+    action: str = ""
+
+    def to_dict(self) -> dict[str, Any]:
+        """Serialize to a plain JSON-compatible dict."""
+        return {
+            "v": PROTOCOL_VERSION,
+            "type": MessageType.MOVED.value,
+            "action": self.action,
+        }
+
+
+@dataclass
 class TelemetryMessage:
     """Robot health report, sent periodically from the Pi."""
 
@@ -246,7 +271,11 @@ class TelemetryMessage:
 
 
 def encode(
-    message: ActionMessage | StatusMessage | InterruptMessage | TelemetryMessage,
+    message: ActionMessage
+    | StatusMessage
+    | InterruptMessage
+    | MovedMessage
+    | TelemetryMessage,
 ) -> str:
     """Encode a message for the data channel.
 

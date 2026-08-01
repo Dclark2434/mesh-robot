@@ -32,10 +32,12 @@ from mesh_client.servo_controller import HeadController, ServoController
 from mesh_common.logging import get_logger
 from mesh_common.protocol import (
     MessageType,
+    MovedMessage,
     Status,
     TelemetryMessage,
     decode,
     encode,
+    resolve_action,
 )
 
 logger = get_logger("robot")
@@ -82,8 +84,34 @@ class Robot:
         self.room = rtc.Room()
         self.audio: DuplexAudio | None = None
         self.camera: CameraPublisher | None = None
-        self.motion = MotionDispatcher()
+        self.motion = MotionDispatcher(on_finished=self._action_finished)
+        self._loop: asyncio.AbstractEventLoop | None = None
         self._closing = asyncio.Event()
+
+    def _action_finished(self, action: str) -> None:
+        """Tell the brain when the robot has finished travelling.
+
+        Called on a motion worker thread, so the send is handed back to the
+        event loop.
+
+        Args:
+            action: The action that just completed.
+        """
+        spec = resolve_action(action)
+        if spec is None or not spec.travels or self._loop is None:
+            return
+        asyncio.run_coroutine_threadsafe(self._publish(encode(MovedMessage(spec.name))), self._loop)
+
+    async def _publish(self, payload: str) -> None:
+        """Send one message to the brain, tolerating a dropped packet.
+
+        Args:
+            payload: Encoded protocol message.
+        """
+        try:
+            await self.room.local_participant.publish_data(payload)
+        except Exception as exc:
+            logger.debug(f"Could not publish message: {exc}")
 
     # -- hardware ---------------------------------------------------------
 
@@ -237,14 +265,14 @@ class Robot:
                 continue
             # The servo rail is the one that actually strands the robot; the
             # logic rail outlives it.
-            message = TelemetryMessage(
-                battery_volts=reading.get("servo_voltage"),
-                battery_percent=reading.get("servo_percent"),
+            await self._publish(
+                encode(
+                    TelemetryMessage(
+                        battery_volts=reading.get("servo_voltage"),
+                        battery_percent=reading.get("servo_percent"),
+                    )
+                )
             )
-            try:
-                await self.room.local_participant.publish_data(encode(message))
-            except Exception as exc:
-                logger.debug(f"Telemetry send failed: {exc}")
 
     async def _connect(self) -> None:
         """Join the room, publish the microphone, and wire up the callbacks."""
@@ -315,6 +343,7 @@ class Robot:
     async def run(self) -> None:
         """Bring everything up and stay running until interrupted."""
         try:
+            self._loop = asyncio.get_running_loop()
             self._open_hardware()
             self.motion.start()
             await self._connect()

@@ -27,16 +27,17 @@ recorded to disk and replayed, and there is no per-utterance connection setup.
 |---|-------|------------------|
 | 1 | `transport.input()` | Audio and video from the robot. |
 | 2 | `CameraFeedProcessor` | Swallows the video stream into a one-slot buffer; answers requests to look. |
-| 3 | `ListeningStatusProcessor` | LEDs follow the user's turn, as early as possible. |
-| 4 | `stt` (Deepgram) | Streaming transcription with interim results. |
-| 5 | `context.user()` | Owns VAD, end-of-turn detection, muting, and turn accumulation. |
-| 6 | `llm` (Gemini) | Standard multimodal API, with the `look` tool registered. |
-| 7 | `ActionTagProcessor` | Directives out of the text *before* it can be spoken. |
-| 8 | `VisionContextPruner` | Collapses stale images once the reply is complete. |
-| 9 | `tts` (ElevenLabs) | Streaming synthesis with word alignment. |
-| 10 | `transport.output()` | Audio out, and the clock that gates timestamped frames. |
-| 11 | `GestureDispatcher`, `SpeakingStatusProcessor` | Downstream of that clock, so gestures land with the sound. |
-| 12 | `context.assistant()` | Reply goes back into history, with auto-summarization. |
+| 3 | `AmbientVisionProcessor` | Applies scene notes between turns, where they cannot hijack a reply. |
+| 4 | `ListeningStatusProcessor` | LEDs follow the user's turn, as early as possible. |
+| 5 | `stt` (Deepgram) | Streaming transcription with interim results. |
+| 6 | `context.user()` | Owns VAD, end-of-turn detection, muting, and turn accumulation. |
+| 7 | `llm` (Gemini) | Standard multimodal API, with the `look` tool registered. |
+| 8 | `ActionTagProcessor` | Directives out of the text *before* it can be spoken. |
+| 9 | `VisionContextPruner` | Collapses stale images once the reply is complete. |
+| 10 | `tts` (ElevenLabs) | Streaming synthesis with word alignment. |
+| 11 | `transport.output()` | Audio out, and the clock that gates timestamped frames. |
+| 12 | `GestureDispatcher`, `SpeakingStatusProcessor` | Downstream of that clock, so gestures land with the sound. |
+| 13 | `context.assistant()` | Reply goes back into history, with auto-summarization. |
 
 ### Why gestures are dispatched after the output transport
 
@@ -181,6 +182,8 @@ Everything lives in `src/mesh_server/.env` (brain) and the robot's environment.
 | `MESH_AUDIO_IN_CHANNELS` | `1` | Set to `2` for stereo-only USB capsules. |
 | `MESH_VISION` | `1` | Offer the `look` tool. `0` makes the robot blind. |
 | `MESH_KEEP_IMAGES` | `1` | Images keeping their pixels in context. |
+| `MESH_AMBIENT_VISION` | `1` | Notice surroundings after travelling. |
+| `MESH_AMBIENT_MODEL` | main model | Model for the one-shot scene description. |
 | `MESH_CAMERA` | `1` | Publish the camera track from the robot. |
 | `MESH_CAMERA_FPS` | `5` | Capture rate. Only the newest frame is ever used. |
 | `MESH_CAMERA_WIDTH` / `_HEIGHT` | `1024` / `768` | Capture resolution. |
@@ -256,6 +259,56 @@ framework's rails.
 raw *audio* onto context to bypass Deepgram. It is not an early version of this
 and stays deleted. Vision happens to use the same attachment mechanism and
 nothing else.
+
+### Noticing that it moved
+
+When the robot finishes walking somewhere, it should have some idea it is
+somewhere new. The obvious implementation — attach a frame to the conversation
+after each move — fails badly: you say "hey Rocky" and get a paragraph about
+the room. Three things cause that, and only one is a prompt problem:
+
+- **Images are salient.** Put a picture in front of a model and it talks about
+  the picture.
+- **Role framing.** An image attached as a `user` message reads as *"the human
+  showed me this"*, which implies it wants a response.
+- **Recency.** Whatever sits nearest the end of context dominates the reply.
+
+So the frame never enters the conversation. It goes to a cheap one-shot call
+that returns a single flat clause, and only that clause is injected:
+
+```
+[ambient, just now] Your camera shows: small office, desk with two monitors.
+Background awareness only -- do not mention this unless it is directly relevant.
+```
+
+Each defence maps to one of the three causes: it is text rather than a picture,
+it is written as instrumentation rather than as something you said, and it is
+applied **between turns** — on `BotStoppedSpeakingFrame` or
+`UserStartedSpeakingFrame`, both of which land before the next user transcript
+is aggregated. Your actual words are therefore always more recent than the
+note. That last one is why the trigger is "finished travelling" rather than
+"user started talking", and why the summarizing call is fired in the background
+rather than awaited.
+
+The prompt rule then has an easy job, because it is no longer arguing with the
+format: never open a reply with an ambient observation, never make it the
+subject unless asked, one brief aside about a genuinely new place at most.
+
+**Cost.** Exactly one note exists at a time and is replaced in place, so
+ambient awareness is a flat ~20 tokens for the life of the conversation rather
+than several hundred re-sent every turn. Two further guards keep the API bill
+down: movements within 20 seconds of the last look are ignored, and a
+description that overlaps the previous one by more than 60% is discarded as
+"same room". Notes expire after five minutes so the robot never reasons about
+somewhere it left.
+
+The tradeoff is that ambient awareness is *coarse* — the robot knows "office,
+two monitors", not what is on the desk. That is the intended division: ambient
+for grounding, `look` when the question actually needs eyes. The prompt says so
+explicitly.
+
+Only actions marked `travels` in the action registry fire this. Turning the
+head changes the view but not the place, and is not worth a call.
 
 ### Capture details worth knowing
 

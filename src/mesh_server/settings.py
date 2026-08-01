@@ -124,6 +124,11 @@ class Settings:
         keep_images: How many recent camera images keep their pixels in
             context. Older ones collapse to a text stand-in, because an image
             left in context is re-sent on every subsequent turn.
+        ambient_vision: Look around after the robot walks somewhere, and keep
+            one sentence about where it is in context.
+        ambient_model: Model used for that one-shot scene description. Kept
+            separate from the conversation's model so it can be swapped for a
+            cheaper one without touching the voice.
         audio: Sample-rate configuration.
         turn: Turn-taking configuration.
     """
@@ -149,6 +154,11 @@ class Settings:
 
     vision_enabled: bool = field(default_factory=lambda: _env("MESH_VISION", "1") != "0")
     keep_images: int = field(default_factory=lambda: int(_env("MESH_KEEP_IMAGES", "1") or 1))
+    ambient_vision: bool = field(default_factory=lambda: _env("MESH_AMBIENT_VISION", "1") != "0")
+    ambient_model: str = field(
+        default_factory=lambda: _env("MESH_AMBIENT_MODEL")
+        or _env("GEMINI_MODEL", "gemini-3-flash-preview")
+    )
 
     audio: AudioSettings = field(default_factory=AudioSettings)
     turn: TurnSettings = field(default_factory=TurnSettings)

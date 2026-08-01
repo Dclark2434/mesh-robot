@@ -64,12 +64,19 @@ class Job:
 class MotionDispatcher:
     """Runs actions on per-lane worker threads."""
 
-    def __init__(self) -> None:
-        """Create the dispatcher with one idle worker per lane."""
+    def __init__(self, on_finished: Callable[[str], None] | None = None) -> None:
+        """Create the dispatcher with one idle worker per lane.
+
+        Args:
+            on_finished: Called with the action name after each action
+                completes, on the worker thread. Used to report that the robot
+                has finished travelling.
+        """
         self._handlers: dict[str, Handler] = {}
         self._queues: dict[Lane, queue.Queue[Job]] = {lane: queue.Queue() for lane in Lane}
         self._workers: list[threading.Thread] = []
         self._stopping = threading.Event()
+        self._on_finished = on_finished
 
     def register(self, action: str, handler: Handler) -> None:
         """Bind an action name to the code that performs it.
@@ -152,6 +159,10 @@ class MotionDispatcher:
                     continue
                 logger.info(f"[{lane.value}] {job.action}" + (f" {job.param}" if job.param else ""))
                 self._handlers[job.action](job.param)
+                if self._on_finished is not None:
+                    # Reported on completion, not dispatch: a look taken
+                    # mid-stride is a picture of the floor going past.
+                    self._on_finished(job.action)
             except Exception as exc:
                 logger.error(f"'{job.action}' failed: {exc}")
             finally:
