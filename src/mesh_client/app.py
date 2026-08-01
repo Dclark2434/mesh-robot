@@ -28,9 +28,12 @@ from mesh_client.led_controller import LEDManager, LEDState
 from mesh_client.locomotion import LocomotionController
 from mesh_client.motion import MotionDispatcher, steps_from
 from mesh_client.power_monitor import PowerMonitor
+from mesh_client.remote_log import RemoteLogShipper
 from mesh_client.servo_controller import HeadController, ServoController
 from mesh_common.logging import get_logger
 from mesh_common.protocol import (
+    ACTIONS,
+    HelloMessage,
     MessageType,
     MovedMessage,
     Status,
@@ -85,8 +88,25 @@ class Robot:
         self.audio: DuplexAudio | None = None
         self.camera: CameraPublisher | None = None
         self.motion = MotionDispatcher(on_finished=self._action_finished)
+        self.log_shipper = RemoteLogShipper(self._publish)
         self._loop: asyncio.AbstractEventLoop | None = None
         self._closing = asyncio.Event()
+
+    def _announce(self) -> str:
+        """Describe this robot's actual capabilities for the brain's dashboard.
+
+        Returns:
+            An encoded hello message.
+        """
+        return encode(
+            HelloMessage(
+                hardware=bool(self.servos and self.servos.is_rpi),
+                echo_cancellation=bool(self.audio and self.audio.has_echo_cancellation),
+                camera=bool(self.camera and self.camera.active),
+                camera_backend=self.camera.backend_name if self.camera else "none",
+                actions=sorted(set(ACTIONS) - set(self.motion.missing_handlers())),
+            )
+        )
 
     def _action_finished(self, action: str) -> None:
         """Tell the brain when the robot has finished travelling.
@@ -338,6 +358,12 @@ class Robot:
 
         logger.info("Connected. Microphone live." + ("" if self.camera.active else " No camera."))
 
+        # Tell the brain what actually came up, so its dashboard reports this
+        # robot's real state rather than assuming everything worked.
+        await self._publish(self._announce())
+        self.log_shipper.attach()
+        self.log_shipper.start()
+
     # -- lifecycle --------------------------------------------------------
 
     async def run(self) -> None:
@@ -358,6 +384,7 @@ class Robot:
         """Park the robot safely and release every resource."""
         logger.info("Shutting down...")
         self._closing.set()
+        await self.log_shipper.stop()
         self.motion.stop()
 
         if self.camera:

@@ -30,6 +30,7 @@ class MessageType(str, Enum):
     INTERRUPT = "interrupt"  # brain -> robot: drop queued speech, you were cut off
     TELEMETRY = "telemetry"  # robot -> brain: battery, IMU, posture
     MOVED = "moved"          # robot -> brain: I travelled; the view has changed
+    LOG = "log"              # robot -> brain: log lines, for the dashboard
 
 
 class Status(str, Enum):
@@ -235,6 +236,70 @@ class InterruptMessage:
 
 
 @dataclass
+class HelloMessage:
+    """What the robot can actually do, announced when it joins.
+
+    The brain cannot see the robot's hardware, so a dashboard showing whether
+    the servos came up or whether echo cancellation is really running has to
+    be told. Sent once on connect and again if anything is re-initialized.
+
+    Attributes:
+        hardware: Whether real hardware was found, as opposed to the dummy
+            controllers used when developing off the robot.
+        echo_cancellation: Whether the WebRTC canceller is active. Without it
+            the microphone is gated and barge-in does not work.
+        camera: Whether a camera opened.
+        camera_backend: Which capture backend is in use.
+        actions: Action names this robot has handlers for.
+    """
+
+    hardware: bool = False
+    echo_cancellation: bool = False
+    camera: bool = False
+    camera_backend: str = "none"
+    actions: list[str] = field(default_factory=list)
+
+    def to_dict(self) -> dict[str, Any]:
+        """Serialize to a plain JSON-compatible dict."""
+        return {
+            "v": PROTOCOL_VERSION,
+            "type": MessageType.HELLO.value,
+            "hardware": self.hardware,
+            "echo_cancellation": self.echo_cancellation,
+            "camera": self.camera,
+            "camera_backend": self.camera_backend,
+            "actions": self.actions,
+        }
+
+
+@dataclass
+class LogMessage:
+    """A batch of log lines from the robot, for the dashboard.
+
+    Batched rather than sent per line: the Pi logs every gait cycle, and a data
+    channel packet per line would be its own performance problem.
+
+    Attributes:
+        lines: Each entry is ``{"level", "source", "message"}``.
+        dropped: Lines discarded because the robot was logging faster than the
+            link could carry. Reported so the dashboard can say so rather than
+            silently showing an incomplete picture.
+    """
+
+    lines: list[dict[str, str]] = field(default_factory=list)
+    dropped: int = 0
+
+    def to_dict(self) -> dict[str, Any]:
+        """Serialize to a plain JSON-compatible dict."""
+        return {
+            "v": PROTOCOL_VERSION,
+            "type": MessageType.LOG.value,
+            "lines": self.lines,
+            "dropped": self.dropped,
+        }
+
+
+@dataclass
 class MovedMessage:
     """The robot finished travelling, so its surroundings may have changed.
 
@@ -274,6 +339,8 @@ def encode(
     message: ActionMessage
     | StatusMessage
     | InterruptMessage
+    | HelloMessage
+    | LogMessage
     | MovedMessage
     | TelemetryMessage,
 ) -> str:

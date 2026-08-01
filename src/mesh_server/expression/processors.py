@@ -47,6 +47,7 @@ from mesh_common.protocol import (
     encode,
     resolve_action,
 )
+from mesh_server.dashboard.events import bus
 from mesh_server.expression.tags import TagKind, TagStreamParser
 from mesh_server.expression.timeline import (
     GESTURE_GRACE_SECS,
@@ -118,7 +119,8 @@ class ActionTagProcessor(FrameProcessor):
 
         for tag in tags:
             if tag.kind is TagKind.MEMORY:
-                self._memory.remember(tag.name)
+                if self._memory.remember(tag.name):
+                    bus.publish("memory", fact=tag.name)
                 continue
             self._schedule_action(tag.name, tag.param, tag.word_index)
 
@@ -201,6 +203,7 @@ class GestureDispatcher(FrameProcessor):
                 expires_in=gesture.expires_in,
             )
             logger.info(f"-> {gesture.action}" + (f" ({gesture.param})" if gesture.param else ""))
+            bus.publish("gesture", action=gesture.action, param=gesture.param)
             await self._send(encode(message))
 
 

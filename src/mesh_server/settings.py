@@ -119,6 +119,10 @@ class Settings:
         enable_metrics: Collect per-turn latency breakdowns. On by default --
             without it there is no way to tell which stage of the pipeline is
             costing you time.
+        dashboard: Serve the read-only web console.
+        dashboard_host: Interface to bind it to. Defaults to all interfaces so
+            it is reachable from a phone on the same network.
+        dashboard_port: Port for the console.
         vision_enabled: Offer the ``look`` tool to the model. Turning this off
             leaves the robot conversational but blind.
         keep_images: How many recent camera images keep their pixels in
@@ -151,6 +155,12 @@ class Settings:
     identity: str = field(default_factory=lambda: _env("MESH_BRAIN_IDENTITY", "mesh-brain"))
 
     enable_metrics: bool = field(default_factory=lambda: _env("MESH_METRICS", "1") != "0")
+
+    dashboard: bool = field(default_factory=lambda: _env("MESH_DASHBOARD", "1") != "0")
+    dashboard_host: str = field(default_factory=lambda: _env("MESH_DASHBOARD_HOST", "0.0.0.0"))
+    dashboard_port: int = field(
+        default_factory=lambda: int(_env("MESH_DASHBOARD_PORT", "8080") or 8080)
+    )
 
     vision_enabled: bool = field(default_factory=lambda: _env("MESH_VISION", "1") != "0")
     keep_images: int = field(default_factory=lambda: int(_env("MESH_KEEP_IMAGES", "1") or 1))

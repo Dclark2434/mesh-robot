@@ -46,6 +46,7 @@ from pipecat.processors.frame_processor import FrameDirection, FrameProcessor
 from pipecat.services.llm_service import FunctionCallParams
 
 from mesh_common.logging import get_logger
+from mesh_server.dashboard.events import bus
 from mesh_server.vision.ambient import replace_ambient_note
 from mesh_server.vision.context import DEFAULT_KEEP_IMAGES, collapse_old_images
 
@@ -326,6 +327,7 @@ class AmbientVisionProcessor(FrameProcessor):
             return
         if note:
             self._pending = note
+            bus.publish("ambient", note=note)
 
     async def process_frame(self, frame: Frame, direction: FrameDirection) -> None:
         """Apply a pending note between turns.

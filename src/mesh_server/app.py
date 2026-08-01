@@ -51,6 +51,10 @@ from pipecat.turns.user_mute.mute_until_first_bot_complete_user_mute_strategy im
 
 from mesh_common.logging import get_logger
 from mesh_common.protocol import MessageType, Status, StatusMessage, decode, encode
+from mesh_server.dashboard.events import bus
+from mesh_server.dashboard.health import HealthTracker, State
+from mesh_server.dashboard.server import DashboardServer
+from mesh_server.dashboard.taps import TranscriptTap, attach_log_bridge
 from mesh_server.expression.processors import (
     ActionTagProcessor,
     GestureDispatcher,
@@ -171,6 +175,12 @@ async def run() -> int:
         logger.error(f"Set them in {DATA_DIR.parent / '.env'} and try again.")
         return 1
 
+    # The dashboard is wired up first so that startup itself is visible in it.
+    health = HealthTracker()
+    bus.bind(asyncio.get_running_loop())
+    attach_log_bridge(bus)
+    health.update("brain", State.OK, "running")
+
     memory = MemoryStore(DATA_DIR / "facts.json")
     system_prompt = settings.load_system_prompt(memory.as_prompt_block())
     logger.info(
@@ -205,6 +215,9 @@ async def run() -> int:
         Args:
             message: JSON payload from ``mesh_common.protocol.encode``.
         """
+        payload = decode(message)
+        if payload.get("type") == MessageType.STATUS.value:
+            bus.publish("status", status=payload.get("status"))
         try:
             await transport.send_message(message)
         except Exception as exc:  # the conversation must survive a dropped packet
@@ -259,6 +272,9 @@ async def run() -> int:
             context_aggregator.user(),
             llm,
             ActionTagProcessor(timeline, memory),
+            # After tag stripping, so the transcript shows what was spoken
+            # rather than the raw model output with directives still in it.
+            TranscriptTap(bus),
             # Collapses stale images once the reply is complete, so one look
             # does not tax every turn that follows it.
             VisionContextPruner(context, settings.keep_images),
@@ -272,9 +288,13 @@ async def run() -> int:
 
     latency = UserBotLatencyObserver()
 
+    last_total_ms = 0.0
+
     @latency.event_handler("on_latency_measured")
     async def _on_latency(_observer, seconds: float) -> None:
-        logger.info(f"[LATENCY] user stopped -> bot speaking: {seconds * 1000:.0f}ms")
+        nonlocal last_total_ms
+        last_total_ms = seconds * 1000
+        logger.info(f"[LATENCY] user stopped -> bot speaking: {last_total_ms:.0f}ms")
 
     @latency.event_handler("on_latency_breakdown")
     async def _on_breakdown(_observer, breakdown) -> None:
@@ -283,6 +303,19 @@ async def run() -> int:
         )
         if parts:
             logger.info(f"[LATENCY] {parts}")
+
+        # A service that just answered is, definitionally, up -- and its own
+        # time-to-first-byte is the most useful "detail" the status panel can
+        # show for it.
+        breakdown_data = []
+        for metric in breakdown.ttfb:
+            millis = metric.duration_secs * 1000
+            breakdown_data.append({"service": metric.processor, "ms": round(millis)})
+            for key, marker in (("stt", "Deepgram"), ("llm", "Google"), ("tts", "ElevenLabs")):
+                if marker.lower() in metric.processor.lower():
+                    health.update(key, State.OK, f"{millis:.0f}ms")
+
+        bus.publish("latency", total_ms=round(last_total_ms), breakdown=breakdown_data)
 
     task = PipelineTask(
         pipeline,
@@ -309,6 +342,7 @@ async def run() -> int:
             participant_id: SID of the joining participant.
         """
         logger.info(f"Robot joined: {participant_id}")
+        health.update("robot", State.OK, "connected")
         await send(encode(StatusMessage(Status.IDLE)))
         # TTSSpeakFrame goes straight to synthesis. The previous code queued an
         # LLMTextFrame into the pipeline *source*, where it flowed into STT and
@@ -326,13 +360,63 @@ async def run() -> int:
         """
         payload = decode(data)
         kind = payload.get("type")
+        health.touch("robot")
 
         if kind == MessageType.MOVED.value:
             ambient_processor.on_moved()
+
+        elif kind == MessageType.LOG.value:
+            # Mirrored into the same stream as the brain's own logs, tagged so
+            # the dashboard can show the two halves side by side.
+            for line in payload.get("lines", []):
+                bus.publish(
+                    "log",
+                    origin="robot",
+                    level=line.get("level", "INFO"),
+                    source=line.get("source", ""),
+                    message=line.get("message", ""),
+                    dropped=payload.get("dropped", 0),
+                )
+
+        elif kind == MessageType.HELLO.value:
+            health.update("robot", State.OK, "connected")
+            health.update(
+                "hardware",
+                State.OK if payload.get("hardware") else State.WARN,
+                "live" if payload.get("hardware") else "simulated",
+            )
+            health.update(
+                "audio",
+                State.OK if payload.get("echo_cancellation") else State.WARN,
+                "AEC on" if payload.get("echo_cancellation") else "mic gated, no barge-in",
+            )
+            health.update(
+                "camera",
+                State.OK if payload.get("camera") else State.DOWN,
+                payload.get("camera_backend", "none"),
+            )
+            logger.info(
+                f"Robot ready: {len(payload.get('actions', []))} actions, "
+                f"camera={payload.get('camera_backend')}, "
+                f"aec={payload.get('echo_cancellation')}"
+            )
+
         elif kind == MessageType.TELEMETRY.value:
             percent = payload.get("battery_percent")
-            if percent is not None and percent < 20:
+            bus.publish(
+                "telemetry",
+                battery_percent=percent,
+                battery_volts=payload.get("battery_volts"),
+            )
+            if percent is None:
+                health.update("battery", State.UNKNOWN)
+            elif percent < 15:
+                health.update("battery", State.DOWN, f"{percent:.0f}%")
                 logger.warning(f"Robot battery at {percent:.0f}%")
+            elif percent < 30:
+                health.update("battery", State.WARN, f"{percent:.0f}%")
+            else:
+                health.update("battery", State.OK, f"{percent:.0f}%")
 
     @transport.event_handler("on_participant_disconnected")
     async def _on_left(_transport, participant) -> None:
@@ -343,9 +427,51 @@ async def run() -> int:
             participant: The departing participant.
         """
         logger.info(f"Participant left: {participant}")
+        health.update("robot", State.DOWN, "disconnected")
+        for key in ("hardware", "audio", "camera", "battery"):
+            health.update(key, State.UNKNOWN, "robot offline")
 
+    @transport.event_handler("on_connected")
+    async def _on_connected(_transport) -> None:
+        """Mark the room as joined.
+
+        Args:
+            _transport: The transport raising the event.
+        """
+        health.update("livekit", State.OK, settings.room_name)
+
+    @transport.event_handler("on_disconnected")
+    async def _on_disconnected(_transport) -> None:
+        """Mark the room as lost.
+
+        Args:
+            _transport: The transport raising the event.
+        """
+        health.update("livekit", State.DOWN, "disconnected")
+
+    dashboard: DashboardServer | None = None
+    if settings.dashboard:
+        dashboard = DashboardServer(
+            bus,
+            health,
+            feed,
+            {
+                "persona": settings.personality,
+                "llm": settings.gemini_model,
+                "stt": settings.deepgram_model,
+                "room": settings.room_name,
+            },
+        )
+        await dashboard.start(settings.dashboard_host, settings.dashboard_port)
+
+    health.update("pipeline", State.OK, "running")
     logger.info(f"Joining {settings.livekit_url} as '{settings.identity}'")
-    await PipelineRunner().run(task)
+    try:
+        await PipelineRunner().run(task)
+    finally:
+        health.update("pipeline", State.DOWN, "stopped")
+        if dashboard is not None:
+            await dashboard.stop()
     return 0
 
 

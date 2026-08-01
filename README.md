@@ -52,6 +52,9 @@ The interesting parts, in short:
   runs on the Pi, so barge-in works instead of the robot deafening itself.
 - **One action registry** generates both the robot's dispatch table and the
   prompt's list of what it can do, so the two cannot drift apart.
+- **A console at `:8080`** showing both halves of the system — the brain's logs
+  and the robot's, side by side — plus component health, per-turn latency, and
+  a camera preview.
 - **It can look at things.** The camera streams at 5fps but stays on your LAN —
   a frame only reaches Gemini when the robot decides a question needs it, and
   old images are collapsed to text afterwards so one look doesn't tax every
@@ -124,6 +127,10 @@ python -m mesh_server.app
 
 It refuses to start with a list of what is missing rather than failing halfway
 through a conversation.
+
+Then open **http://localhost:8080** for the console — both logs, component
+status, response latency, and what the robot is looking at. It binds to all
+interfaces, so it works from a phone on the same network.
 
 ### 2. The robot (Raspberry Pi)
 

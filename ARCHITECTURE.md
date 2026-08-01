@@ -180,6 +180,9 @@ Everything lives in `src/mesh_server/.env` (brain) and the robot's environment.
 | `MESH_AUDIO_IN_DEVICE` | default | sounddevice input index. |
 | `MESH_AUDIO_OUT_DEVICE` | default | sounddevice output index. |
 | `MESH_AUDIO_IN_CHANNELS` | `1` | Set to `2` for stereo-only USB capsules. |
+| `MESH_DASHBOARD` | `1` | Serve the web console. |
+| `MESH_DASHBOARD_PORT` | `8080` | Console port. |
+| `MESH_DASHBOARD_HOST` | `0.0.0.0` | Bind address; all interfaces by default. |
 | `MESH_VISION` | `1` | Offer the `look` tool. `0` makes the robot blind. |
 | `MESH_KEEP_IMAGES` | `1` | Images keeping their pixels in context. |
 | `MESH_AMBIENT_VISION` | `1` | Notice surroundings after travelling. |
@@ -336,6 +339,54 @@ Two earlier decisions paid off. The transport is WebRTC, so a camera is just
 another track. And the LLM is Gemini's **standard** multimodal API rather than
 the Live API — images attach to context directly, and function calling is
 available. The Live API's audio-only output would have made both awkward.
+
+## The dashboard
+
+`http://<workstation>:8080` while the brain is running. Read-only: it watches
+the robot, it cannot drive it. That is a deliberate limit for a first version —
+a control surface reachable by anything on the LAN deserves its own thought
+about who gets to make a robot walk.
+
+**Both logs, side by side.** The Pi's terminal is the least convenient one in
+the system: over SSH, on a machine that walks away. Its log lines are batched
+every 400ms and shipped over the existing data channel, then shown in their own
+pane next to the brain's. Batching matters — the robot logs a line per gait
+cycle, and a packet per line would be its own performance problem. Lines
+dropped when the robot outruns the link are counted and reported rather than
+silently lost.
+
+**Status.** Components are the things that can independently fail, not a tidy
+architectural diagram. Two states are worth explaining:
+
+- `unknown` (grey) means never exercised. Deepgram is not "down" before anyone
+  has spoken to the robot, and showing it red would train you to ignore red.
+- `stale` (purple) means something that reports periodically has stopped, which
+  is different from a reported failure and usually means a link died.
+
+The robot's own subsystems — servos, echo cancellation, camera — cannot be
+observed from the workstation, so the robot announces them in a `hello` message
+on connect. That is what makes "is AEC actually running?" answerable without
+SSHing in, which matters because a robot with the canceller silently disabled
+looks fine until you try to interrupt it.
+
+**Latency.** The per-turn breakdown from `UserBotLatencyObserver` rendered as
+bars plus a sparkline of recent turns. This is the panel the whole rebuild was
+about: it turns "it feels laggy" into "ElevenLabs took 900ms on that turn".
+
+**Camera.** Polled as an ordinary JPEG endpoint every 5 seconds rather than
+pushed down the WebSocket, which keeps the event stream text-only and lets the
+browser handle caching. The preview is downscaled to 480px — it is a monitoring
+thumbnail, not what the model sees.
+
+Also shown: transcript, gestures as they fire, the current ambient note, and
+battery. The page is a single file with no external assets, because a
+dashboard that needs a CDN is useless on a LAN with no internet.
+
+Events are published to a process-wide bus (`dashboard/events.py`). That is a
+singleton by choice: observability is cross-cutting in the same way logging is,
+and threading a dashboard reference through every pipeline processor would put
+presentation concerns into code with no other reason to know about them.
+Publishing with nothing subscribed is a deque append.
 
 ## Known gaps
 

@@ -1,0 +1,404 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>MESH console</title>
+<style>
+  :root {
+    --bg: #0c0f13;
+    --panel: #141920;
+    --panel-2: #1a2029;
+    --line: #262e3a;
+    --text: #d7dee8;
+    --dim: #7c8798;
+    --ok: #4ade80;
+    --warn: #fbbf24;
+    --down: #f87171;
+    --stale: #a78bfa;
+    --unknown: #4b5563;
+    --accent: #38bdf8;
+  }
+  * { box-sizing: border-box; }
+  body {
+    margin: 0; background: var(--bg); color: var(--text);
+    font: 13px/1.5 ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+  }
+  header {
+    display: flex; align-items: center; gap: 16px; flex-wrap: wrap;
+    padding: 10px 16px; background: var(--panel); border-bottom: 1px solid var(--line);
+    position: sticky; top: 0; z-index: 10;
+  }
+  .brand { font-weight: 700; letter-spacing: .14em; color: var(--accent); }
+  .pill {
+    padding: 2px 10px; border-radius: 999px; background: var(--panel-2);
+    border: 1px solid var(--line); font-size: 12px;
+  }
+  .pill b { color: var(--text); font-weight: 600; }
+  .pill span { color: var(--dim); }
+  .spacer { flex: 1; }
+
+  main {
+    display: grid; gap: 12px; padding: 12px;
+    grid-template-columns: minmax(0, 2fr) minmax(320px, 1fr);
+  }
+  @media (max-width: 1000px) { main { grid-template-columns: 1fr; } }
+
+  .panel { background: var(--panel); border: 1px solid var(--line); border-radius: 8px; overflow: hidden; }
+  .panel > h2 {
+    margin: 0; padding: 8px 12px; font-size: 11px; letter-spacing: .12em;
+    text-transform: uppercase; color: var(--dim); border-bottom: 1px solid var(--line);
+    display: flex; align-items: center; gap: 8px;
+  }
+  .panel > h2 .spacer { flex: 1; }
+  .panel > h2 button {
+    background: var(--panel-2); color: var(--dim); border: 1px solid var(--line);
+    border-radius: 4px; padding: 1px 8px; font: inherit; font-size: 11px; cursor: pointer;
+  }
+  .panel > h2 button.on { color: var(--accent); border-color: var(--accent); }
+  .body { padding: 10px 12px; }
+
+  /* status ------------------------------------------------------------ */
+  .groups { display: grid; grid-template-columns: 1fr 1fr; gap: 0; }
+  @media (max-width: 560px) { .groups { grid-template-columns: 1fr; } }
+  .group h3 {
+    margin: 0; padding: 8px 12px 4px; font-size: 10px; letter-spacing: .1em;
+    text-transform: uppercase; color: var(--dim);
+  }
+  .comp { display: flex; align-items: center; gap: 8px; padding: 3px 12px; }
+  .dot { width: 9px; height: 9px; border-radius: 50%; background: var(--unknown); flex: none; }
+  .dot.ok { background: var(--ok); box-shadow: 0 0 7px rgba(74,222,128,.55); }
+  .dot.warn { background: var(--warn); }
+  .dot.down { background: var(--down); box-shadow: 0 0 7px rgba(248,113,113,.55); animation: blink 1.1s infinite; }
+  .dot.stale { background: var(--stale); }
+  @keyframes blink { 50% { opacity: .25; } }
+  .comp .name { flex: 1; }
+  .comp .detail { color: var(--dim); font-size: 11px; text-align: right; }
+
+  /* logs --------------------------------------------------------------- */
+  .logs { height: 300px; overflow-y: auto; padding: 6px 0; }
+  .log-row { display: flex; gap: 8px; padding: 1px 12px; white-space: pre-wrap; word-break: break-word; }
+  .log-row:hover { background: var(--panel-2); }
+  .log-row .t { color: #4b5563; flex: none; }
+  .log-row .s { color: #64748b; flex: none; }
+  .log-row .m { flex: 1; }
+  .lv-WARNING .m { color: var(--warn); }
+  .lv-ERROR .m, .lv-CRITICAL .m { color: var(--down); }
+  .lv-DEBUG .m { color: var(--dim); }
+  .empty { padding: 18px 12px; color: var(--dim); text-align: center; }
+
+  /* camera ------------------------------------------------------------- */
+  .cam { position: relative; background: #000; aspect-ratio: 4 / 3; }
+  .cam img { width: 100%; height: 100%; object-fit: contain; display: block; }
+  .cam .overlay {
+    position: absolute; inset: auto 0 0 0; padding: 4px 8px; font-size: 11px;
+    background: linear-gradient(transparent, rgba(0,0,0,.75)); color: var(--dim);
+    display: flex; justify-content: space-between;
+  }
+  .cam.stale img { opacity: .35; filter: grayscale(1); }
+
+  /* latency ------------------------------------------------------------ */
+  .lat-total { font-size: 26px; font-weight: 600; }
+  .lat-total small { font-size: 12px; color: var(--dim); font-weight: 400; }
+  .bars { margin-top: 8px; display: grid; gap: 4px; }
+  .bar { display: grid; grid-template-columns: 92px 1fr 52px; gap: 8px; align-items: center; font-size: 11px; }
+  .bar .track { height: 8px; background: var(--panel-2); border-radius: 4px; overflow: hidden; }
+  .bar .fill { height: 100%; background: var(--accent); }
+  .bar .fill.slow { background: var(--warn); }
+  .bar .n { color: var(--dim); }
+  .bar .v { text-align: right; }
+  .spark { display: flex; align-items: flex-end; gap: 2px; height: 34px; margin-top: 10px; }
+  .spark i { flex: 1; background: var(--accent); opacity: .55; border-radius: 1px 1px 0 0; min-height: 2px; }
+  .spark i.slow { background: var(--warn); opacity: .8; }
+
+  /* transcript / feed --------------------------------------------------- */
+  .feed { max-height: 240px; overflow-y: auto; }
+  .turn { padding: 5px 12px; }
+  .turn .who { font-size: 10px; letter-spacing: .1em; text-transform: uppercase; color: var(--dim); }
+  .turn.user .who { color: var(--accent); }
+  .turn.assistant .who { color: var(--ok); }
+  .gest { display: flex; gap: 8px; padding: 3px 12px; font-size: 12px; }
+  .gest .g { color: var(--warn); }
+  .kv { display: flex; justify-content: space-between; gap: 12px; padding: 2px 0; }
+  .kv span { color: var(--dim); }
+  .note { color: var(--dim); font-style: italic; }
+  .disconnected { background: var(--down); color: #000; text-align: center; padding: 4px; font-weight: 600; }
+</style>
+</head>
+<body>
+
+<div id="offline" class="disconnected" hidden>Lost connection to the brain — retrying…</div>
+
+<header>
+  <span class="brand">M.E.S.H.</span>
+  <span class="pill"><span>state</span> <b id="hdr-state">—</b></span>
+  <span class="pill"><span>persona</span> <b id="hdr-persona">—</b></span>
+  <span class="pill"><span>battery</span> <b id="hdr-battery">—</b></span>
+  <span class="pill"><span>turns</span> <b id="hdr-turns">0</b></span>
+  <span class="spacer"></span>
+  <span class="pill"><span>uptime</span> <b id="hdr-uptime">0s</b></span>
+</header>
+
+<main>
+  <div>
+    <section class="panel" style="margin-bottom:12px">
+      <h2>Brain log <span class="spacer"></span>
+        <button id="brain-pause">pause</button>
+        <button id="brain-clear">clear</button>
+      </h2>
+      <div class="logs" id="brain-log"><div class="empty">waiting for output…</div></div>
+    </section>
+
+    <section class="panel">
+      <h2>Robot log <span class="spacer"></span>
+        <span id="robot-dropped" style="color:var(--warn)"></span>
+        <button id="robot-pause">pause</button>
+        <button id="robot-clear">clear</button>
+      </h2>
+      <div class="logs" id="robot-log"><div class="empty">no robot connected</div></div>
+    </section>
+  </div>
+
+  <div>
+    <section class="panel" style="margin-bottom:12px">
+      <h2>Status <span class="spacer"></span><span id="overall" class="pill">—</span></h2>
+      <div class="groups">
+        <div class="group"><h3>Server</h3><div id="grp-server"></div></div>
+        <div class="group"><h3>Robot</h3><div id="grp-robot"></div></div>
+      </div>
+    </section>
+
+    <section class="panel" style="margin-bottom:12px">
+      <h2>What Rocky sees <span class="spacer"></span><span id="cam-age" style="color:var(--dim)"></span></h2>
+      <div class="cam" id="cam"><img id="cam-img" alt="camera preview"></div>
+      <div class="body"><div class="note" id="ambient">no ambient observation yet</div></div>
+    </section>
+
+    <section class="panel" style="margin-bottom:12px">
+      <h2>Response latency</h2>
+      <div class="body">
+        <div class="lat-total"><span id="lat-total">—</span><small> ms to first word</small></div>
+        <div class="bars" id="lat-bars"></div>
+        <div class="spark" id="lat-spark"></div>
+      </div>
+    </section>
+
+    <section class="panel" style="margin-bottom:12px">
+      <h2>Conversation</h2>
+      <div class="feed" id="transcript"><div class="empty">nothing said yet</div></div>
+    </section>
+
+    <section class="panel">
+      <h2>Gestures</h2>
+      <div class="feed" id="gestures"><div class="empty">no gestures yet</div></div>
+    </section>
+  </div>
+</main>
+
+<script>
+(() => {
+  "use strict";
+
+  const $ = (id) => document.getElementById(id);
+  const MAX_ROWS = 500;
+  const started = Date.now();
+  let turns = 0;
+
+  const clock = (ts) => new Date(ts * 1000).toLocaleTimeString([], { hour12: false });
+
+  // -- log panes ---------------------------------------------------------
+  function makeLogPane(paneId, pauseId, clearId) {
+    const pane = $(paneId);
+    const pauseBtn = $(pauseId);
+    let paused = false;
+
+    pauseBtn.onclick = () => {
+      paused = !paused;
+      pauseBtn.textContent = paused ? "resume" : "pause";
+      pauseBtn.classList.toggle("on", paused);
+    };
+    $(clearId).onclick = () => { pane.innerHTML = ""; };
+
+    return (event) => {
+      if (paused) return;
+      const empty = pane.querySelector(".empty");
+      if (empty) empty.remove();
+
+      // Only stick to the bottom if the reader is already there; otherwise
+      // scrolling up to read something must not be yanked away.
+      const atBottom = pane.scrollHeight - pane.scrollTop - pane.clientHeight < 40;
+
+      const row = document.createElement("div");
+      row.className = "log-row lv-" + (event.level || "INFO");
+      row.innerHTML =
+        '<span class="t"></span><span class="s"></span><span class="m"></span>';
+      row.children[0].textContent = clock(event.at);
+      row.children[1].textContent = event.source || "";
+      row.children[2].textContent = event.message || "";
+      pane.appendChild(row);
+
+      while (pane.childElementCount > MAX_ROWS) pane.firstElementChild.remove();
+      if (atBottom) pane.scrollTop = pane.scrollHeight;
+    };
+  }
+
+  const appendBrain = makeLogPane("brain-log", "brain-pause", "brain-clear");
+  const appendRobot = makeLogPane("robot-log", "robot-pause", "robot-clear");
+  let dropped = 0;
+
+  // -- feeds -------------------------------------------------------------
+  function prependTo(paneId, node, limit = 40) {
+    const pane = $(paneId);
+    const empty = pane.querySelector(".empty");
+    if (empty) empty.remove();
+    pane.prepend(node);
+    while (pane.childElementCount > limit) pane.lastElementChild.remove();
+  }
+
+  function addTurn(event) {
+    const el = document.createElement("div");
+    el.className = "turn " + event.role;
+    el.innerHTML = '<div class="who"></div><div class="what"></div>';
+    el.children[0].textContent = event.role === "user" ? "you" : "rocky";
+    el.children[1].textContent = event.text;
+    prependTo("transcript", el);
+    if (event.role === "assistant") $("hdr-turns").textContent = ++turns;
+  }
+
+  function addGesture(event) {
+    const el = document.createElement("div");
+    el.className = "gest";
+    el.innerHTML = '<span class="t"></span><span class="g"></span>';
+    el.children[0].textContent = clock(event.at);
+    el.children[1].textContent = event.action + (event.param ? " " + event.param : "");
+    prependTo("gestures", el, 25);
+  }
+
+  // -- latency -----------------------------------------------------------
+  const history = [];
+  function showLatency(event) {
+    $("lat-total").textContent = Math.round(event.total_ms);
+
+    const parts = event.breakdown || [];
+    const peak = Math.max(1, ...parts.map((p) => p.ms));
+    $("lat-bars").innerHTML = "";
+    for (const part of parts) {
+      const row = document.createElement("div");
+      row.className = "bar";
+      row.innerHTML =
+        '<span class="n"></span><span class="track"><span class="fill"></span></span><span class="v"></span>';
+      row.children[0].textContent = part.service;
+      const fill = row.children[1].firstElementChild;
+      fill.style.width = (100 * part.ms / peak) + "%";
+      if (part.ms > 400) fill.classList.add("slow");
+      row.children[2].textContent = Math.round(part.ms) + "ms";
+      $("lat-bars").appendChild(row);
+    }
+
+    history.push(event.total_ms);
+    while (history.length > 40) history.shift();
+    const top = Math.max(1, ...history);
+    $("lat-spark").innerHTML = history
+      .map((v) => `<i class="${v > 1500 ? "slow" : ""}" style="height:${Math.max(4, 100 * v / top)}%"></i>`)
+      .join("");
+  }
+
+  // -- event stream ------------------------------------------------------
+  const handlers = {
+    log: (e) => {
+      if (e.origin === "robot") {
+        appendRobot(e);
+        if (e.dropped) {
+          dropped += e.dropped;
+          $("robot-dropped").textContent = dropped + " dropped";
+        }
+      } else {
+        appendBrain(e);
+      }
+    },
+    transcript: addTurn,
+    gesture: addGesture,
+    latency: showLatency,
+    status: (e) => { $("hdr-state").textContent = e.status; },
+    telemetry: (e) => {
+      if (e.battery_percent != null) {
+        $("hdr-battery").textContent = Math.round(e.battery_percent) + "%";
+      }
+    },
+    ambient: (e) => { $("ambient").textContent = e.note || "no ambient observation yet"; },
+  };
+
+  function connect() {
+    const proto = location.protocol === "https:" ? "wss" : "ws";
+    const socket = new WebSocket(`${proto}://${location.host}/events`);
+
+    socket.onopen = () => { $("offline").hidden = true; };
+    socket.onclose = () => {
+      $("offline").hidden = false;
+      setTimeout(connect, 2000);
+    };
+    socket.onmessage = (message) => {
+      let event;
+      try { event = JSON.parse(message.data); } catch { return; }
+      const handler = handlers[event.kind];
+      if (handler) handler(event);
+    };
+  }
+
+  // -- polled state ------------------------------------------------------
+  async function pollHealth() {
+    try {
+      const data = await (await fetch("/api/health")).json();
+      const groups = { server: [], robot: [] };
+      for (const c of data.components) (groups[c.group] ||= []).push(c);
+
+      for (const [group, items] of Object.entries(groups)) {
+        const target = $("grp-" + group);
+        if (!target) continue;
+        target.innerHTML = items.map((c) => `
+          <div class="comp">
+            <span class="dot ${c.state}"></span>
+            <span class="name">${c.label}</span>
+            <span class="detail">${c.detail || ""}</span>
+          </div>`).join("");
+      }
+
+      const overall = $("overall");
+      overall.textContent = data.overall;
+      overall.style.color =
+        data.overall === "ok" ? "var(--ok)" :
+        data.overall === "warn" ? "var(--warn)" :
+        data.overall === "down" ? "var(--down)" : "var(--dim)";
+    } catch { /* the socket banner already says we are offline */ }
+  }
+
+  function pollFrame() {
+    const img = $("cam-img");
+    const probe = new Image();
+    probe.onload = () => {
+      img.src = probe.src;
+      $("cam").classList.remove("stale");
+      $("cam-age").textContent = clock(Date.now() / 1000);
+    };
+    probe.onerror = () => { $("cam").classList.add("stale"); $("cam-age").textContent = "no signal"; };
+    probe.src = "/api/frame.jpg?t=" + Date.now();
+  }
+
+  function tickUptime() {
+    const s = Math.floor((Date.now() - started) / 1000);
+    $("hdr-uptime").textContent =
+      s < 60 ? s + "s" : Math.floor(s / 60) + "m " + (s % 60) + "s";
+  }
+
+  fetch("/api/state").then((r) => r.json()).then((state) => {
+    $("hdr-persona").textContent = state.persona || "—";
+  }).catch(() => {});
+
+  connect();
+  pollHealth(); setInterval(pollHealth, 3000);
+  pollFrame(); setInterval(pollFrame, 5000);
+  setInterval(tickUptime, 1000);
+})();
+</script>
+</body>
+</html>

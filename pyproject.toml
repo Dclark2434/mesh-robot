@@ -22,6 +22,10 @@ dependencies = [
 brain = [
     "pipecat-ai[deepgram,elevenlabs,google,livekit,local-smart-turn,silero]>=1.1.0",
     "livekit-api",
+    # Serves the dashboard. Already a pipecat dependency; named here because
+    # this project imports it directly.
+    "aiohttp",
+    "pillow",
 ]
 
 # The robot, on any machine. Audio and the LiveKit session, no GPIO.
@@ -59,7 +63,7 @@ mesh-robot = "mesh_client.app:main"
 where = ["src"]
 
 [tool.setuptools.package-data]
-mesh_server = ["personalities/*.txt"]
+mesh_server = ["personalities/*.txt", "dashboard/*.html"]
 
 [tool.pytest.ini_options]
 testpaths = ["tests"]

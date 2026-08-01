@@ -280,6 +280,11 @@ class CameraPublisher:
         """Whether a camera is open and publishing."""
         return self._backend is not None
 
+    @property
+    def backend_name(self) -> str:
+        """Which capture backend is in use, for reporting to the dashboard."""
+        return self._backend.name if self._backend else "none"
+
     async def start(self, participant: rtc.LocalParticipant) -> bool:
         """Open the camera and publish it to the room.
 
