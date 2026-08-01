@@ -32,12 +32,19 @@ robot = [
 ]
 
 # Hardware drivers. Raspberry Pi only -- these will not build elsewhere.
+# picamera2 is not listed: it ships with Raspberry Pi OS and installs badly
+# from pip. Use `apt install python3-picamera2` for a CSI camera.
 hardware = [
     "rpi-ws281x",
     "spidev",
     "smbus2",
     "gpiozero",
     "RPi.GPIO",
+]
+
+# USB webcam support. Not needed for CSI cameras.
+usb-camera = [
+    "opencv-python-headless",
 ]
 
 dev = [

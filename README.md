@@ -52,6 +52,10 @@ The interesting parts, in short:
   runs on the Pi, so barge-in works instead of the robot deafening itself.
 - **One action registry** generates both the robot's dispatch table and the
   prompt's list of what it can do, so the two cannot drift apart.
+- **It can look at things.** The camera streams at 5fps but stays on your LAN —
+  a frame only reaches Gemini when the robot decides a question needs it, and
+  old images are collapsed to text afterwards so one look doesn't tax every
+  turn that follows.
 
 [`ARCHITECTURE.md`](ARCHITECTURE.md) explains all of this properly, including
 the latency budget and the tradeoffs taken.
@@ -69,6 +73,7 @@ Say any of this out loud; there is no command syntax.
 | **Express** | wave, bow, nod, shake, roll its eyes, laugh, tap a foot, wiggle |
 | **Signal** | flash its light, beep, warn, sound an alarm |
 | **Rest** | relax the servos, lie flat so you can pick it up |
+| **See** | "what am I holding?", "what colour is this?", "look at the desk" |
 
 It also acts while it talks, without being asked:
 
@@ -126,6 +131,10 @@ through a conversation.
 python3 -m venv venv
 source venv/bin/activate
 pip install -e ".[robot,hardware]"
+
+# For the camera, pick whichever matches your hardware:
+sudo apt install -y python3-picamera2   # CSI ribbon camera
+pip install opencv-python-headless      # USB webcam
 ```
 
 Set the same LiveKit variables in the robot's environment, plus its audio

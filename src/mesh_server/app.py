@@ -35,7 +35,7 @@ from pipecat.observers.user_bot_latency_observer import UserBotLatencyObserver
 from pipecat.pipeline.pipeline import Pipeline
 from pipecat.pipeline.runner import PipelineRunner
 from pipecat.pipeline.task import PipelineParams, PipelineTask
-from pipecat.processors.aggregators.llm_context import LLMContext
+from pipecat.processors.aggregators.llm_context import NOT_GIVEN, LLMContext
 from pipecat.processors.aggregators.llm_response_universal import (
     LLMAssistantAggregatorParams,
     LLMContextAggregatorPair,
@@ -60,6 +60,13 @@ from mesh_server.expression.processors import (
 )
 from mesh_server.memory import MemoryStore
 from mesh_server.settings import DATA_DIR, Settings
+from mesh_server.vision.feed import (
+    CameraFeed,
+    CameraFeedProcessor,
+    VisionContextPruner,
+    make_look_handler,
+    vision_tools,
+)
 
 logger = get_logger("brain")
 
@@ -177,6 +184,10 @@ async def run() -> int:
         params=LiveKitParams(
             audio_in_enabled=True,
             audio_in_sample_rate=settings.audio.input_rate,
+            # Subscribes to the robot's camera. Frames are absorbed by
+            # CameraFeedProcessor immediately; nothing downstream sees them
+            # until the model asks to look.
+            video_in_enabled=settings.vision_enabled,
             audio_out_enabled=True,
             audio_out_sample_rate=settings.audio.output_rate,
             # Smaller outbound chunks: less buffering before the first sound
@@ -200,8 +211,16 @@ async def run() -> int:
     stt, llm, tts = _build_services(settings, system_prompt)
     timeline = GestureTimeline()
 
+    # Vision. The camera streams continuously but only reaches the model when
+    # it calls `look`; see mesh_server/vision.py for why it is a tool rather
+    # than an action tag.
+    feed = CameraFeed()
+    llm.register_function("look", make_look_handler(feed))
+
+    context = LLMContext(tools=vision_tools() if settings.vision_enabled else NOT_GIVEN)
+
     context_aggregator = LLMContextAggregatorPair(
-        context=LLMContext(),
+        context=context,
         user_params=LLMUserAggregatorParams(
             vad_analyzer=_build_vad(settings),
             # The old AlwaysUserMuteStrategy gated the mic for the whole time
@@ -219,11 +238,17 @@ async def run() -> int:
     pipeline = Pipeline(
         [
             transport.input(),
+            # Absorbs the video stream before it can travel any further, and
+            # answers the model's requests to look.
+            CameraFeedProcessor(feed),
             ListeningStatusProcessor(send),
             stt,
             context_aggregator.user(),
             llm,
             ActionTagProcessor(timeline, memory),
+            # Collapses stale images once the reply is complete, so one look
+            # does not tax every turn that follows it.
+            VisionContextPruner(context, settings.keep_images),
             tts,
             transport.output(),
             GestureDispatcher(timeline, send),

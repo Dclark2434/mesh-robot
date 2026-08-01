@@ -119,6 +119,11 @@ class Settings:
         enable_metrics: Collect per-turn latency breakdowns. On by default --
             without it there is no way to tell which stage of the pipeline is
             costing you time.
+        vision_enabled: Offer the ``look`` tool to the model. Turning this off
+            leaves the robot conversational but blind.
+        keep_images: How many recent camera images keep their pixels in
+            context. Older ones collapse to a text stand-in, because an image
+            left in context is re-sent on every subsequent turn.
         audio: Sample-rate configuration.
         turn: Turn-taking configuration.
     """
@@ -141,6 +146,9 @@ class Settings:
     identity: str = field(default_factory=lambda: _env("MESH_BRAIN_IDENTITY", "mesh-brain"))
 
     enable_metrics: bool = field(default_factory=lambda: _env("MESH_METRICS", "1") != "0")
+
+    vision_enabled: bool = field(default_factory=lambda: _env("MESH_VISION", "1") != "0")
+    keep_images: int = field(default_factory=lambda: int(_env("MESH_KEEP_IMAGES", "1") or 1))
 
     audio: AudioSettings = field(default_factory=AudioSettings)
     turn: TurnSettings = field(default_factory=TurnSettings)

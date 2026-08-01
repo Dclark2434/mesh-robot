@@ -25,16 +25,18 @@ recorded to disk and replayed, and there is no per-utterance connection setup.
 
 | # | Stage | Why it sits here |
 |---|-------|------------------|
-| 1 | `transport.input()` | Audio from the robot's mic. |
-| 2 | `ListeningStatusProcessor` | LEDs follow the user's turn, as early as possible. |
-| 3 | `stt` (Deepgram) | Streaming transcription with interim results. |
-| 4 | `context.user()` | Owns VAD, end-of-turn detection, muting, and turn accumulation. |
-| 5 | `llm` (Gemini) | Standard text API. |
-| 6 | `ActionTagProcessor` | Directives out of the text *before* it can be spoken. |
-| 7 | `tts` (ElevenLabs) | Streaming synthesis with word alignment. |
-| 8 | `transport.output()` | Audio out, and the clock that gates timestamped frames. |
-| 9 | `GestureDispatcher`, `SpeakingStatusProcessor` | Downstream of that clock, so gestures land with the sound. |
-| 10 | `context.assistant()` | Reply goes back into history, with auto-summarization. |
+| 1 | `transport.input()` | Audio and video from the robot. |
+| 2 | `CameraFeedProcessor` | Swallows the video stream into a one-slot buffer; answers requests to look. |
+| 3 | `ListeningStatusProcessor` | LEDs follow the user's turn, as early as possible. |
+| 4 | `stt` (Deepgram) | Streaming transcription with interim results. |
+| 5 | `context.user()` | Owns VAD, end-of-turn detection, muting, and turn accumulation. |
+| 6 | `llm` (Gemini) | Standard multimodal API, with the `look` tool registered. |
+| 7 | `ActionTagProcessor` | Directives out of the text *before* it can be spoken. |
+| 8 | `VisionContextPruner` | Collapses stale images once the reply is complete. |
+| 9 | `tts` (ElevenLabs) | Streaming synthesis with word alignment. |
+| 10 | `transport.output()` | Audio out, and the clock that gates timestamped frames. |
+| 11 | `GestureDispatcher`, `SpeakingStatusProcessor` | Downstream of that clock, so gestures land with the sound. |
+| 12 | `context.assistant()` | Reply goes back into history, with auto-summarization. |
 
 ### Why gestures are dispatched after the output transport
 
@@ -177,50 +179,94 @@ Everything lives in `src/mesh_server/.env` (brain) and the robot's environment.
 | `MESH_AUDIO_IN_DEVICE` | default | sounddevice input index. |
 | `MESH_AUDIO_OUT_DEVICE` | default | sounddevice output index. |
 | `MESH_AUDIO_IN_CHANNELS` | `1` | Set to `2` for stereo-only USB capsules. |
+| `MESH_VISION` | `1` | Offer the `look` tool. `0` makes the robot blind. |
+| `MESH_KEEP_IMAGES` | `1` | Images keeping their pixels in context. |
+| `MESH_CAMERA` | `1` | Publish the camera track from the robot. |
+| `MESH_CAMERA_FPS` | `5` | Capture rate. Only the newest frame is ever used. |
+| `MESH_CAMERA_WIDTH` / `_HEIGHT` | `640` / `480` | Capture resolution. |
+| `MESH_CAMERA_DEVICE` | `0` | OpenCV device index, USB cameras only. |
 
-## Vision: not built yet, and how it should be built
+## Vision
 
-The robot does not see. It publishes no camera track, and never has on this
-architecture — capture existed only in the pre-streaming HTTP client. Nothing
-here precludes it, and two decisions already made keep it easy:
+The robot publishes a camera track continuously at 5fps, and almost none of it
+reaches the model.
 
-- The transport is WebRTC, so a video track is a track alongside the audio one.
-- The LLM is Gemini's **standard** multimodal API rather than the Live API, so
-  images can be attached to conversation context directly. (This is a real
-  benefit of that earlier decision, not just a workaround for Live's
-  audio-only output.)
+### The two costs, and what happens to each
 
-The shape it should take:
+**Bandwidth** stays on the LAN. Frames arrive at `CameraFeedProcessor`, which
+sits immediately after `transport.input()`, overwrite a one-slot buffer, and
+are **swallowed** — they are not passed downstream. Nothing else in the
+pipeline ever sees them. Streaming them into the LLM instead would spend tokens
+and latency on every turn for a capability that matters occasionally.
 
-1. **Robot publishes video.** A `rtc.VideoSource` fed from `picamera2`, at a low
-   frame rate — 5fps is plenty and leaves the Pi's CPU for the echo canceller.
-   `LiveKitParams(video_in_enabled=True)` on the brain subscribes to it.
+**Context** is the subtler one. An image attached to conversation history is
+re-sent to the model on *every subsequent turn*, so one look would tax the rest
+of the conversation forever. After each reply, `VisionContextPruner` collapses
+older images into a text stand-in built from what the robot was looking for and
+what it said about it:
 
-2. **Do not stream frames into the LLM.** Every frame in context costs tokens
-   and latency on *every* turn. Instead keep the newest frame in a one-slot
-   buffer, and attach it only when it is wanted.
+```
+[Earlier you looked to see what the user is holding, and said: "That's a blue mug"]
+```
 
-3. **Wanted when?** Two triggers, no more:
-   - a `see` action tag, so the model can choose to look when the conversation
-     calls for it ("what am I holding?");
-   - optionally, the first user turn after motion, so the robot notices it has
-     been moved.
+The most recent look keeps its real pixels, so follow-ups — "what colour is
+it?", "is it still there?" — still work. Everything before that is a sentence.
+`MESH_KEEP_IMAGES` tunes how many stay; `0` collapses all of them.
 
-   A `[ACTION: see]` tag fits the existing registry — an `AUX`-lane action whose
-   handler is on the brain rather than the robot.
+### A tool, not an action tag
 
-4. **Where in the pipeline.** A processor between `context.user()` and `llm`
-   that, when a look is pending, attaches the buffered frame to the outgoing
-   context. That is the only place with both the trigger and the context in
-   hand.
+I originally sketched this as a `[ACTION: see]` tag. That was wrong. Action tags
+are fire-and-forget with no return path, so the model could ask to look but
+never see the result in the same breath — it would have to comment on the
+picture a turn later.
 
-The failed experiment in the old code — `MultimodalAudioAggregator`, which
-buffered raw *audio* onto context — is not the seed of this. That was an attempt
-to bypass Deepgram, and it should stay deleted. Vision is a separate feature
-that happens to use the same attachment mechanism.
+`look` is a **function call** instead, which is a mid-turn round trip: the model
+asks, the image lands in context, inference re-runs, and it answers in the same
+reply. It takes a `question` argument ("what the user is holding") which serves
+two purposes — it pushes the model toward looking deliberately rather than
+reflexively, and it becomes the text of the stand-in once the image is purged.
+
+The cost is one extra LLM round trip, but only on turns where the robot
+actually looks.
+
+### The ordering problem
+
+Gemini requires a function call to be followed by its response. An image
+message injected between the two breaks that contract.
+
+Pipecat handles this properly: a `UserImageRequestFrame` carrying the
+`tool_call_id` and `result_callback` is answered with a `UserImageRawFrame`, and
+the assistant aggregator places the image into context *after* the tool result,
+then re-runs inference. The `look` handler therefore does **not** call
+`result_callback` itself on the success path — the image delivery does, and
+that is what makes the model wait for the picture instead of answering without
+it.
+
+The catch is that `LiveKitTransport` has no `request_participant_image`; only
+the Daily and SmallWebRTC transports implement it. `CameraFeedProcessor`
+provides that responder for LiveKit, which keeps everything else on the
+framework's rails.
+
+### Not related to the old dead code
+
+`MultimodalAudioAggregator`, the unused class in the previous codebase, buffered
+raw *audio* onto context to bypass Deepgram. It is not an early version of this
+and stays deleted. Vision happens to use the same attachment mechanism and
+nothing else.
+
+### Why this was easy
+
+Two earlier decisions paid off. The transport is WebRTC, so a camera is just
+another track. And the LLM is Gemini's **standard** multimodal API rather than
+the Live API — images attach to context directly, and function calling is
+available. The Live API's audio-only output would have made both awkward.
 
 ## Known gaps
 
+- **Nothing prompts the robot to look on its own.** It looks when it decides a
+  question needs it. It will not notice that it has been picked up and moved,
+  or that someone walked in. A cheap improvement would be a look triggered by
+  the first user turn after locomotion.
 - **A long body action cannot be cancelled.** Gait and animation loops are
   blocking `time.sleep` sequences. Interrupting the robot stops its speech but
   not its legs. Fixing it means threading a stop flag through the animation

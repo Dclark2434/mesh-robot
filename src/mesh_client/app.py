@@ -23,6 +23,7 @@ from livekit import api, rtc
 from mesh_client.animation_controller import AnimationController
 from mesh_client.audio import SAMPLE_RATE, AudioConfig, DuplexAudio, describe_devices
 from mesh_client.buzzer_controller import BuzzerController
+from mesh_client.camera import CameraConfig, CameraPublisher
 from mesh_client.led_controller import LEDManager, LEDState
 from mesh_client.locomotion import LocomotionController
 from mesh_client.motion import MotionDispatcher, steps_from
@@ -80,6 +81,7 @@ class Robot:
 
         self.room = rtc.Room()
         self.audio: DuplexAudio | None = None
+        self.camera: CameraPublisher | None = None
         self.motion = MotionDispatcher()
         self._closing = asyncio.Event()
 
@@ -289,7 +291,21 @@ class Robot:
                 "Running without echo cancellation -- the robot may hear itself. "
                 "Check that livekit-rtc is current."
             )
-        logger.info("Connected. Microphone live.")
+
+        # A missing camera is not fatal: the robot converses blind rather than
+        # refusing to start.
+        self.camera = CameraPublisher(
+            CameraConfig(
+                width=int(os.getenv("MESH_CAMERA_WIDTH", "640")),
+                height=int(os.getenv("MESH_CAMERA_HEIGHT", "480")),
+                fps=int(os.getenv("MESH_CAMERA_FPS", "5")),
+                device=int(os.getenv("MESH_CAMERA_DEVICE", "0")),
+                enabled=os.getenv("MESH_CAMERA", "1") != "0",
+            )
+        )
+        await self.camera.start(self.room.local_participant)
+
+        logger.info("Connected. Microphone live." + ("" if self.camera.active else " No camera."))
 
     # -- lifecycle --------------------------------------------------------
 
@@ -312,6 +328,8 @@ class Robot:
         self._closing.set()
         self.motion.stop()
 
+        if self.camera:
+            await self.camera.stop()
         if self.audio:
             await self.audio.stop()
         if self.room.isconnected():
