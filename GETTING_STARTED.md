@@ -37,21 +37,56 @@ persona is already `rocky`.
 
 ## 2. Start LiveKit
 
-Both halves meet in a room hosted by a LiveKit server. Your `.env` points at
-`ws://192.168.4.80:7880` with the standard dev credentials, so if that machine
-is not already running one:
+Both halves meet in a room hosted by a LiveKit server. First find the
+workstation's LAN address — the robot has to reach it, so `localhost` is no use:
 
 ```bash
-docker run --rm -p 7880:7880 -p 7881:7881 -p 7882:7882/udp livekit/livekit-server --dev --bind 0.0.0.0
+ipconfig | findstr /C:"IPv4"
 ```
 
-`--dev` is what makes `devkey` / `secret` valid. Check it is up:
+Take the one on your real network (`192.168.4.x`), not the VMware
+(`192.168.156.1`, `192.168.17.1`) or link-local (`169.254.x`) adapters.
+
+Then start the server, **substituting that address**:
 
 ```bash
-curl -s http://192.168.4.80:7880 && echo " <- LiveKit is up"
+docker run --rm -p 7880:7880 -p 7881:7881 -p 7882:7882/udp livekit/livekit-server --dev --bind 0.0.0.0 --node-ip 192.168.4.51
 ```
 
-Nothing else works until this does.
+> [!IMPORTANT]
+> `--node-ip` is not optional when running in Docker. LiveKit is an SFU: it
+> tells clients where to send their audio, and inside a container it detects
+> its own address as something like `172.17.0.2`. The robot cannot reach that.
+> The room connects, both sides appear healthy, and **no audio ever flows** —
+> which looks like a broken microphone rather than a networking problem.
+>
+> Check the startup line. `"nodeIP": "172.17.0.2"` is wrong;
+> `"nodeIP": "192.168.4.51"` is right.
+
+`--dev` is what makes `devkey` / `secret` valid.
+
+### Check the robot can actually reach it
+
+Testing from the workstation is not a real test. **Run this on the Pi:**
+
+```bash
+curl -s -m 3 -o /dev/null -w "%{http_code}\n" http://192.168.4.51:7880/
+```
+
+`200` means you are good. Anything else and nothing downstream will work.
+
+If it fails, open the ports on the workstation (PowerShell as Administrator):
+
+```powershell
+New-NetFirewallRule -DisplayName "LiveKit" -Direction Inbound -Protocol TCP -LocalPort 7880,7881 -Action Allow
+New-NetFirewallRule -DisplayName "LiveKit UDP" -Direction Inbound -Protocol UDP -LocalPort 7882 -Action Allow
+```
+
+> **On WSL with mirrored networking**, the workstation itself may not be able to
+> curl its own LAN address even while everything is fine — the host cannot loop
+> back to a WSL-bound port by default. Add `hostAddressLoopback=true` under
+> `[wsl2]` in `%USERPROFILE%\.wslconfig` and run `wsl --shutdown` if you want
+> that to work. It does not affect the robot either way.
 
 ---
 
@@ -210,6 +245,7 @@ Stop the brain, set `MESH_PERSONALITY=mesh` or `tars`, start it again.
 |---------|--------------|
 | Nothing at all, brain exits immediately | Missing credential — it names which |
 | Brain waits forever at "Joining…" | LiveKit not running or unreachable |
+| Both sides connect, all lights green, but no audio at all | LiveKit started without `--node-ip` — see step 2 |
 | Console shows Pi client red | Robot not started, or pointed at a different room |
 | Robot talks to itself in a loop | Echo cancellation not running; check that light |
 | Cannot interrupt him | Same cause as above |
