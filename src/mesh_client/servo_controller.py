@@ -9,8 +9,36 @@ from mesh_common.hardware import RobotHardware, DummyServo
 
 logger = get_logger("mesh_servo")
 
+# Safe pulse range in microseconds. Deliberately narrower than the servos'
+# nominal 500-2500: at the extremes torque drops off and the horn saturates,
+# so the last few degrees of travel are bought at the cost of holding force.
+PULSE_MIN_US = 600
+PULSE_MAX_US = 2400
+
+# One PWM period at the 50Hz the PCA9685 is driven at, in microseconds.
+PWM_PERIOD_US = 20000
+PWM_RESOLUTION = 4095
+
+# Angle change below which a write is skipped. The I2C bus is the bottleneck
+# during a gait cycle, so redundant writes cost real smoothness.
+ANGLE_DEADBAND_DEG = 0.25
+
+
 def map_value(value, from_low, from_high, to_low, to_high):
     return (to_high - to_low) * (value - from_low) / (from_high - from_low) + to_low
+
+
+def angle_to_pwm_count(angle):
+    """Convert a servo angle to a PCA9685 off-count.
+
+    Args:
+        angle: Desired angle in degrees, 0-180.
+
+    Returns:
+        The off-count to program into the channel.
+    """
+    duty_us = map_value(angle, 0, 180, PULSE_MIN_US, PULSE_MAX_US)
+    return int(map_value(duty_us, 0, PWM_PERIOD_US, 0, PWM_RESOLUTION))
 
 class PCA9685:
     def __init__(self, address=0x40):
@@ -124,12 +152,11 @@ class ServoController(RobotHardware):
         
         angle = max(0, min(180, angle))
         
-        # Optimization: Skip redundant writes (Bandwidth Saver)
-        # If angle hasn't changed meaningfully (< 0.5 deg), don't spam I2C
-        # TUNE #2: Deadband Threshold (Kept at 0.25)
+        # Skip redundant writes: the I2C bus is the limiting factor in a gait
+        # cycle, so sub-deadband changes are not worth a transaction.
         if channel in self.angles:
-            if abs(self.angles[channel] - angle) < 0.25:
-                return 
+            if abs(self.angles[channel] - angle) < ANGLE_DEADBAND_DEG:
+                return
 
         # Determine which board to use based on Freenove logic
         if channel < 16:
@@ -144,13 +171,7 @@ class ServoController(RobotHardware):
             self.angles[channel] = angle
             return
 
-        # TUNE #1: Safe Pulse Range (600-2400)
-        # Prevents saturation at extremes where torque drops off.
-        # Original was 500-2500.
-        duty_cycle = map_value(angle, 0, 180, 600, 2400)
-        off_count = int(map_value(duty_cycle, 0, 20000, 0, 4095))
-        
-        target_pwm.set_pwm(target_channel, 0, off_count)
+        target_pwm.set_pwm(target_channel, 0, angle_to_pwm_count(angle))
         self.angles[channel] = angle
 
     def relax(self):

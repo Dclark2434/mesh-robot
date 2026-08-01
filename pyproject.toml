@@ -4,52 +4,55 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "mesh-robot"
-version = "0.1.0"
-description = "Mobile Engineering Support Hexapod (The Brain)"
+version = "0.2.0"
+description = "Mobile Engineering Support Hexapod - a real-time conversational hexapod"
 readme = "README.md"
 requires-python = ">=3.11"
-license = {text = "MIT"}
+license = { text = "MIT" }
+
+# Shared by both halves: the wire protocol, logging, and config loading.
 dependencies = [
     "colorama",
-    "requests",
     "numpy",
-    "scipy",
-    "Pillow",
-    "pytest",
-    "fastapi",
-    "uvicorn",
-    "python-multipart",
-    "customtkinter",
     "python-dotenv",
-    "sounddevice",
-    "soundfile",
-    "opencv-python",
-    "google-genai"
 ]
 
 [project.optional-dependencies]
-server = [
-    "faster-whisper",
-    "f5-tts",
-    "chatterbox-tts",
-    "torch",
-    "torchaudio",
-    "torchvision"
+# The brain. Runs on the workstation.
+brain = [
+    "pipecat-ai[deepgram,elevenlabs,google,livekit,local-smart-turn,silero]>=1.1.0",
+    "livekit-api",
 ]
 
-client = [
-]
-
+# The robot, on any machine. Audio and the LiveKit session, no GPIO.
 robot = [
+    "livekit",
+    "livekit-api",
+    "sounddevice",
+]
+
+# Hardware drivers. Raspberry Pi only -- these will not build elsewhere.
+hardware = [
     "rpi-ws281x",
     "spidev",
     "smbus2",
     "gpiozero",
-    "RPi.GPIO"
+    "RPi.GPIO",
 ]
+
+dev = [
+    "pytest",
+]
+
+[project.scripts]
+mesh-brain = "mesh_server.app:main"
+mesh-robot = "mesh_client.app:main"
 
 [tool.setuptools.packages.find]
 where = ["src"]
+
+[tool.setuptools.package-data]
+mesh_server = ["personalities/*.txt"]
 
 [tool.pytest.ini_options]
 testpaths = ["tests"]
