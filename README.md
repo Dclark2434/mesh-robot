@@ -137,6 +137,18 @@ sudo apt install -y python3-picamera2   # CSI ribbon camera
 pip install opencv-python-headless      # USB webcam
 ```
 
+> [!NOTE]
+> Ribbon-cable cameras (Camera Module 3, IMX708, and anything else on
+> libcamera) **must** use picamera2 — there is no legacy driver, so OpenCV
+> cannot open them at all. Check the camera is seen before starting the robot:
+>
+> ```bash
+> rpicam-hello --list-cameras
+> ```
+>
+> If it lists nothing, that is a cable or config problem, not a MESH problem.
+> Camera Module 3 needs Raspberry Pi OS Bookworm or a fully updated Bullseye.
+
 Set the same LiveKit variables in the robot's environment, plus its audio
 devices if the defaults are wrong. The client prints the device table on
 startup so you can read the indices off it:

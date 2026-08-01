@@ -296,9 +296,12 @@ class Robot:
         # refusing to start.
         self.camera = CameraPublisher(
             CameraConfig(
-                width=int(os.getenv("MESH_CAMERA_WIDTH", "640")),
-                height=int(os.getenv("MESH_CAMERA_HEIGHT", "480")),
+                width=int(os.getenv("MESH_CAMERA_WIDTH", "1024")),
+                height=int(os.getenv("MESH_CAMERA_HEIGHT", "768")),
                 fps=int(os.getenv("MESH_CAMERA_FPS", "5")),
+                rotation=int(os.getenv("MESH_CAMERA_ROTATION", "0")),
+                autofocus=os.getenv("MESH_CAMERA_AUTOFOCUS", "1") != "0",
+                swap_red_blue=os.getenv("MESH_CAMERA_SWAP_RB", "0") != "0",
                 device=int(os.getenv("MESH_CAMERA_DEVICE", "0")),
                 enabled=os.getenv("MESH_CAMERA", "1") != "0",
             )

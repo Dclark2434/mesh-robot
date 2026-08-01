@@ -183,7 +183,10 @@ Everything lives in `src/mesh_server/.env` (brain) and the robot's environment.
 | `MESH_KEEP_IMAGES` | `1` | Images keeping their pixels in context. |
 | `MESH_CAMERA` | `1` | Publish the camera track from the robot. |
 | `MESH_CAMERA_FPS` | `5` | Capture rate. Only the newest frame is ever used. |
-| `MESH_CAMERA_WIDTH` / `_HEIGHT` | `640` / `480` | Capture resolution. |
+| `MESH_CAMERA_WIDTH` / `_HEIGHT` | `1024` / `768` | Capture resolution. |
+| `MESH_CAMERA_ROTATION` | `0` | Degrees, for a camera not mounted upright. |
+| `MESH_CAMERA_AUTOFOCUS` | `1` | Continuous AF on sensors that have it. |
+| `MESH_CAMERA_SWAP_RB` | `0` | Escape hatch if red and blue come out swapped. |
 | `MESH_CAMERA_DEVICE` | `0` | OpenCV device index, USB cameras only. |
 
 ## Vision
@@ -253,6 +256,26 @@ framework's rails.
 raw *audio* onto context to bypass Deepgram. It is not an early version of this
 and stays deleted. Vision happens to use the same attachment mechanism and
 nothing else.
+
+### Capture details worth knowing
+
+**Channel order.** LiveKit's `RGB24` buffer means literally red, green, blue in
+memory. Picamera2 names its pixel formats in the *opposite* order to the bytes
+they produce, so the capture is configured as `BGR888` — which is what actually
+delivers RGB. Configuring the intuitive-looking `RGB888` yields BGR, and
+nothing crashes; the robot just calmly describes a blue mug as red.
+`MESH_CAMERA_SWAP_RB` is the escape hatch if it ever comes out wrong.
+
+**Autofocus.** IMX708 sensors (Camera Module 3) have a focus motor, and a robot
+that walks around has no fixed subject distance — focus set once at startup
+goes soft the moment it moves. Continuous AF is enabled where the sensor
+supports it, and the controls are simply rejected on fixed-focus modules.
+
+**Resolution.** The default is 1024×768 rather than something smaller because a
+wide-angle lens spreads the subject thin: across a 120° field of view, an object
+held up at arm's length occupies a small fraction of the frame, and there is not
+much of it left at 640×480 for the model to read. At 5fps the encode cost on a
+Pi 4 is modest, and it is the *look* frames that this resolution buys.
 
 ### Why this was easy
 

@@ -35,20 +35,56 @@ class CameraConfig:
     """How the robot's camera should run.
 
     Attributes:
-        width: Capture width in pixels.
+        width: Capture width in pixels. The default suits a wide-angle lens:
+            across a 120-degree field of view an object held up at arm's
+            length covers a small fraction of the frame, and at 640x480 there
+            is not much of it left for the model to read.
         height: Capture height in pixels.
         fps: Frames per second to publish. The brain discards all but the
             newest, so this only needs to be fast enough that a frame is
             never stale when someone asks the robot to look.
+        rotation: Degrees to rotate frames, for a camera that is not mounted
+            upright. One of 0, 90, 180, 270.
+        autofocus: Run continuous autofocus where the sensor supports it
+            (Camera Module 3 and other IMX708 boards). A robot that walks
+            around has no fixed subject distance, so a fixed focus set at
+            startup goes soft as soon as it moves.
+        swap_red_blue: Escape hatch for channel order. See
+            :func:`prepare_frame`; the defaults should already be right.
         device: OpenCV device index, used only by the USB backend.
         enabled: Set False to run without a camera.
     """
 
-    width: int = 640
-    height: int = 480
+    width: int = 1024
+    height: int = 768
     fps: int = 5
+    rotation: int = 0
+    autofocus: bool = True
+    swap_red_blue: bool = False
     device: int = 0
     enabled: bool = True
+
+
+def prepare_frame(frame: np.ndarray, rotation: int, swap_red_blue: bool) -> np.ndarray:
+    """Put a captured frame into the orientation and channel order LiveKit wants.
+
+    LiveKit's ``RGB24`` buffer means literally red, green, blue in memory. Both
+    capture backends need help getting there, for different reasons -- see the
+    backends for which way round each one is.
+
+    Args:
+        frame: Captured HxWx3 array.
+        rotation: Degrees counter-clockwise to rotate, one of 0, 90, 180, 270.
+        swap_red_blue: Whether to reverse the channel order.
+
+    Returns:
+        A contiguous HxWx3 array in true RGB order.
+    """
+    if swap_red_blue:
+        frame = frame[:, :, ::-1]
+    if rotation:
+        frame = np.rot90(frame, k=(rotation // 90) % 4)
+    return np.ascontiguousarray(frame)
 
 
 class CaptureBackend:
@@ -69,7 +105,18 @@ class CaptureBackend:
 
 
 class PiCameraBackend(CaptureBackend):
-    """CSI camera via picamera2."""
+    """CSI camera via picamera2, the only option for libcamera-era modules.
+
+    Camera Module 3 and anything else built on the IMX708 has no legacy driver
+    path at all, so OpenCV cannot open it. This is the backend that matters for
+    ribbon-cable cameras.
+
+    Note the format string. Picamera2 names pixel formats in the opposite order
+    to the bytes they produce, so configuring ``BGR888`` is what actually
+    yields red, green, blue in memory -- which is what LiveKit's ``RGB24``
+    buffer means. Configuring the intuitive-looking ``RGB888`` gets you BGR,
+    and the robot then confidently describes a blue mug as red.
+    """
 
     name = "picamera2"
 
@@ -88,11 +135,34 @@ class PiCameraBackend(CaptureBackend):
         self._camera = Picamera2()
         self._camera.configure(
             self._camera.create_video_configuration(
-                main={"size": (config.width, config.height), "format": "RGB888"}
+                main={"size": (config.width, config.height), "format": "BGR888"}
             )
         )
         self._camera.start()
+
+        if config.autofocus:
+            self._enable_autofocus()
+
         time.sleep(0.5)  # let auto-exposure settle before the first frame
+
+    def _enable_autofocus(self) -> None:
+        """Switch on continuous autofocus if the sensor has a focus motor.
+
+        Fixed-focus modules (Camera Module 2 and similar) reject these
+        controls, which is not an error worth failing the camera over.
+        """
+        try:
+            from libcamera import controls
+
+            self._camera.set_controls(
+                {
+                    "AfMode": controls.AfMode.Continuous,
+                    "AfSpeed": controls.AfSpeed.Fast,
+                }
+            )
+            logger.info("Continuous autofocus enabled")
+        except Exception as exc:
+            logger.debug(f"Autofocus unavailable on this sensor: {exc}")
 
     def read(self) -> np.ndarray | None:
         """Grab one frame from the CSI camera.
@@ -223,7 +293,12 @@ class CameraPublisher:
         if self._backend is None:
             return False
 
-        self._source = rtc.VideoSource(self._config.width, self._config.height)
+        # A quarter-turn mount swaps the published dimensions.
+        width, height = self._config.width, self._config.height
+        if self._config.rotation % 180 == 90:
+            width, height = height, width
+
+        self._source = rtc.VideoSource(width, height)
         self._track = rtc.LocalVideoTrack.create_video_track("camera", self._source)
 
         options = rtc.TrackPublishOptions()
@@ -258,13 +333,16 @@ class CameraPublisher:
 
             failures = 0
             try:
+                frame = prepare_frame(
+                    frame, self._config.rotation, self._config.swap_red_blue
+                )
                 height, width = frame.shape[:2]
                 self._source.capture_frame(
                     rtc.VideoFrame(
                         width=width,
                         height=height,
                         type=rtc.VideoBufferType.RGB24,
-                        data=np.ascontiguousarray(frame).tobytes(),
+                        data=frame.tobytes(),
                     )
                 )
             except Exception as exc:
