@@ -48,6 +48,18 @@ from pipecat.transports.livekit.transport import LiveKitParams, LiveKitTransport
 from pipecat.turns.user_mute.mute_until_first_bot_complete_user_mute_strategy import (
     MuteUntilFirstBotCompleteUserMuteStrategy,
 )
+from pipecat.turns.user_start import (
+    MinWordsUserTurnStartStrategy,
+    TranscriptionUserTurnStartStrategy,
+    VADUserTurnStartStrategy,
+)
+from pipecat.turns.user_turn_strategies import (
+    UserTurnStrategies,
+    default_user_turn_stop_strategies,
+)
+from pipecat.utils.context.llm_context_summarization import (
+    LLMAutoContextSummarizationConfig,
+)
 
 from mesh_common.logging import get_logger
 from mesh_common.protocol import MessageType, Status, StatusMessage, decode, encode
@@ -93,6 +105,38 @@ def _build_token(settings: Settings) -> str:
         .with_grants(api.VideoGrants(room_join=True, room=settings.room_name))
         .to_jwt()
     )
+
+
+def _build_turn_strategies(settings: Settings) -> UserTurnStrategies:
+    """Decide what counts as the user starting and stopping a turn.
+
+    The default start strategies include voice activity alone, which in a room
+    with a servo-driven robot in it means a turn begins every time something
+    clicks. Each false start broadcasts an interruption -- cutting the robot
+    off mid-sentence -- and then waits for a transcript that never arrives,
+    until the stop timeout expires.
+
+    Requiring a couple of recognised words instead makes a turn start on
+    speech rather than on sound. Interim transcripts are used, so it still
+    fires while the user is talking rather than after they finish.
+
+    Args:
+        settings: Loaded configuration.
+
+    Returns:
+        Configured start and stop strategies.
+    """
+    if settings.turn.min_words > 0:
+        start = [
+            MinWordsUserTurnStartStrategy(
+                min_words=settings.turn.min_words, use_interim=True
+            ),
+            TranscriptionUserTurnStartStrategy(),
+        ]
+    else:
+        start = [VADUserTurnStartStrategy(), TranscriptionUserTurnStartStrategy()]
+
+    return UserTurnStrategies(start=start, stop=default_user_turn_stop_strategies())
 
 
 def _build_vad(settings: Settings) -> SileroVADAnalyzer:
@@ -248,6 +292,12 @@ async def run() -> int:
         context=context,
         user_params=LLMUserAggregatorParams(
             vad_analyzer=_build_vad(settings),
+            user_turn_strategies=_build_turn_strategies(settings),
+            # The fallback for when no stop strategy fires -- which happens on
+            # every turn that started from noise, because no transcript is
+            # coming. The default of 5s is five seconds of the robot appearing
+            # to think about a cough.
+            user_turn_stop_timeout=settings.turn.stop_timeout,
             # The old AlwaysUserMuteStrategy gated the mic for the whole time
             # the robot was speaking, which made barge-in structurally
             # impossible. Echo is now cancelled acoustically on the robot, so
@@ -257,6 +307,16 @@ async def run() -> int:
         ),
         assistant_params=LLMAssistantAggregatorParams(
             enable_auto_context_summarization=True,
+            # Trigger on size, not on message count. The default also fires
+            # every 20 messages, and a fragmented turn produces messages like
+            # "I" and "one step left." -- so a spoken sentence can cost three
+            # of them. That had summarization running every few exchanges,
+            # sometimes twice concurrently, each a multi-second call to the
+            # same Gemini the conversation is waiting on.
+            auto_context_summarization_config=LLMAutoContextSummarizationConfig(
+                max_context_tokens=settings.turn.summarize_above_tokens,
+                max_unsummarized_messages=None,
+            ),
         ),
     )
 

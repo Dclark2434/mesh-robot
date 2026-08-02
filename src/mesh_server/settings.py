@@ -71,6 +71,15 @@ class TurnSettings:
         smart_turn: Use the bundled Smart Turn v3 semantic end-of-turn model on
             top of VAD. It decides from *content* whether the user is finished,
             so a mid-sentence pause no longer triggers a reply.
+        min_words: Recognised words required before a user turn starts. Zero
+            restores the default of starting on voice activity alone, which in
+            a room containing a servo-driven robot means starting on any noise.
+        stop_timeout: Seconds before a turn is force-ended when no stop
+            strategy fires. Only reached by turns that began without speech in
+            them, so the shorter the better.
+        summarize_above_tokens: Context size that triggers summarization.
+            Deliberately size-based: message-count triggers fire constantly
+            when turns fragment into one-word messages.
     """
 
     confidence: float = 0.6
@@ -78,6 +87,9 @@ class TurnSettings:
     stop_secs: float = 0.2
     start_secs: float = 0.2
     smart_turn: bool = True
+    min_words: int = 2
+    stop_timeout: float = 2.5
+    summarize_above_tokens: int = 8000
 
 
 @dataclass
@@ -179,6 +191,11 @@ class Settings:
         self.turn.min_volume = _env_float("MESH_VAD_MIN_VOLUME", self.turn.min_volume)
         self.turn.stop_secs = _env_float("MESH_VAD_STOP_SECS", self.turn.stop_secs)
         self.turn.smart_turn = _env("MESH_SMART_TURN", "1") != "0"
+        self.turn.min_words = int(_env("MESH_MIN_WORDS") or self.turn.min_words)
+        self.turn.stop_timeout = _env_float("MESH_TURN_STOP_TIMEOUT", self.turn.stop_timeout)
+        self.turn.summarize_above_tokens = int(
+            _env("MESH_SUMMARIZE_ABOVE_TOKENS") or self.turn.summarize_above_tokens
+        )
 
     def missing_credentials(self) -> list[str]:
         """Report which required credentials are absent.

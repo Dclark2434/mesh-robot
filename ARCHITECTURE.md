@@ -176,6 +176,9 @@ Everything lives in `src/mesh_server/.env` (brain) and the robot's environment.
 | `MESH_VAD_CONFIDENCE` | `0.6` | Silero speech threshold. |
 | `MESH_VAD_MIN_VOLUME` | `0.1` | Floor that rejects servo noise. |
 | `MESH_SMART_TURN` | `1` | Semantic end-of-turn model. |
+| `MESH_MIN_WORDS` | `2` | Words needed to start a turn. `0` starts on any sound. |
+| `MESH_TURN_STOP_TIMEOUT` | `2.5` | Force-end a turn that produced no speech. |
+| `MESH_SUMMARIZE_ABOVE_TOKENS` | `8000` | Context size that triggers summarization. |
 | `MESH_ECHO_CANCEL` | `1` | AEC on the robot. `0` restores mic gating. |
 | `MESH_AUDIO_IN_DEVICE` | default | sounddevice input index. |
 | `MESH_AUDIO_OUT_DEVICE` | default | sounddevice output index. |
