@@ -288,12 +288,22 @@ async def run() -> int:
 
     latency = UserBotLatencyObserver()
 
+    # A conversational reply is never slower than this. Anything above it is an
+    # artifact: the observer times from the last "user stopped speaking" to the
+    # next "bot started speaking", so a greeting triggered by the robot
+    # reconnecting gets attributed to whatever was said minutes earlier. Real
+    # numbers are worth watching, and one 96-second bar ruins the scale.
+    IMPLAUSIBLE_LATENCY_MS = 15_000.0
+
     last_total_ms = 0.0
 
     @latency.event_handler("on_latency_measured")
     async def _on_latency(_observer, seconds: float) -> None:
         nonlocal last_total_ms
         last_total_ms = seconds * 1000
+        if last_total_ms > IMPLAUSIBLE_LATENCY_MS:
+            logger.debug(f"[LATENCY] ignoring {last_total_ms:.0f}ms (not a real turn)")
+            return
         logger.info(f"[LATENCY] user stopped -> bot speaking: {last_total_ms:.0f}ms")
 
     @latency.event_handler("on_latency_breakdown")
@@ -310,12 +320,17 @@ async def run() -> int:
         breakdown_data = []
         for metric in breakdown.ttfb:
             millis = metric.duration_secs * 1000
-            breakdown_data.append({"service": metric.processor, "ms": round(millis)})
             for key, marker in (("stt", "Deepgram"), ("llm", "Google"), ("tts", "ElevenLabs")):
                 if marker.lower() in metric.processor.lower():
-                    health.update(key, State.OK, f"{millis:.0f}ms")
+                    # A service that answered is up, but a stale timer is not a
+                    # useful "detail" to display next to it.
+                    plausible = millis <= IMPLAUSIBLE_LATENCY_MS
+                    health.update(key, State.OK, f"{millis:.0f}ms" if plausible else "ok")
+            if millis <= IMPLAUSIBLE_LATENCY_MS:
+                breakdown_data.append({"service": metric.processor, "ms": round(millis)})
 
-        bus.publish("latency", total_ms=round(last_total_ms), breakdown=breakdown_data)
+        if breakdown_data and last_total_ms <= IMPLAUSIBLE_LATENCY_MS:
+            bus.publish("latency", total_ms=round(last_total_ms), breakdown=breakdown_data)
 
     task = PipelineTask(
         pipeline,
@@ -330,24 +345,58 @@ async def run() -> int:
         idle_timeout_secs=None,
     )
 
-    # on_first_participant_joined covers both orderings -- the transport also
-    # raises it for participants already in the room when we connect, so the
-    # greeting does not depend on the robot booting second.
-    @transport.event_handler("on_first_participant_joined")
-    async def _on_robot_joined(_transport, participant_id) -> None:
-        """Greet the robot when it joins.
+    greeted_sid: str | None = None
+
+    async def welcome(participant_id: str) -> None:
+        """Reset the robot's state and greet it.
+
+        Runs on every join, not just the first. Restarting the robot while the
+        brain keeps running is the normal debugging loop, and without this the
+        robot comes back to no greeting and whatever LED state it was left in
+        -- which reads as a hang.
 
         Args:
-            _transport: The transport raising the event.
-            participant_id: SID of the joining participant.
+            participant_id: SID of the joining participant. Used to
+                de-duplicate, since the transport raises two events for the
+                very first participant.
         """
+        nonlocal greeted_sid
+        if participant_id == greeted_sid:
+            return
+        greeted_sid = participant_id
+
         logger.info(f"Robot joined: {participant_id}")
         health.update("robot", State.OK, "connected")
+        # Clears any stale status the robot was left showing.
         await send(encode(StatusMessage(Status.IDLE)))
         # TTSSpeakFrame goes straight to synthesis. The previous code queued an
         # LLMTextFrame into the pipeline *source*, where it flowed into STT and
         # the aggregator instead of ever reaching the voice.
         await task.queue_frame(TTSSpeakFrame("Hey! I'm online. What are we doing?"))
+
+    # Two handlers, because neither covers both cases on its own:
+    # on_first_participant_joined also fires for a robot that was already in
+    # the room before the brain started, and on_participant_connected is the
+    # only one that fires again when the robot reconnects.
+    @transport.event_handler("on_first_participant_joined")
+    async def _on_first_joined(_transport, participant_id) -> None:
+        """Greet a robot that was already in the room.
+
+        Args:
+            _transport: The transport raising the event.
+            participant_id: SID of the participant.
+        """
+        await welcome(participant_id)
+
+    @transport.event_handler("on_participant_connected")
+    async def _on_joined(_transport, participant_id) -> None:
+        """Greet a robot that has just connected or reconnected.
+
+        Args:
+            _transport: The transport raising the event.
+            participant_id: SID of the participant.
+        """
+        await welcome(participant_id)
 
     @transport.event_handler("on_data_received")
     async def _on_robot_message(_transport, data, _participant_id) -> None:
@@ -426,6 +475,8 @@ async def run() -> int:
             _transport: The transport raising the event.
             participant: The departing participant.
         """
+        nonlocal greeted_sid
+        greeted_sid = None
         logger.info(f"Participant left: {participant}")
         health.update("robot", State.DOWN, "disconnected")
         for key in ("hardware", "audio", "camera", "battery"):

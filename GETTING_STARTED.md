@@ -120,18 +120,50 @@ failing halfway through a conversation.
 
 ```bash
 cd ~/mesh-robot
+sudo apt install -y python3-picamera2
+python3 -m venv --system-site-packages venv
 source venv/bin/activate
 pip install -e ".[robot,hardware]"
-sudo apt install -y python3-picamera2      # Camera Module 3
 python -m mesh_client.app
 ```
 
-It prints the audio device table on startup. If the defaults are wrong, note
-the indices and set them:
+> [!IMPORTANT]
+> `--system-site-packages` is not optional for a CSI camera. `picamera2` comes
+> from apt and installs only for the system interpreter, so a plain venv cannot
+> import it. The client then falls through to OpenCV, which cannot open a
+> libcamera device at all: you get `select() timeout` on every frame and a
+> video track that publishes nothing but padding. Confirm with
+> `python -c "import picamera2"`, and check the startup line says
+> `Camera open via picamera2` — `via opencv` on a ribbon camera means broken.
+
+It prints the audio device table on startup. The marks matter: `>` is the
+default input, `<` the default output.
+
+```
+< 0 bcm2835 Headphones (0 in, 8 out)     <- the Pi's 3.5mm jack
+> 1 USB PnP Audio Device (2 in, 2 out)   <- a USB sound card
+```
+
+Set the indices to match where your microphone and speaker actually are:
 
 ```bash
 export MESH_AUDIO_IN_DEVICE=1
-export MESH_AUDIO_OUT_DEVICE=0
+export MESH_AUDIO_OUT_DEVICE=1
+```
+
+If both are on the same USB device, use it for both — echo cancellation works
+best when capture and playback share a clock. To find out which one makes
+noise:
+
+```bash
+python -c "
+import numpy as np, sounddevice as sd, time
+t = (np.sin(2*np.pi*440*np.arange(24000)/16000)*8000).astype(np.int16)
+for d in (0, 1):
+    print('device', d, flush=True)
+    try: sd.play(t, 16000, device=d, blocking=True)
+    except Exception as e: print(' failed:', e)
+    time.sleep(0.5)"
 ```
 
 What good looks like:
@@ -253,7 +285,10 @@ Stop the brain, set `MESH_PERSONALITY=mesh` or `tars`, start it again.
 | Long silence before every reply | Check the latency panel to see which service |
 | He reads "[ACTION: wave]" aloud | A tag form the parser missed — send me the log line |
 | Gestures fire before the words | Word timestamps unavailable; check the ElevenLabs light |
+| Camera red, or `Camera open via opencv` on a ribbon camera | venv built without `--system-site-packages`, so picamera2 is invisible |
+| `select() timeout` spam from V4L2 | Same cause — OpenCV cannot read a libcamera device |
 | Camera red | `rpicam-hello --list-cameras`; needs Bookworm for Module 3 |
+| Robot restarted and now just blinks yellow | Fixed — the brain now re-greets and resets status on reconnect |
 | Colours inverted | `MESH_CAMERA_SWAP_RB=1` |
 | Robot log pane empty | Robot connected before the brain, or it is not running |
 
