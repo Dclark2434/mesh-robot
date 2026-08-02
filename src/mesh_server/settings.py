@@ -80,6 +80,13 @@ class TurnSettings:
         summarize_above_tokens: Context size that triggers summarization.
             Deliberately size-based: message-count triggers fire constantly
             when turns fragment into one-word messages.
+        wake_phrases: Require one of these before the robot will engage.
+            Empty means always listening. Worth setting in a room with a
+            television or a small child in it, since a word count cannot
+            filter babble -- babble has words in it.
+        wake_timeout: Seconds of quiet before the wake phrase is needed again.
+            The timer resets on every exchange, so a conversation once started
+            continues naturally; it only closes after a real lull.
     """
 
     confidence: float = 0.6
@@ -90,6 +97,8 @@ class TurnSettings:
     min_words: int = 2
     stop_timeout: float = 2.5
     summarize_above_tokens: int = 8000
+    wake_phrases: list[str] = field(default_factory=list)
+    wake_timeout: float = 45.0
 
 
 @dataclass
@@ -196,6 +205,9 @@ class Settings:
         self.turn.summarize_above_tokens = int(
             _env("MESH_SUMMARIZE_ABOVE_TOKENS") or self.turn.summarize_above_tokens
         )
+        self.turn.wake_timeout = _env_float("MESH_WAKE_TIMEOUT", self.turn.wake_timeout)
+        phrases = _env("MESH_WAKE_PHRASES")
+        self.turn.wake_phrases = [p.strip() for p in phrases.split(",") if p.strip()]
 
     def missing_credentials(self) -> list[str]:
         """Report which required credentials are absent.

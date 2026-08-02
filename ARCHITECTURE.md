@@ -179,6 +179,8 @@ Everything lives in `src/mesh_server/.env` (brain) and the robot's environment.
 | `MESH_MIN_WORDS` | `2` | Words needed to start a turn. `0` starts on any sound. |
 | `MESH_TURN_STOP_TIMEOUT` | `2.5` | Force-end a turn that produced no speech. |
 | `MESH_SUMMARIZE_ABOVE_TOKENS` | `8000` | Context size that triggers summarization. |
+| `MESH_WAKE_PHRASES` | *(none)* | Comma-separated. Set in a noisy room; empty means always listening. |
+| `MESH_WAKE_TIMEOUT` | `45` | Quiet seconds before the wake phrase is needed again. |
 | `MESH_ECHO_CANCEL` | `1` | AEC on the robot. `0` restores mic gating. |
 | `MESH_AUDIO_IN_DEVICE` | default | sounddevice input index. |
 | `MESH_AUDIO_OUT_DEVICE` | default | sounddevice output index. |

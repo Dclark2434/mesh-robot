@@ -26,6 +26,7 @@ from __future__ import annotations
 
 import asyncio
 import sys
+from typing import Any
 
 from livekit import api
 from pipecat.audio.vad.silero import SileroVADAnalyzer
@@ -52,6 +53,7 @@ from pipecat.turns.user_start import (
     MinWordsUserTurnStartStrategy,
     TranscriptionUserTurnStartStrategy,
     VADUserTurnStartStrategy,
+    WakePhraseUserTurnStartStrategy,
 )
 from pipecat.turns.user_turn_strategies import (
     UserTurnStrategies,
@@ -62,7 +64,14 @@ from pipecat.utils.context.llm_context_summarization import (
 )
 
 from mesh_common.logging import get_logger
-from mesh_common.protocol import MessageType, Status, StatusMessage, decode, encode
+from mesh_common.protocol import (
+    MessageType,
+    Status,
+    StatusMessage,
+    action_keyterms,
+    decode,
+    encode,
+)
 from mesh_server.dashboard.events import bus
 from mesh_server.dashboard.health import HealthTracker, State
 from mesh_server.dashboard.server import DashboardServer
@@ -136,6 +145,22 @@ def _build_turn_strategies(settings: Settings) -> UserTurnStrategies:
     else:
         start = [VADUserTurnStartStrategy(), TranscriptionUserTurnStartStrategy()]
 
+    # In a room with other people talking -- a television, a toddler -- word
+    # count is not enough, because babble contains words. A wake phrase gates
+    # on being *addressed*. Timeout mode keeps the conversation natural: say
+    # the name once, then talk normally, and the timer resets on every
+    # exchange. It only closes again after a genuine lull.
+    if settings.turn.wake_phrases:
+        wake = WakePhraseUserTurnStartStrategy(
+            phrases=settings.turn.wake_phrases,
+            timeout=settings.turn.wake_timeout,
+        )
+        logger.info(
+            f"Wake phrases active: {', '.join(settings.turn.wake_phrases)} "
+            f"(stays awake {settings.turn.wake_timeout:.0f}s)"
+        )
+        start = [wake, *start]
+
     return UserTurnStrategies(start=start, stop=default_user_turn_stop_strategies())
 
 
@@ -174,18 +199,26 @@ def _build_services(settings: Settings, system_prompt: str):
     Returns:
         A ``(stt, llm, tts)`` tuple.
     """
+    stt_settings: dict[str, Any] = {
+        "model": settings.deepgram_model,
+        "interim_results": True,
+        "punctuate": True,
+        "smart_format": True,
+        # Deepgram's own endpointing is redundant now that end-of-turn is
+        # decided by the Smart Turn model, and leaving it on only delays
+        # the final transcript.
+        "endpointing": False,
+    }
+
+    # Bias recognition toward the words this robot is actually asked to act on,
+    # plus whatever it is called. Keyterm prompting is a nova-3 feature, so it
+    # is only sent when that is the model in use.
+    if settings.deepgram_model.startswith("nova-3"):
+        stt_settings["keyterm"] = [settings.personality, *action_keyterms()]
+
     stt = DeepgramSTTService(
         api_key=settings.deepgram_api_key,
-        settings=DeepgramSTTService.Settings(
-            model=settings.deepgram_model,
-            interim_results=True,
-            punctuate=True,
-            smart_format=True,
-            # Deepgram's own endpointing is redundant now that end-of-turn is
-            # decided by the Smart Turn model, and leaving it on only delays
-            # the final transcript.
-            endpointing=False,
-        ),
+        settings=DeepgramSTTService.Settings(**stt_settings),
     )
 
     llm = GoogleLLMService(

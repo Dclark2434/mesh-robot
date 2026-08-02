@@ -12,6 +12,7 @@ from mesh_common.protocol import (
     ACTIONS,
     ActionMessage,
     Lane,
+    action_keyterms,
     ParamKind,
     Status,
     StatusMessage,
@@ -86,3 +87,24 @@ def test_decode_survives_garbage():
     assert decode(b"not json") == {}
     assert decode(json.dumps([1, 2, 3])) == {}
     assert decode(b"") == {}
+
+
+def test_keyterms_cover_the_words_commands_are_made_of():
+    # These bias speech recognition. In a noisy room "one step to the left"
+    # degrades into "one set to black", and every word that matters there
+    # should be on this list.
+    terms = set(action_keyterms())
+    for word in ("left", "right", "forward", "backward", "turn", "walk", "step", "look"):
+        assert word in terms, word
+
+
+def test_keyterms_are_deduplicated_and_lowercase():
+    terms = action_keyterms()
+    assert terms == sorted(set(terms))
+    assert all(t == t.lower() for t in terms)
+
+
+def test_keyterms_skip_noise_fragments():
+    # Two-letter splinters from action names carry no signal and just dilute
+    # the boost list.
+    assert all(len(t) > 2 for t in action_keyterms())

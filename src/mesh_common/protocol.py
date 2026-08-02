@@ -372,6 +372,24 @@ def decode(raw: str | bytes) -> dict[str, Any]:
     return payload if isinstance(payload, dict) else {}
 
 
+def action_keyterms() -> list[str]:
+    """Vocabulary worth boosting in speech recognition.
+
+    Derived from the action registry, so the words the robot is most often
+    asked to act on are the ones the transcriber is told to expect. In a noisy
+    room "one step to the left" degrades into "one set to black", and every
+    word in that sentence is one of these.
+
+    Returns:
+        Deduplicated lowercase terms, ordered for stable output.
+    """
+    terms: set[str] = set()
+    for name in ACTIONS:
+        terms.update(part for part in name.split("_") if len(part) > 2)
+    terms.update({"step", "steps", "degrees", "around", "stop"})
+    return sorted(terms)
+
+
 def prompt_action_reference() -> str:
     """Render the action list for injection into the system prompt.
 
