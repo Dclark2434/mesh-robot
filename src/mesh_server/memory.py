@@ -1,6 +1,6 @@
 """Long-term memory behind the ``[MEMORY: ...]`` tag.
 
-Previously this tag was parsed, stripped, and discarded -- the prompt spent
+Previously this tag was parsed, stripped, and discarded; the prompt spent
 tokens teaching the model a capability that did nothing. This gives it a
 backing store.
 
@@ -11,7 +11,7 @@ context because it just said it; the store exists so the robot still knows
 your name tomorrow.
 
 The legacy ``mesh_memory.json`` transcript dump from the pre-streaming
-architecture is left untouched -- it holds raw conversation logs, not facts.
+architecture is left untouched; it holds raw conversation logs, not facts.
 """
 
 from __future__ import annotations

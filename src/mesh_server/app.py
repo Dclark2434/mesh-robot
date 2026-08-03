@@ -6,20 +6,20 @@ gesture instructions out.
 
 Pipeline order, and why:
 
-1. ``transport.input()`` -- audio from the robot's mic.
-2. ``ListeningStatusProcessor`` -- LEDs follow the user's turn.
-3. ``stt`` -- Deepgram streaming transcription.
-4. ``context.user()`` -- owns voice activity detection, end-of-turn decisions
+1. ``transport.input()``, audio from the robot's mic.
+2. ``ListeningStatusProcessor``, LEDs follow the user's turn.
+3. ``stt``; Deepgram streaming transcription.
+4. ``context.user()``, owns voice activity detection, end-of-turn decisions
    and mic muting, and accumulates the user's turn.
-5. ``llm`` -- Gemini over the standard text API.
-6. ``ActionTagProcessor`` -- directives out of the text, gestures onto the
+5. ``llm``; Gemini over the standard text API.
+6. ``ActionTagProcessor``, directives out of the text, gestures onto the
    timeline.
-7. ``tts`` -- ElevenLabs streaming synthesis.
-8. ``transport.output()`` -- audio to the robot, and the clock that gates
+7. ``tts``; ElevenLabs streaming synthesis.
+8. ``transport.output()``, audio to the robot, and the clock that gates
    timestamped frames until their moment.
-9. ``GestureDispatcher`` / ``SpeakingStatusProcessor`` -- downstream of that
+9. ``GestureDispatcher`` / ``SpeakingStatusProcessor``, downstream of that
    clock, so gestures and LEDs land with the audio rather than ahead of it.
-10. ``context.assistant()`` -- the reply goes back into conversation history.
+10. ``context.assistant()``; the reply goes back into conversation history.
 """
 
 from __future__ import annotations
@@ -121,8 +121,8 @@ def _build_turn_strategies(settings: Settings) -> UserTurnStrategies:
 
     The default start strategies include voice activity alone, which in a room
     with a servo-driven robot in it means a turn begins every time something
-    clicks. Each false start broadcasts an interruption -- cutting the robot
-    off mid-sentence -- and then waits for a transcript that never arrives,
+    clicks. Each false start broadcasts an interruption, cutting the robot
+    off mid-sentence, and then waits for a transcript that never arrives,
     until the stop timeout expires.
 
     Requiring a couple of recognised words instead makes a turn start on
@@ -145,7 +145,7 @@ def _build_turn_strategies(settings: Settings) -> UserTurnStrategies:
     else:
         start = [VADUserTurnStartStrategy(), TranscriptionUserTurnStartStrategy()]
 
-    # In a room with other people talking -- a television, a toddler -- word
+    # In a room with other people talking (a television, a toddler) word
     # count is not enough, because babble contains words. A wake phrase gates
     # on being *addressed*. Timeout mode keeps the conversation natural: say
     # the name once, then talk normally, and the timer resets on every
@@ -313,7 +313,7 @@ async def run() -> int:
 
     # Ambient awareness: after the robot walks somewhere, a cheap one-shot call
     # turns a frame into one sentence. Only that sentence enters the
-    # conversation, and only between turns -- see vision/ambient.py.
+    # conversation, and only between turns, see vision/ambient.py.
     ambient = AmbientVision(
         SceneSummarizer(settings.gemini_api_key, settings.ambient_model)
         if settings.vision_enabled and settings.ambient_vision
@@ -326,7 +326,7 @@ async def run() -> int:
         user_params=LLMUserAggregatorParams(
             vad_analyzer=_build_vad(settings),
             user_turn_strategies=_build_turn_strategies(settings),
-            # The fallback for when no stop strategy fires -- which happens on
+            # The fallback for when no stop strategy fires, which happens on
             # every turn that started from noise, because no transcript is
             # coming. The default of 5s is five seconds of the robot appearing
             # to think about a cough.
@@ -342,7 +342,7 @@ async def run() -> int:
             enable_auto_context_summarization=True,
             # Trigger on size, not on message count. The default also fires
             # every 20 messages, and a fragmented turn produces messages like
-            # "I" and "one step left." -- so a spoken sentence can cost three
+            # "I" and "one step left.", so a spoken sentence can cost three
             # of them. That had summarization running every few exchanges,
             # sometimes twice concurrently, each a multi-second call to the
             # same Gemini the conversation is waiting on.
@@ -407,7 +407,7 @@ async def run() -> int:
         if parts:
             logger.info(f"[LATENCY] {parts}")
 
-        # A service that just answered is, definitionally, up -- and its own
+        # A service that just answered is, definitionally, up, and its own
         # time-to-first-byte is the most useful "detail" the status panel can
         # show for it.
         breakdown_data = []

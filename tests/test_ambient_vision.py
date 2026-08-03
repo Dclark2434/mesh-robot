@@ -2,7 +2,7 @@
 
 The failure this feature has to avoid is specific: you walk the robot three
 steps, say "hey Rocky", and get a paragraph about the room instead of a reply.
-These cases pin down the mechanisms that prevent it -- one note at a time,
+These cases pin down the mechanisms that prevent it; one note at a time,
 replaced rather than appended, and suppressed when nothing actually changed.
 """
 

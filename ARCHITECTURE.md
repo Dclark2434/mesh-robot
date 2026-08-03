@@ -44,7 +44,7 @@ recorded to disk and replayed, and there is no per-utterance connection setup.
 This is the part worth understanding, because it is unusual.
 
 A tag like `[ACTION: wave]` is read out of the LLM's token stream, which arrives
-long before the corresponding audio does — measured ElevenLabs time-to-first-byte
+long before the corresponding audio does. Measured ElevenLabs time-to-first-byte
 on this project is about 1.5 seconds. Dispatching the gesture where it is parsed
 means the robot waves, then says hello.
 
@@ -58,7 +58,7 @@ Three facts combine to fix that:
    its presentation time, then pushes it downstream.
 
 So `ActionTagProcessor` records *which word* each tag followed, and
-`GestureDispatcher` — placed after `transport.output()` — counts word frames as
+`GestureDispatcher`, placed after `transport.output()`, counts word frames as
 they emerge from that clock. Word N emerging means word N is being spoken. The
 gesture fires against speech, not against tokens.
 
@@ -86,7 +86,7 @@ The latency budget behind `stop_secs`: Pipecat subtracts the VAD stop window
 from its STT wait timeout, so `stop_secs` must stay below Deepgram's p99
 transcript latency (~350ms) or final transcripts arrive after the turn has
 already closed. 200ms leaves ~150ms of slack. Deepgram's own `endpointing` is
-switched **off** — it is a second, dumber copy of a decision Smart Turn is
+switched **off**. It is a second, dumber copy of a decision Smart Turn is
 already making, and leaving it on only delays the final transcript.
 
 ## Echo, and why the robot can be interrupted
@@ -95,14 +95,14 @@ The robot's speaker is a few centimetres from its microphone. The original
 system solved that by muting: server-side `AlwaysUserMuteStrategy` dropped all
 user frames while the bot spoke, and the Pi additionally stopped reading its own
 microphone. That does prevent the robot from answering itself, at the cost of
-making interruption impossible — you cannot barge in on something that has
+making interruption impossible: you cannot barge in on something that has
 stopped listening.
 
 Now the echo is cancelled instead. `livekit.rtc` exposes the WebRTC audio
 processing module, the same AEC every browser uses. On the Pi:
 
 - Capture and playback share **one duplex callback**, so the two streams are
-  sample-aligned — which is what the canceller requires.
+  sample-aligned, which is what the canceller requires.
 - Everything runs at **16kHz mono in 10ms frames**: 16kHz because that is what
   the VAD and turn model want, 10ms because the processing module accepts
   nothing else.
@@ -113,7 +113,7 @@ processing module, the same AEC every browser uses. On the Pi:
   distortion and cost transcription accuracy.
 
 The only mute that remains is `MuteUntilFirstBotCompleteUserMuteStrategy`,
-covering the opening greeting — the window before the canceller has converged.
+covering the opening greeting, the window before the canceller has converged.
 For the rest of the conversation the microphone stays open and barge-in works.
 
 Interruption carries its own message type rather than reusing an idle status.
@@ -142,8 +142,8 @@ Each action declares a **lane** and a **duration**.
   seconds behind a walk cycle, because those are different servos.
 - **Durations** drive expiry. Expressive gestures carry a deadline; if the robot
   was busy when one arrived, it is dropped rather than performed late, because a
-  wave three seconds after "hello" reads as a fault. Commands — walk, lie flat —
-  carry no deadline, because those are instructions rather than punctuation.
+  wave three seconds after "hello" reads as a fault. Commands such as walk or
+  lie flat carry no deadline, because those are instructions rather than punctuation.
 
 ## Memory
 
@@ -209,7 +209,7 @@ reaches the model.
 
 **Bandwidth** stays on the LAN. Frames arrive at `CameraFeedProcessor`, which
 sits immediately after `transport.input()`, overwrite a one-slot buffer, and
-are **swallowed** — they are not passed downstream. Nothing else in the
+are **swallowed**: they are not passed downstream. Nothing else in the
 pipeline ever sees them. Streaming them into the LLM instead would spend tokens
 and latency on every turn for a capability that matters occasionally.
 
@@ -223,21 +223,21 @@ what it said about it:
 [Earlier you looked to see what the user is holding, and said: "That's a blue mug"]
 ```
 
-The most recent look keeps its real pixels, so follow-ups — "what colour is
-it?", "is it still there?" — still work. Everything before that is a sentence.
+The most recent look keeps its real pixels, so follow-ups such as "what colour is
+it?" or "is it still there?" still work. Everything before that is a sentence.
 `MESH_KEEP_IMAGES` tunes how many stay; `0` collapses all of them.
 
 ### A tool, not an action tag
 
 I originally sketched this as a `[ACTION: see]` tag. That was wrong. Action tags
 are fire-and-forget with no return path, so the model could ask to look but
-never see the result in the same breath — it would have to comment on the
+never see the result in the same breath: it would have to comment on the
 picture a turn later.
 
 `look` is a **function call** instead, which is a mid-turn round trip: the model
 asks, the image lands in context, inference re-runs, and it answers in the same
 reply. It takes a `question` argument ("what the user is holding") which serves
-two purposes — it pushes the model toward looking deliberately rather than
+two purposes: it pushes the model toward looking deliberately rather than
 reflexively, and it becomes the text of the stand-in once the image is purged.
 
 The cost is one extra LLM round trip, but only on turns where the robot
@@ -252,7 +252,7 @@ Pipecat handles this properly: a `UserImageRequestFrame` carrying the
 `tool_call_id` and `result_callback` is answered with a `UserImageRawFrame`, and
 the assistant aggregator places the image into context *after* the tool result,
 then re-runs inference. The `look` handler therefore does **not** call
-`result_callback` itself on the success path — the image delivery does, and
+`result_callback` itself on the success path: the image delivery does, and
 that is what makes the model wait for the picture instead of answering without
 it.
 
@@ -271,8 +271,8 @@ nothing else.
 ### Noticing that it moved
 
 When the robot finishes walking somewhere, it should have some idea it is
-somewhere new. The obvious implementation — attach a frame to the conversation
-after each move — fails badly: you say "hey Rocky" and get a paragraph about
+somewhere new. The obvious implementation, attaching a frame to the conversation
+after each move, fails badly: you say "hey Rocky" and get a paragraph about
 the room. Three things cause that, and only one is a prompt problem:
 
 - **Images are salient.** Put a picture in front of a model and it talks about
@@ -286,12 +286,12 @@ that returns a single flat clause, and only that clause is injected:
 
 ```
 [ambient, just now] Your camera shows: small office, desk with two monitors.
-Background awareness only -- do not mention this unless it is directly relevant.
+Background awareness only. Do not mention this unless it is directly relevant.
 ```
 
 Each defence maps to one of the three causes: it is text rather than a picture,
 it is written as instrumentation rather than as something you said, and it is
-applied **between turns** — on `BotStoppedSpeakingFrame` or
+applied **between turns**, on `BotStoppedSpeakingFrame` or
 `UserStartedSpeakingFrame`, both of which land before the next user transcript
 is aggregated. Your actual words are therefore always more recent than the
 note. That last one is why the trigger is "finished travelling" rather than
@@ -310,7 +310,7 @@ description that overlaps the previous one by more than 60% is discarded as
 "same room". Notes expire after five minutes so the robot never reasons about
 somewhere it left.
 
-The tradeoff is that ambient awareness is *coarse* — the robot knows "office,
+The tradeoff is that ambient awareness is *coarse*: the robot knows "office,
 two monitors", not what is on the desk. That is the intended division: ambient
 for grounding, `look` when the question actually needs eyes. The prompt says so
 explicitly.
@@ -322,13 +322,13 @@ head changes the view but not the place, and is not worth a call.
 
 **Channel order.** LiveKit's `RGB24` buffer means literally red, green, blue in
 memory. Picamera2 names its pixel formats in the *opposite* order to the bytes
-they produce, so the capture is configured as `BGR888` — which is what actually
+they produce, so the capture is configured as `BGR888`, which is what actually
 delivers RGB. Configuring the intuitive-looking `RGB888` yields BGR, and
 nothing crashes; the robot just calmly describes a blue mug as red.
 `MESH_CAMERA_SWAP_RB` is the escape hatch if it ever comes out wrong.
 
 **Autofocus.** IMX708 sensors (Camera Module 3) have a focus motor, and a robot
-that walks around has no fixed subject distance — focus set once at startup
+that walks around has no fixed subject distance, and focus set once at startup
 goes soft the moment it moves. Continuous AF is enabled where the sensor
 supports it, and the controls are simply rejected on fixed-focus modules.
 
@@ -342,20 +342,20 @@ Pi 4 is modest, and it is the *look* frames that this resolution buys.
 
 Two earlier decisions paid off. The transport is WebRTC, so a camera is just
 another track. And the LLM is Gemini's **standard** multimodal API rather than
-the Live API — images attach to context directly, and function calling is
+the Live API. Images attach to context directly, and function calling is
 available. The Live API's audio-only output would have made both awkward.
 
 ## The dashboard
 
 `http://<workstation>:8080` while the brain is running. Read-only: it watches
-the robot, it cannot drive it. That is a deliberate limit for a first version —
-a control surface reachable by anything on the LAN deserves its own thought
+the robot, it cannot drive it. That is a deliberate limit for a first version.
+A control surface reachable by anything on the LAN deserves its own thought
 about who gets to make a robot walk.
 
 **Both logs, side by side.** The Pi's terminal is the least convenient one in
 the system: over SSH, on a machine that walks away. Its log lines are batched
 every 400ms and shipped over the existing data channel, then shown in their own
-pane next to the brain's. Batching matters — the robot logs a line per gait
+pane next to the brain's. Batching matters: the robot logs a line per gait
 cycle, and a packet per line would be its own performance problem. Lines
 dropped when the robot outruns the link are counted and reported rather than
 silently lost.
@@ -368,7 +368,7 @@ architectural diagram. Two states are worth explaining:
 - `stale` (purple) means something that reports periodically has stopped, which
   is different from a reported failure and usually means a link died.
 
-The robot's own subsystems — servos, echo cancellation, camera — cannot be
+The robot's own subsystems (servos, echo cancellation, camera) cannot be
 observed from the workstation, so the robot announces them in a `hello` message
 on connect. That is what makes "is AEC actually running?" answerable without
 SSHing in, which matters because a robot with the canceller silently disabled
@@ -380,7 +380,7 @@ about: it turns "it feels laggy" into "ElevenLabs took 900ms on that turn".
 
 **Camera.** Polled as an ordinary JPEG endpoint every 5 seconds rather than
 pushed down the WebSocket, which keeps the event stream text-only and lets the
-browser handle caching. The preview is downscaled to 480px — it is a monitoring
+browser handle caching. The preview is downscaled to 480px, since it is a monitoring
 thumbnail, not what the model sees.
 
 Also shown: transcript, gestures as they fire, the current ambient note, and
@@ -404,6 +404,6 @@ Publishing with nothing subscribed is a deque append.
   not its legs. Fixing it means threading a stop flag through the animation
   loops.
 - **Servo writes are unbatched.** `set_leg_angles()` issues 18 `set_angle`
-  calls, each four separate SMBus byte writes — 72 I2C transactions per gait
+  calls, each four separate SMBus byte writes, or 72 I2C transactions per gait
   tick. The PCA9685 supports auto-incrementing block writes, which would cut
   that roughly fourfold and is likely the ceiling on gait smoothness today.

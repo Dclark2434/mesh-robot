@@ -2,8 +2,8 @@
 
 An image attached to the LLM context is re-sent on every subsequent turn, so a
 single look would otherwise tax the whole rest of the conversation. The newest
-image keeps its pixels -- follow-up questions about the last thing seen need
-them -- and older ones collapse into a sentence describing what the robot
+image keeps its pixels, since follow-up questions about the last thing seen
+need them, and older ones collapse into a sentence describing what the robot
 looked for and what it said about it.
 
 Free of pipeline imports so the rules can be tested without the real-time

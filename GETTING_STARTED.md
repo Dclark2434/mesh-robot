@@ -39,7 +39,7 @@ docker run --rm -p 7880:7880 -p 7881:7881 -p 7882:7882/udp livekit/livekit-serve
 >
 > Check the startup line says `"nodeIP": "192.168.1.10"`, not `172.17.0.2`.
 
-**Check — run this on the Pi, not the workstation:**
+**Check, on the Pi rather than the workstation:**
 
 ```bash
 curl -s -m 3 -o /dev/null -w "%{http_code}\n" http://192.168.1.10:7880/
@@ -135,8 +135,8 @@ python -m mesh_client.app
 [INFO] Connected. Microphone live.
 ```
 
-`Camera open via opencv` on a ribbon camera means picamera2 is not importable —
-see above.
+`Camera open via opencv` on a ribbon camera means picamera2 is not importable.
+See above.
 
 ### Audio devices
 
@@ -181,9 +181,9 @@ Open `http://localhost:8080`, or the workstation's address from a phone.
 | Component | Expected |
 |-----------|----------|
 | Brain process, Pipecat pipeline | green |
-| LiveKit room | green — otherwise see step 1 |
+| LiveKit room | green; otherwise see step 1 |
 | Deepgram / Gemini / ElevenLabs | grey until the first exchange |
-| Pi client | green — otherwise the robot is not connected |
+| Pi client | green; otherwise the robot is not connected |
 | Servos / I2C | green; amber means simulated hardware |
 | Echo cancellation | green; amber means interruption will not work |
 | Camera | green; red means no camera |
@@ -213,7 +213,7 @@ To change persona, stop the brain, set `MESH_PERSONALITY`, and start it again.
 
 | Symptom | Cause |
 |---------|-------|
-| Brain exits immediately | Missing credential — it names which |
+| Brain exits immediately | Missing credential; it names which |
 | Brain waits at "Joining…" | LiveKit not running or unreachable |
 | Everything green, no audio at all | LiveKit started without `--node-ip` |
 | Pi client red | Robot not started, or joined a different room |
@@ -250,7 +250,7 @@ Full settings list: [ARCHITECTURE.md](ARCHITECTURE.md#configuration).
 `Ctrl-C` on either side. The robot relaxes its servos and clears its LEDs on
 the way out.
 
-Restarting the robot alone is fine — the brain greets it again and resets its
+Restarting the robot alone is fine. The brain greets it again and resets its
 state.
 
 ---

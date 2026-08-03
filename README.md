@@ -66,14 +66,14 @@ It gestures while speaking without being asked:
 
 > "Scanning for intelligent life. `[ACTION: look_left]` `[ACTION: look_right]` ...negative."
 
-It also remembers things between sessions — names, what you are working on —
+It also remembers things between sessions, such as names and what you are working on,
 in `data/facts.json`.
 
 ### Personalities
 
 Three ship: `mesh`, `rocky`, `tars`. Each is a prompt file in
 `src/mesh_server/personalities/`. Select one with `MESH_PERSONALITY`. To add
-another, drop in a `.txt` file — the shared rules and action list are appended
+another, drop in a `.txt` file. The shared rules and action list are appended
 automatically.
 
 ## Quick start
@@ -119,17 +119,17 @@ couple of minutes.
 
 ## Acknowledgments
 
-> "Good artists copy, great artists steal." — Pablo Picasso
+> "Good artists copy, great artists steal." (Pablo Picasso)
 
-**[gptars](https://www.youtube.com/@gptars)** — the original inspiration; a
+**[gptars](https://www.youtube.com/@gptars)**: the original inspiration, a
 ChatGPT-powered TARS replica.
 
-**[NikodemBartnik](https://www.youtube.com/@NikodemBartnik)** — for the
+**[NikodemBartnik](https://www.youtube.com/@NikodemBartnik)**: for the
 standard on blending hardware, software and 3D printing.
 
 And the Freenove team for a well-documented kit. Their reference
 implementation (`freenove_code/`) is the source of the inverse-kinematics and
-gait maths, licensed CC BY-NC-SA — fine for a personal project, worth knowing
+gait maths, licensed CC BY-NC-SA. Fine for a personal project, worth knowing
 if this ever becomes commercial.
 
 ## License

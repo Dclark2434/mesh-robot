@@ -2,8 +2,8 @@
 
 The dashboard's status panel answers one question: if the robot is not
 responding, which part of it is broken? That means the components listed here
-are the ones that can independently fail -- the robot's link, each cloud
-service on the critical path, the camera, the echo canceller -- rather than a
+are the ones that can independently fail (the robot's link, each cloud
+service on the critical path, the camera, the echo canceller) rather than a
 tidy architectural diagram.
 
 Two states deserve explanation. ``UNKNOWN`` means a component has not been
@@ -98,7 +98,7 @@ class HealthTracker:
             ("llm", "Gemini", "server", None),
             ("tts", "ElevenLabs", "server", None),
             # The robot. Everything here is reported over the data channel, so
-            # silence is meaningful -- hence the staleness windows.
+            # silence is meaningful, hence the staleness windows.
             ("robot", "Pi client", "robot", 90.0),
             ("hardware", "Servos / I2C", "robot", None),
             ("audio", "Echo cancellation", "robot", None),

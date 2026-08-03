@@ -5,7 +5,7 @@ The model writes ordinary prose with directives embedded in it::
     Hey there! [ACTION: wave] Good to see you. [MEMORY: user is called Dustin]
 
 Those directives must never reach the TTS voice, and they arrive split across
-streaming chunks -- ``[ACT``, ``ION: wa``, ``ve] Good`` is a perfectly normal
+streaming chunks: ``[ACT``, ``ION: wa``, ``ve] Good`` is a perfectly normal
 sequence. This module reassembles them.
 
 Three things it does that the previous implementation did not:
@@ -150,7 +150,7 @@ class TagStreamParser:
             close_at = self._buffer.find("]")
             if close_at == -1:
                 # Incomplete. Hold, unless it has grown past anything a
-                # directive could plausibly be -- or the stream has ended.
+                # directive could plausibly be, or the stream has ended.
                 if final or len(self._buffer) > MAX_HOLDBACK_CHARS:
                     out.append(self._take(len(self._buffer)))
                 break
@@ -161,7 +161,7 @@ class TagStreamParser:
                 tags.append(self._build_tag(match))
                 self._buffer = self._buffer[close_at + 1 :]
             else:
-                # Not ours -- an ElevenLabs audio tag such as [laughing].
+                # Not ours: an ElevenLabs audio tag such as [laughing].
                 # Pass it through untouched for TTS to interpret.
                 out.append(self._take(close_at + 1))
 

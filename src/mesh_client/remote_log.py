@@ -1,13 +1,13 @@
 """Shipping the robot's log output to the brain, for the dashboard.
 
-The Pi's terminal is the least convenient one in the system -- it is over SSH,
+The Pi's terminal is the least convenient one in the system; it is over SSH,
 on a machine that is walking around. Its logs are mirrored to the brain so both
 halves can be read side by side in one place.
 
 Two things this has to avoid. The robot logs a line per gait cycle, so a data
 channel packet per line would be its own performance problem: lines are batched
 on a short timer instead. And a handler that logs about its own failures
-recurses forever, so it never logs at all -- failures are counted and reported
+recurses forever, so it never logs at all, failures are counted and reported
 in the next batch as a dropped count.
 """
 

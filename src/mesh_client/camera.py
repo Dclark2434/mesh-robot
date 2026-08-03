@@ -11,7 +11,7 @@ hardware depending on what is plugged in:
 * **picamera2** for CSI ribbon cameras, which is most Pi camera modules.
 * **OpenCV** for USB webcams.
 
-If neither works the robot runs blind rather than refusing to start -- losing
+If neither works the robot runs blind rather than refusing to start, losing
 sight should not cost you the conversation.
 """
 
@@ -69,7 +69,7 @@ def prepare_frame(frame: np.ndarray, rotation: int, swap_red_blue: bool) -> np.n
     """Put a captured frame into the orientation and channel order LiveKit wants.
 
     LiveKit's ``RGB24`` buffer means literally red, green, blue in memory. Both
-    capture backends need help getting there, for different reasons -- see the
+    capture backends need help getting there, for different reasons, see the
     backends for which way round each one is.
 
     Args:
@@ -113,7 +113,7 @@ class PiCameraBackend(CaptureBackend):
 
     Note the format string. Picamera2 names pixel formats in the opposite order
     to the bytes they produce, so configuring ``BGR888`` is what actually
-    yields red, green, blue in memory -- which is what LiveKit's ``RGB24``
+    yields red, green, blue in memory, which is what LiveKit's ``RGB24``
     buffer means. Configuring the intuitive-looking ``RGB888`` gets you BGR,
     and the robot then confidently describes a blue mug as red.
     """

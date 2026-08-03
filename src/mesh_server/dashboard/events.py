@@ -1,7 +1,7 @@
 """The event stream the dashboard renders.
 
-Everything interesting that happens in the brain -- a log line, a turn's
-latency breakdown, a gesture firing, the robot's battery -- is published here
+Everything interesting that happens in the brain (a log line, a turn's
+latency breakdown, a gesture firing, the robot's battery) is published here
 as a small JSON-serializable event. The dashboard subscribes; if nothing is
 subscribed, publishing costs a deque append and nothing else.
 
@@ -141,7 +141,7 @@ class EventBus:
         """The most recent event of one kind.
 
         Used for state the dashboard should show immediately on connect --
-        current status, battery, ambient note -- rather than having to wait for
+        current status, battery, ambient note, rather than having to wait for
         it to happen again.
 
         Args:

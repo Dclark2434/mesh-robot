@@ -1,8 +1,8 @@
 """Letting the robot notice that its surroundings changed.
 
 When the robot walks somewhere, it should have some idea that it is somewhere
-new. The naive way to do that -- attach a camera frame to the conversation
-after every move -- fails badly in practice. Three things conspire:
+new. The naive way to do that, attaching a camera frame to the conversation
+after every move, fails badly in practice. Three things conspire:
 
 * **Images are salient.** Put a picture in front of a model and it will talk
   about the picture.
@@ -16,7 +16,7 @@ alone fight all three head-on and lose often enough to be irritating.
 
 Instead, the frame never enters the conversation. It goes to a cheap one-shot
 model call which returns a single factual sentence, and only that sentence is
-injected -- written as machine-generated state rather than as something you
+injected, written as machine-generated state rather than as something you
 said, and injected *before* your next utterance so it is never the most recent
 thing in context. The prompt rule then has an easy job, because it is no longer
 arguing with the format.
@@ -113,7 +113,7 @@ def format_note(description: str, age_secs: float = 0.0) -> str:
     when = "just now" if age_secs < 45 else f"{int(age_secs // 60) or 1}m ago"
     return (
         f"{AMBIENT_PREFIX}, {when}] Your camera shows: {description.strip().rstrip('.')}. "
-        "Background awareness only -- do not mention this unless it is directly "
+        "Background awareness only. Do not mention this unless it is directly "
         "relevant to what is being discussed."
     )
 
@@ -180,8 +180,8 @@ class SceneSummarizer:
     """Turns a camera frame into one sentence, using a cheap one-shot call.
 
     Deliberately separate from the conversation's own model. This call is not
-    on the critical path -- it happens while the robot is still finishing its
-    walk -- and its output is text, so it never costs the conversation an
+    on the critical path (it happens while the robot is still finishing its
+    walk) and its output is text, so it never costs the conversation an
     image.
     """
 
@@ -268,7 +268,7 @@ class SceneSummarizer:
 class AmbientVision:
     """Decides when to look around, and holds the resulting note.
 
-    Owns the policy -- rate limiting, change detection, expiry -- separately
+    Owns the policy (rate limiting, change detection, expiry) separately
     from the pipeline plumbing that applies it, so the rules can be tested
     without a running pipeline.
     """
@@ -309,7 +309,7 @@ class AmbientVision:
 
         Returns:
             The new note text to place in context, or None if nothing should
-            change -- because the view was unreadable, or because the robot is
+            change, because the view was unreadable, or because the robot is
             looking at the same room it was already in.
         """
         if self._summarizer is None:

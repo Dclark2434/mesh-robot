@@ -34,7 +34,7 @@ wpctl set-default <hardware-source-id>
 ```
 
 Alternatively, bypass the default entirely by setting `MESH_AUDIO_IN_DEVICE` to
-the hardware device's index — the robot prints the device table on startup.
+the hardware device's index. The robot prints the device table on startup.
 
 ## One device is better than two
 
@@ -64,7 +64,7 @@ If you see the fallback warning instead, the microphone is being gated while
 the robot speaks, and barge-in will not work:
 
 ```
-[WARNING] Running without echo cancellation -- the robot may hear itself.
+[WARNING] Running without echo cancellation. The robot may hear itself.
 ```
 
 ## If the robot answers itself
@@ -74,7 +74,7 @@ That is the canceller failing, not a logic bug. In order of likelihood:
 1. A noise filter is still in front of the capture device (see above).
 2. Capture and playback are on separate devices with significant clock drift.
 3. The speaker is loud enough to saturate the microphone preamp. The canceller
-   cannot subtract what was clipped on the way in — turn the volume down.
+   cannot subtract what was clipped on the way in, so turn the volume down.
 4. Reported device latency is wrong, so `set_stream_delay_ms` is misaligned.
 
 To confirm it is the canceller rather than something else, set

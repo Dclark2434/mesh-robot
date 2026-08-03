@@ -1,8 +1,8 @@
 """Where dashboard events come from.
 
 A logging handler that mirrors console output to the bus, and one pipeline
-processor that reports what was said. Everything else -- latency, gestures,
-status, telemetry -- is published from the code that already handles it, since
+processor that reports what was said. Everything else (latency, gestures,
+status, telemetry) is published from the code that already handles it, since
 those places have the data in hand and publishing is a single call.
 """
 
@@ -26,7 +26,7 @@ class DashboardLogHandler(logging.Handler):
     """Mirrors log records onto the event bus.
 
     Attached to the same loggers that write to the console, so the dashboard
-    shows exactly what the terminal shows -- the point being that you should
+    shows exactly what the terminal shows; the point being that you should
     not have to be at the workstation to watch the robot think.
     """
 
@@ -79,7 +79,7 @@ class TranscriptTap(FrameProcessor):
     """Publishes both sides of the conversation to the dashboard.
 
     Placed after the action-tag processor so the assistant text it reports is
-    the text that was actually spoken -- directives already stripped -- rather
+    the text that was actually spoken, with directives already stripped, rather
     than the raw model output with tags still in it.
     """
 

@@ -2,7 +2,7 @@
 
 Everything the two processes say to each other over the LiveKit data channel is
 defined here, once. Previously both sides built dict literals inline, which let
-the robot's dispatcher and the LLM's prompt drift apart -- the prompt advertised
+the robot's dispatcher and the LLM's prompt drift apart; the prompt advertised
 ``strafe_left``, ``emote`` and ``see``, none of which the client could execute.
 
 The action registry below is the single source of truth. The client builds its
@@ -99,7 +99,7 @@ class ActionSpec:
 ACTIONS: dict[str, ActionSpec] = {
     spec.name: spec
     for spec in (
-        # -- head: fast, expressive, safe to interleave with speech -----------
+        #, head: fast, expressive, safe to interleave with speech -----------
         ActionSpec("look_left", Lane.HEAD, 0.4, describe="glance left"),
         ActionSpec("look_right", Lane.HEAD, 0.4, describe="glance right"),
         ActionSpec("look_up", Lane.HEAD, 0.4, describe="look up / thoughtful"),
@@ -109,22 +109,22 @@ ACTIONS: dict[str, ActionSpec] = {
         ActionSpec("shake", Lane.HEAD, 1.8, describe="shake head no"),
         ActionSpec("smh", Lane.HEAD, 2.8, describe="look down and shake head, disappointed"),
         ActionSpec("roll_eyes", Lane.HEAD, 1.1, describe="roll eyes, exasperated"),
-        # -- body: expressive but slower -------------------------------------
+        #, body: expressive but slower -------------------------------------
         ActionSpec("wave", Lane.BODY, 1.6, describe="wave a front leg hello"),
         ActionSpec("tap", Lane.BODY, 1.1, describe="tap a foot impatiently"),
         ActionSpec("tippy_tap", Lane.BODY, 2.4, describe="excited little foot shuffle"),
         ActionSpec("laugh", Lane.BODY, 1.3, describe="bounce the body, laughing"),
         ActionSpec("bow", Lane.BODY, 3.5, speech_safe=False, describe="deep, slow bow"),
         ActionSpec("wiggle", Lane.BODY, 16.0, speech_safe=False, describe="full show-off wiggle display"),
-        # -- body: locomotion. Never mid-sentence, and it changes where you are.
+        #, body: locomotion. Never mid-sentence, and it changes where you are.
         ActionSpec("walk_forward", Lane.BODY, 4.0, ParamKind.STEPS, False, "walk forward N steps", True),
         ActionSpec("move_backward", Lane.BODY, 4.0, ParamKind.STEPS, False, "back up N steps", True),
         ActionSpec("turn_left", Lane.BODY, 4.0, ParamKind.STEPS, False, "turn left; 9 steps ~ 180 degrees", True),
         ActionSpec("turn_right", Lane.BODY, 4.0, ParamKind.STEPS, False, "turn right; 9 steps ~ 180 degrees", True),
-        # -- body: posture ----------------------------------------------------
+        #, body: posture ----------------------------------------------------
         ActionSpec("relax", Lane.BODY, 1.0, speech_safe=False, describe="power down servos and rest"),
         ActionSpec("reset", Lane.BODY, 1.5, speech_safe=False, describe="lie flat, safe to pick up"),
-        # -- aux: instant ------------------------------------------------------
+        #, aux: instant ------------------------------------------------------
         ActionSpec("led_flash", Lane.AUX, 0.5, describe="flash the cue light"),
         ActionSpec("buzzer_beep", Lane.AUX, 0.2, describe="short beep"),
         ActionSpec("buzzer_warn", Lane.AUX, 0.5, describe="two warning beeps"),

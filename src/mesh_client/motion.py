@@ -10,7 +10,7 @@ because those are different servos.
 
 **Expiry.** A gesture is tied to a moment in a sentence. If the robot is busy
 when it arrives, waving three seconds after the word "hello" is worse than not
-waving -- it reads as a fault. Expressive gestures carry a deadline from the
+waving; it reads as a fault. Expressive gestures carry a deadline from the
 brain and are dropped once it passes. Commands ("walk forward", "lie flat")
 carry no deadline, because those are instructions rather than punctuation.
 

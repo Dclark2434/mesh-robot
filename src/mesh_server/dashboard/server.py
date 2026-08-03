@@ -2,7 +2,7 @@
 
 Runs inside the brain process on its own port, sharing the event loop. It is
 strictly read-only: it observes the robot, it cannot drive it. That is a
-deliberate limit for a first version -- a control surface reachable by anything
+deliberate limit for a first version; a control surface reachable by anything
 on the LAN deserves its own thought about who is allowed to make a robot walk.
 
 Camera frames are served as an ordinary JPEG endpoint and polled by the page,
@@ -54,7 +54,7 @@ class DashboardServer:
             event_bus: Bus to stream events from.
             health: Component health, polled by the status panel.
             feed: The camera buffer, or None if vision is disabled.
-            state: Static facts about this run -- persona, model names -- shown
+            state: Static facts about this run (persona, model names) shown
                 in the dashboard header.
         """
         self._bus = event_bus

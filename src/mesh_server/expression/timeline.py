@@ -26,7 +26,7 @@ class PendingGesture:
         word_index: Number of spoken words after which it should fire.
         expires_in: Seconds of validity once dispatched, passed on to the
             robot. None means the action is worth doing however late it
-            arrives -- "lie flat" is an instruction, not a flourish.
+            arrives, "lie flat" is an instruction, not a flourish.
     """
 
     action: str

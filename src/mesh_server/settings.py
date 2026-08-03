@@ -83,7 +83,7 @@ class TurnSettings:
         wake_phrases: Require one of these before the robot will engage.
             Empty means always listening. Worth setting in a room with a
             television or a small child in it, since a word count cannot
-            filter babble -- babble has words in it.
+            filter babble, babble has words in it.
         wake_timeout: Seconds of quiet before the wake phrase is needed again.
             The timer resets on every exchange, so a conversation once started
             continues naturally; it only closes after a real lull.

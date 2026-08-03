@@ -6,8 +6,8 @@ stop the robot from answering itself, but it also made interruption impossible:
 there is no way to barge in on something that has stopped listening.
 
 Instead the mic stays open and the echo is cancelled. ``livekit.rtc`` ships the
-WebRTC audio processing module -- the same AEC that every browser uses for
-video calls -- and exposes both halves of it: ``process_reverse_stream`` for
+WebRTC audio processing module, the same AEC that every browser uses for
+video calls, and exposes both halves of it: ``process_reverse_stream`` for
 the audio being played, ``process_stream`` for the audio being captured. Given
 both, it subtracts the speaker out of the microphone.
 

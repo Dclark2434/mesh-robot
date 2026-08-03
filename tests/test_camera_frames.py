@@ -2,7 +2,7 @@
 
 Channel order is the one to care about. LiveKit's RGB24 buffer means literally
 red, green, blue in memory, and picamera2 names its formats in the opposite
-order to the bytes they produce. Get it backwards and nothing crashes -- the
+order to the bytes they produce. Get it backwards and nothing crashes; the
 robot just calmly tells you your blue mug is red.
 """
 

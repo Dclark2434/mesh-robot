@@ -14,7 +14,7 @@ Three processors, sitting at three different points in the pipeline:
     character alignment which Pipecat converts into word-level ``TTSTextFrame``
     with exactly such a timestamp. Counting those frames downstream therefore
     counts *words actually being spoken*, so a gesture fires with its word
-    rather than at LLM-token time -- roughly 1.5s earlier, given measured
+    rather than at LLM-token time, roughly 1.5s earlier, given measured
     ElevenLabs time-to-first-byte.
 
 ``StatusProcessor``

@@ -12,7 +12,7 @@ def test_facts_survive_a_restart(tmp_path):
 def test_duplicates_are_not_stored_twice(tmp_path):
     store = MemoryStore(tmp_path / "facts.json")
     assert store.remember("User is called Dustin")
-    # Same fact, different punctuation and case -- the model rephrases.
+    # Same fact, different punctuation and case; the model rephrases.
     assert not store.remember("user is called dustin.")
     assert len(store) == 1
 

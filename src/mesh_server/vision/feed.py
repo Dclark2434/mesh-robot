@@ -52,7 +52,7 @@ from mesh_server.vision.context import DEFAULT_KEEP_IMAGES, collapse_old_images
 
 logger = get_logger("vision")
 
-#: A frame older than this is not worth showing anyone -- the robot has
+#: A frame older than this is not worth showing anyone; the robot has
 #: probably turned since. Better to admit the camera is stalled.
 MAX_GLIMPSE_AGE_SECS = 3.0
 
@@ -60,7 +60,7 @@ LOOK_TOOL = FunctionSchema(
     name="look",
     description=(
         "Look through your camera at what is in front of you. Use this whenever "
-        "answering depends on seeing something -- what the user is holding, what "
+        "answering depends on seeing something, what the user is holding, what "
         "is in the room, what a thing looks like. Do not use it for questions you "
         "can already answer."
     ),
@@ -157,7 +157,7 @@ class CameraFeedProcessor(FrameProcessor):
       is answered with the buffered frame. Pipecat's assistant aggregator then
       places that image into context *after* the tool result, which is the
       ordering Gemini's function-calling contract requires. Doing this by hand
-      is what the LiveKit transport lacks -- unlike the Daily and SmallWebRTC
+      is what the LiveKit transport lacks, unlike the Daily and SmallWebRTC
       transports, it has no ``request_participant_image``.
     """
 
