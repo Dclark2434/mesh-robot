@@ -75,7 +75,7 @@ from mesh_common.protocol import (
 from mesh_server.dashboard.events import bus
 from mesh_server.dashboard.health import HealthTracker, State
 from mesh_server.dashboard.server import DashboardServer
-from mesh_server.dashboard.taps import TranscriptTap, attach_log_bridge
+from mesh_server.dashboard.taps import HeardTap, SaidTap, attach_log_bridge
 from mesh_server.expression.processors import (
     ActionTagProcessor,
     GestureDispatcher,
@@ -362,12 +362,15 @@ async def run() -> int:
             ambient_processor,
             ListeningStatusProcessor(send),
             stt,
+            # Before the aggregator, which consumes transcription frames
+            # rather than forwarding them.
+            HeardTap(bus),
             context_aggregator.user(),
             llm,
             ActionTagProcessor(timeline, memory),
             # After tag stripping, so the transcript shows what was spoken
             # rather than the raw model output with directives still in it.
-            TranscriptTap(bus),
+            SaidTap(bus),
             # Collapses stale images once the reply is complete, so one look
             # does not tax every turn that follows it.
             VisionContextPruner(context, settings.keep_images),

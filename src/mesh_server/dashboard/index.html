@@ -111,14 +111,24 @@
   .spark i { flex: 1; background: var(--accent); opacity: .55; border-radius: 1px 1px 0 0; min-height: 2px; }
   .spark i.slow { background: var(--warn); opacity: .8; }
 
-  /* transcript / feed --------------------------------------------------- */
-  .feed { max-height: 240px; overflow-y: auto; }
+  /* conversation --------------------------------------------------------- */
+  .feed { height: 300px; overflow-y: auto; padding: 6px 0; display: flex; flex-direction: column; }
   .turn { padding: 5px 12px; }
   .turn .who { font-size: 10px; letter-spacing: .1em; text-transform: uppercase; color: var(--dim); }
   .turn.user .who { color: var(--accent); }
   .turn.assistant .who { color: var(--ok); }
-  .gest { display: flex; gap: 8px; padding: 3px 12px; font-size: 12px; }
-  .gest .g { color: var(--warn); }
+  .turn .what { white-space: pre-wrap; word-break: break-word; }
+  /* Everything that is not speech reads as a margin note, so the two sides
+     of the conversation stay visually dominant. */
+  .note-row { display: flex; gap: 8px; padding: 2px 12px; font-size: 11px; color: var(--dim); align-items: baseline; }
+  .note-row .icon { flex: none; width: 12px; text-align: center; }
+  .note-row .body { flex: 1; }
+  .note-row.gesture .icon { color: var(--warn); }
+  .note-row.gesture .body { color: var(--warn); }
+  .note-row.sees .icon, .note-row.sees .body { color: var(--stale); }
+  .note-row.looked .icon, .note-row.looked .body { color: var(--accent); }
+  .note-row.remembered .icon, .note-row.remembered .body { color: var(--ok); }
+  .note-row .t { color: #4b5563; flex: none; }
   .kv { display: flex; justify-content: space-between; gap: 12px; padding: 2px 0; }
   .kv span { color: var(--dim); }
   .note { color: var(--dim); font-style: italic; }
@@ -141,6 +151,14 @@
 
 <main>
   <div>
+    <section class="panel" style="margin-bottom:12px">
+      <h2>Conversation <span class="spacer"></span>
+        <button id="feed-notes" class="on">notes</button>
+        <button id="feed-clear">clear</button>
+      </h2>
+      <div class="feed" id="transcript"><div class="empty">nothing said yet</div></div>
+    </section>
+
     <section class="panel" style="margin-bottom:12px">
       <h2>Brain log <span class="spacer"></span>
         <button id="brain-pause">pause</button>
@@ -183,15 +201,6 @@
       </div>
     </section>
 
-    <section class="panel" style="margin-bottom:12px">
-      <h2>Conversation</h2>
-      <div class="feed" id="transcript"><div class="empty">nothing said yet</div></div>
-    </section>
-
-    <section class="panel">
-      <h2>Gestures</h2>
-      <div class="feed" id="gestures"><div class="empty">no gestures yet</div></div>
-    </section>
   </div>
 </main>
 
@@ -246,32 +255,54 @@
   const appendRobot = makeLogPane("robot-log", "robot-pause", "robot-clear");
   let dropped = 0;
 
-  // -- feeds -------------------------------------------------------------
-  function prependTo(paneId, node, limit = 40) {
-    const pane = $(paneId);
+  // -- conversation ------------------------------------------------------
+  // One chronological feed. Speech is the substance; gestures, looks, scene
+  // notes and remembered facts are margin notes against the turn they
+  // happened during, which is the only way to see that a gesture fired
+  // during the wrong sentence.
+  const FEED_LIMIT = 300;
+  let showNotes = true;
+
+  $("feed-clear").onclick = () => { $("transcript").innerHTML = ""; };
+  $("feed-notes").onclick = () => {
+    showNotes = !showNotes;
+    $("feed-notes").classList.toggle("on", showNotes);
+    $("transcript").querySelectorAll(".note-row")
+      .forEach((el) => { el.style.display = showNotes ? "" : "none"; });
+  };
+
+  function appendToFeed(node) {
+    const pane = $("transcript");
     const empty = pane.querySelector(".empty");
     if (empty) empty.remove();
-    pane.prepend(node);
-    while (pane.childElementCount > limit) pane.lastElementChild.remove();
+    // Only follow the tail if the reader is already there.
+    const atBottom = pane.scrollHeight - pane.scrollTop - pane.clientHeight < 60;
+    pane.appendChild(node);
+    while (pane.childElementCount > FEED_LIMIT) pane.firstElementChild.remove();
+    if (atBottom) pane.scrollTop = pane.scrollHeight;
   }
 
   function addTurn(event) {
     const el = document.createElement("div");
     el.className = "turn " + event.role;
     el.innerHTML = '<div class="who"></div><div class="what"></div>';
-    el.children[0].textContent = event.role === "user" ? "you" : "rocky";
+    el.children[0].textContent =
+      (event.role === "user" ? "heard" : "rocky") + " · " + clock(event.at);
     el.children[1].textContent = event.text;
-    prependTo("transcript", el);
+    appendToFeed(el);
     if (event.role === "assistant") $("hdr-turns").textContent = ++turns;
   }
 
-  function addGesture(event) {
+  function addNote(kind, icon, text, at) {
     const el = document.createElement("div");
-    el.className = "gest";
-    el.innerHTML = '<span class="t"></span><span class="g"></span>';
-    el.children[0].textContent = clock(event.at);
-    el.children[1].textContent = event.action + (event.param ? " " + event.param : "");
-    prependTo("gestures", el, 25);
+    el.className = "note-row " + kind;
+    el.innerHTML =
+      '<span class="t"></span><span class="icon"></span><span class="body"></span>';
+    el.children[0].textContent = clock(at);
+    el.children[1].textContent = icon;
+    el.children[2].textContent = text;
+    if (!showNotes) el.style.display = "none";
+    appendToFeed(el);
   }
 
   // -- latency -----------------------------------------------------------
@@ -317,7 +348,11 @@
       }
     },
     transcript: addTurn,
-    gesture: addGesture,
+    gesture: (e) =>
+      addNote("gesture", "▸", e.action + (e.param ? " " + e.param : ""), e.at),
+    look: (e) =>
+      addNote("looked", "◉", "looked" + (e.question ? ": " + e.question : ""), e.at),
+    memory: (e) => addNote("remembered", "✦", "remembered: " + e.fact, e.at),
     latency: showLatency,
     status: (e) => { $("hdr-state").textContent = e.status; },
     telemetry: (e) => {
@@ -325,7 +360,14 @@
         $("hdr-battery").textContent = Math.round(e.battery_percent) + "%";
       }
     },
-    ambient: (e) => { $("ambient").textContent = e.note || "no ambient observation yet"; },
+    ambient: (e) => {
+      $("ambient").textContent = e.note || "no ambient observation yet";
+      // Strip the instruction the model is given; only the observation is
+      // interesting to a person reading along.
+      const seen = (e.note || "").replace(/^\[ambient[^\]]*\]\s*/, "")
+                                 .replace(/\s*Background awareness only.*$/, "");
+      if (seen) addNote("sees", "◎", seen, e.at);
+    },
   };
 
   function connect() {

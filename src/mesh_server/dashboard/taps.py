@@ -75,12 +75,49 @@ def attach_log_bridge(event_bus: EventBus, level: int = logging.INFO) -> None:
             logger.addHandler(handler)
 
 
-class TranscriptTap(FrameProcessor):
-    """Publishes both sides of the conversation to the dashboard.
+class HeardTap(FrameProcessor):
+    """Publishes what speech recognition made of the user.
 
-    Placed after the action-tag processor so the assistant text it reports is
-    the text that was actually spoken, with directives already stripped, rather
-    than the raw model output with tags still in it.
+    Must sit between the STT service and the context aggregator. The
+    aggregator consumes ``TranscriptionFrame`` rather than forwarding it, so
+    anything downstream of it never sees a word the user said, and a dashboard
+    placed there shows a conversation with only one participant in it.
+
+    Reporting what was *heard*, rather than what was understood, is the point:
+    when the robot answers the wrong question, this is where you find out
+    whether it misheard or just misjudged.
+    """
+
+    def __init__(self, event_bus: EventBus) -> None:
+        """Create the tap.
+
+        Args:
+            event_bus: Bus to publish to.
+        """
+        super().__init__()
+        self._bus = event_bus
+
+    async def process_frame(self, frame: Frame, direction: FrameDirection) -> None:
+        """Publish final transcripts.
+
+        Args:
+            frame: Incoming frame.
+            direction: Direction of travel.
+        """
+        await super().process_frame(frame, direction)
+
+        if isinstance(frame, TranscriptionFrame) and frame.text.strip():
+            self._bus.publish("transcript", role="user", text=frame.text.strip())
+
+        await self.push_frame(frame, direction)
+
+
+class SaidTap(FrameProcessor):
+    """Publishes what the robot actually said.
+
+    Placed after the action-tag processor, so the text reported is the text
+    that reached the voice, with directives already stripped, rather than the
+    raw model output with tags still in it.
     """
 
     def __init__(self, event_bus: EventBus) -> None:
@@ -94,7 +131,7 @@ class TranscriptTap(FrameProcessor):
         self._reply: list[str] = []
 
     async def process_frame(self, frame: Frame, direction: FrameDirection) -> None:
-        """Watch for finished user and assistant turns.
+        """Accumulate a reply and publish it once complete.
 
         Args:
             frame: Incoming frame.
@@ -102,10 +139,7 @@ class TranscriptTap(FrameProcessor):
         """
         await super().process_frame(frame, direction)
 
-        if isinstance(frame, TranscriptionFrame):
-            if frame.text.strip():
-                self._bus.publish("transcript", role="user", text=frame.text.strip())
-        elif isinstance(frame, LLMFullResponseStartFrame):
+        if isinstance(frame, LLMFullResponseStartFrame):
             self._reply = []
         elif isinstance(frame, LLMTextFrame):
             self._reply.append(frame.text)

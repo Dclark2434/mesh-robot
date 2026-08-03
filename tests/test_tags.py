@@ -139,3 +139,84 @@ def test_tag_at_the_very_start_anchors_at_zero():
     speech, tags = drain(TagStreamParser(), "[ACTION: wave] Hello!")
     assert tags[0].word_index == 0
     assert speech == "Hello!"
+
+
+# -- tool calls the model writes out as prose -----------------------------
+
+
+def test_a_leaked_tool_call_is_never_spoken():
+    # Observed in the wild: the robot announced its own function call aloud.
+    speech, _ = drain(
+        TagStreamParser(),
+        "I look! startcall:default_api:look{question:what is on the person's shirt} "
+        "It is dark, but I see shapes",
+    )
+    assert "startcall" not in speech
+    assert "default_api" not in speech
+    assert "question:" not in speech
+    assert "I look!" in speech
+    assert "I see shapes" in speech
+
+
+def test_a_leaked_call_split_across_chunks_is_still_caught():
+    # The marker arrives in pieces, so a naive per-chunk check misses it.
+    speech, _ = drain(
+        TagStreamParser(), "Let me see. start", "call:default_api:look{q:x}", " All done."
+    )
+    assert "start" not in speech.lower().replace("all done.", "")
+    assert "default_api" not in speech
+    assert "Let me see." in speech
+    assert "All done." in speech
+
+
+def test_other_leak_spellings_are_caught():
+    for leak in (
+        "tool_code\nlook(question='x')\n",
+        "<start_of_call>default_api.look(q)</start_of_call>",
+        "functioncall: look{a:b}",
+    ):
+        speech, _ = drain(TagStreamParser(), f"Before {leak} after")
+        # The call must not survive. Punctuation left behind by a partly
+        # matched wrapper is harmless: TTS says nothing for "</".
+        assert "look" not in speech.lower(), leak
+        assert "question" not in speech.lower(), leak
+        assert "Before" in speech and "after" in speech, leak
+
+
+def test_ordinary_speech_is_not_suppressed():
+    # None of these contain a marker, and all are plausible things to say.
+    for line in (
+        "I will start calling you Friend.",
+        "That is the default setting, question?",
+        "My tools are legs and a camera.",
+        "Start! Go! Now!",
+    ):
+        speech, _ = drain(TagStreamParser(), line)
+        assert speech == line, line
+
+
+def test_a_leak_does_not_swallow_the_rest_of_the_turn():
+    parser = TagStreamParser()
+    speech, _ = drain(parser, "startcall:default_api:look{q:x}", "Now I can see!")
+    assert "Now I can see!" in speech
+
+
+def test_an_unterminated_leak_ends_at_a_blank_line():
+    speech, _ = drain(
+        TagStreamParser(), "hi startcall:default_api:look\n\nstill talking"
+    )
+    assert "startcall" not in speech
+    assert "still talking" in speech
+
+
+def test_suppression_gives_up_rather_than_eating_a_whole_reply():
+    # A marker matched in earnest is followed by a short call. If it runs on,
+    # something has gone wrong, and losing a sentence beats losing the turn.
+    from mesh_server.expression.tags import MAX_SUPPRESS_CHARS
+
+    speech, _ = drain(
+        TagStreamParser(),
+        "default_api" + "x" * (MAX_SUPPRESS_CHARS + 50),
+        " back again",
+    )
+    assert "back again" in speech

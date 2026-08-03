@@ -384,8 +384,17 @@ pushed down the WebSocket, which keeps the event stream text-only and lets the
 browser handle caching. The preview is downscaled to 480px, since it is a monitoring
 thumbnail, not what the model sees.
 
-Also shown: transcript, gestures as they fire, the current ambient note, and
-battery. The page is a single file with no external assets, because a
+**One conversation feed**, not several panels. What speech recognition made
+of you, what the robot said, and against them as margin notes: gestures as
+they fire, looks, remembered facts and scene observations. Separate panels
+cannot show that a gesture fired during the wrong sentence; one ordered
+stream can. Newest at the bottom, following the tail unless you have
+scrolled up to read something.
+
+What was *heard* is reported rather than what was understood, and the tap
+for it sits between the STT service and the context aggregator. The
+aggregator consumes transcription frames rather than forwarding them, so a
+tap downstream of it shows a conversation with only one participant in it. The page is a single file with no external assets, because a
 dashboard that needs a CDN is useless on a LAN with no internet.
 
 Events are published to a process-wide bus (`dashboard/events.py`). That is a

@@ -207,6 +207,7 @@ class CameraFeedProcessor(FrameProcessor):
             return
 
         logger.info(f"Look: {request.text or 'no stated purpose'} ({glimpse.age * 1000:.0f}ms old)")
+        bus.publish("look", question=request.text or "")
         await self.push_frame(
             UserImageRawFrame(
                 user_id=request.user_id,
