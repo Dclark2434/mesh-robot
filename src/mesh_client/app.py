@@ -133,7 +133,7 @@ class Robot:
         except Exception as exc:
             logger.debug(f"Could not publish message: {exc}")
 
-    #, hardware ---------------------------------------------------------
+    # -- hardware ---------------------------------------------------------
 
     def _open_hardware(self) -> None:
         """Bring up every hardware controller and register its actions."""
@@ -224,7 +224,7 @@ class Robot:
         for name, handler in handlers.items():
             self.motion.register(name, handler)
 
-    #, session ----------------------------------------------------------
+    # -- session ----------------------------------------------------------
 
     def _token(self) -> str:
         """Mint a LiveKit token for this robot.
@@ -364,7 +364,7 @@ class Robot:
         self.log_shipper.attach()
         self.log_shipper.start()
 
-    #, lifecycle --------------------------------------------------------
+    # -- lifecycle --------------------------------------------------------
 
     async def run(self) -> None:
         """Bring everything up and stay running until interrupted."""

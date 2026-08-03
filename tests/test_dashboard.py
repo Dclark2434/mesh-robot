@@ -12,7 +12,7 @@ from mesh_server.dashboard.events import SUBSCRIBER_LIMIT, EventBus
 from mesh_server.dashboard.health import HealthTracker, State
 
 
-#, event bus ------------------------------------------------------------
+# -- event bus ------------------------------------------------------------
 
 
 def test_publishing_without_a_dashboard_is_harmless():
@@ -96,7 +96,7 @@ def test_unsubscribing_stops_delivery():
     assert asyncio.run(scenario()) == (0, 0)
 
 
-#, health ---------------------------------------------------------------
+# -- health ---------------------------------------------------------------
 
 
 def test_untouched_components_are_unknown_not_healthy():
