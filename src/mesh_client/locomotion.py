@@ -263,16 +263,23 @@ class LocomotionController:
         
         logger.info(f"Gait Cycle: x={x}, y={y}, angle={angle}, steps={steps}, speed={speed}, swing={hip_swing}, z_step={z_step:.1f}")
         self.reset_posture()
+        cancelled = False
         try:
             for s in range(steps):
                 self.run_one_cycle(x, y, angle, z_step, f_steps, speed, hip_swing)
         except MotionCancelled:
+            cancelled = True
             logger.info(f"Gait cancelled after {s} of {steps} steps")
             raise
         finally:
-            # Runs on the cancelled path too. A stop mid-cycle can leave a leg
-            # mid-swing, and this is what puts the robot back on all six feet.
-            self.reset_posture()
+            # A stop mid-cycle can leave a leg raised and well forward, so the
+            # way back to a stance has to be eased rather than snapped. At the
+            # normal end of a gait the pose is already close to neutral and the
+            # cheap reset is enough.
+            if cancelled:
+                self.settle_to_neutral()
+            else:
+                self.reset_posture()
 
     def move_forward(self, steps=5, speed=1.0):
         logger.info(f"Walking forward {steps} steps at speed {speed}...")
@@ -309,6 +316,46 @@ class LocomotionController:
             
             # Direct servo control via the injected servo_controller
             self.servo.set_angle(i, angle)
+
+    def settle_to_neutral(self, duration=0.35, steps=14):
+        """Ease the legs back to the neutral stance from wherever they are.
+
+        The recovery path after a movement is cancelled. Snapping straight to
+        neutral commands up to 55 degrees of instantaneous travel on more than
+        half the servos, because a gait abandoned mid-cycle can have a leg
+        raised and well forward. That is a lurch the robot can trip over.
+        Interpolating over a third of a second is still prompt and does not
+        throw it about.
+
+        Deliberately not cancellable: this is what runs when a stop was
+        already requested, and interrupting the recovery would leave the robot
+        in the pose being recovered from.
+
+        Args:
+            duration: Seconds to take.
+            steps: Interpolation steps; the servos see one write per step.
+        """
+        start = copy.deepcopy(self.leg_positions)
+
+        self.body_points = [
+            [137.1, 189.4, self.body_height], [225, 0, self.body_height], [137.1, -189.4, self.body_height],
+            [-137.1, -189.4, self.body_height], [-225, 0, self.body_height], [-137.1, 189.4, self.body_height]
+        ]
+        self.transform_coordinates(self.body_points)
+        target = copy.deepcopy(self.leg_positions)
+
+        for s in range(1, steps + 1):
+            progress = s / steps
+            for leg in range(6):
+                for axis in range(3):
+                    self.leg_positions[leg][axis] = (
+                        start[leg][axis] + (target[leg][axis] - start[leg][axis]) * progress
+                    )
+            self.set_leg_angles()
+            time.sleep(duration / steps)
+
+        self.leg_positions = copy.deepcopy(target)
+        self.set_leg_angles()
 
     def reset_posture(self):
          self.body_points = [

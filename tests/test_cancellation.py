@@ -187,13 +187,26 @@ def _rig(controllers):
 
 def test_a_walk_stops_within_a_servo_frame(controllers):
     token, legs, _ = _rig(controllers)
-    threading.Timer(0.3, token.cancel).start()
 
+    # Timed separately: the gait itself aborts within a frame, then the eased
+    # recovery runs. Conflating the two hides which one is slow.
+    aborted_at = {}
+    original = legs.settle_to_neutral
+    legs.settle_to_neutral = lambda *a, **k: (
+        aborted_at.setdefault("t", time.monotonic()), original(*a, **k))[1]
+
+    threading.Timer(0.3, token.cancel).start()
     started = time.monotonic()
-    with pytest.raises(MotionCancelled):
-        legs.move_forward(steps=20, speed=1.0)  # many seconds if uninterrupted
+    try:
+        with pytest.raises(MotionCancelled):
+            legs.move_forward(steps=20, speed=1.0)  # many seconds if uninterrupted
+    finally:
+        legs.settle_to_neutral = original
+
     # Granularity is one gait frame, not one gait cycle and not one action.
-    assert time.monotonic() - started < 0.6
+    assert aborted_at["t"] - started < 0.5
+    # And the whole thing, recovery included, is still under a second.
+    assert time.monotonic() - started < 1.2
 
 
 def test_a_cancelled_walk_leaves_the_robot_standing(controllers):
@@ -226,3 +239,47 @@ def test_a_cancelled_animation_releases_its_lock(controllers):
 def test_an_uninterrupted_walk_still_completes(controllers):
     _, legs, _ = _rig(controllers)
     legs.move_forward(steps=1, speed=3.0)
+
+
+def test_the_recovery_is_eased_rather_than_snapped(controllers):
+    # Commanding neutral in a single write after a mid-cycle abort moves some
+    # servos more than 50 degrees at once, which throws the robot about. The
+    # settle has to be gentler than the gait it is recovering from.
+    token, legs, _ = _rig(controllers)
+
+    frames, mark = [], {}
+    original_set, original_settle = legs.set_leg_angles, legs.settle_to_neutral
+
+    def record():
+        original_set()
+        frames.append(dict(legs.servo.angles) if hasattr(legs.servo, "angles") else {})
+
+    angles = {}
+    legs.servo.set_angle.side_effect = lambda ch, a: angles.__setitem__(ch, a)
+
+    def record_angles():
+        original_set()
+        frames.append(dict(angles))
+
+    def note_settle(*args, **kwargs):
+        mark["at"] = len(frames)
+        original_settle(*args, **kwargs)
+
+    legs.set_leg_angles = record_angles
+    legs.settle_to_neutral = note_settle
+    try:
+        threading.Timer(0.3, token.cancel).start()
+        with pytest.raises(MotionCancelled):
+            legs.move_forward(steps=20, speed=1.0)
+    finally:
+        legs.set_leg_angles, legs.settle_to_neutral = original_set, original_settle
+
+    def worst(seq):
+        return max(
+            (abs(b[ch] - a[ch]) for a, b in zip(seq, seq[1:]) for ch in b if ch in a),
+            default=0.0,
+        )
+
+    settle = frames[mark["at"] - 1:]
+    assert len(settle) > 5, "the recovery should be interpolated over several frames"
+    assert worst(settle) < 15.0, "recovery must not command a large single jump"

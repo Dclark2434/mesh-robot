@@ -25,7 +25,10 @@ class AnimationController:
         here can be interrupted.
         """
         try:
-            self.loco.reset_posture()
+            # Eased rather than snapped: an animation aborted mid-step can have
+            # a leg raised 100mm or more, and commanding that away in a single
+            # write is a lurch rather than a recovery.
+            self.loco.settle_to_neutral()
         except Exception as exc:
             logger.error(f"Could not restore stance: {exc}")
 
