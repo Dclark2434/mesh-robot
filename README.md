@@ -1,243 +1,137 @@
 # MESH
-**Mobile Engineering Support Hexapod (The Brain)**
+**Mobile Engineering Support Hexapod**
 
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](https://opensource.org/licenses/MIT)
-[![Python 3.11](https://img.shields.io/badge/python-3.11-blue.svg)](https://www.python.org/downloads/release/python-3110/)
+[![Python 3.11+](https://img.shields.io/badge/python-3.11+-blue.svg)](https://www.python.org/downloads/)
 
 > [!WARNING]
 > **Status: Active Development**
-> This project provides the "Brain" and "Senses" for a physical hexapod robot. It is an evolving architecture, not a finished product.
+> An evolving architecture, not a finished product.
 
 <p align="center">
   <img width="256" height="384" alt="edited hexapod" src="https://github.com/user-attachments/assets/cacb2021-0fb4-4f09-95fc-123475b88816" />
 </p>
 
-MESH is a "Brain" for Freenove Big Hexapod robots. It features a custom speech-to-speech pipeline, on-the-fly voice cloning, and a modular architecture designed for high-performance inference. This will only work with a Freenove Big Hexapod robot with the following components:
+MESH turns a Freenove Big Hexapod into a robot you talk to. It listens
+continuously, answers in about a second, and gestures with its body in time
+with its own words. No wake word, no push-to-talk. You can interrupt it
+mid-sentence and it will stop and listen.
 
-- Raspberry Pi 3/4/5
-- Added Microphone
-- Added Speakers
-- A beefy workstation or server with NVIDIA GPU (8GB+ VRAM recommended)
+## What you need
 
----
+- Freenove Big Hexapod kit with a Raspberry Pi 4/5
+- A microphone and speaker on the robot, ideally one USB device doing both
+- A camera (Camera Module 3 or a USB webcam), optional
+- A workstation on the same network for the brain
+- A [LiveKit](https://github.com/livekit/livekit) server on your LAN
+- API keys for Deepgram, Google Gemini and ElevenLabs
 
-## Key Features
+## How it works
 
-- **Dual Brain Core**: Seamlessly toggle between Google Gemini (Cloud) and Ollama (Local).
-- **Multi-Personality Engine**: Switch between distinct personas (**MESH**, **Rocky**, **TARS**) via the GUI.
-- **Dynamic Voice Cloning**: Automatic reference audio swapping based on personality (`mesh.wav`, `rocky.wav`, `tars.wav`).
-- **Succession Planning**: Advanced command engine that executes complex, multi-step plans sequentially.
-- **Pro-Grade Voice**: ElevenLabs integration for expressive speech (laughs, sighs) with seamless fallback to F5-TTS or Chatterbox.
-- **Real-time Senses**: Whisper-powered STT and Mono-camera vision analysis.
-- **Server Launcher GUI v1.2**: For managing API keys, personalities, and system initialization.
+Two processes join the same LiveKit room and stay connected.
 
-### Voice Engine Comparison
-
-| Engine | Type | TTFB (Avg) | Total (Avg)* | Quality | Expressive | Requirement |
-|:-------|:-----|:-----------|:-------------|:--------|:-----------|:------------|
-| **Chatterbox Turbo** | Local | **1.45s** | **4.19s** | ⭐⭐⭐ (Good) | ✅ Yes | `HF_TOKEN` (Free) |
-| **F5-TTS** | Local | 1.88s | 4.90s | ⭐⭐⭐⭐ (High) | ❌ No | None (Open Source) |
-| **ElevenLabs** | Cloud | 1.51s | 6.00s | ⭐⭐⭐⭐⭐ (Pro) | ✅ Yes | `ELEVENLABS_API_KEY` |
-| **Chatterbox 100m** | Local | 3.26s | 8.66s | ⭐⭐ (Base) | ❌ No | `HF_TOKEN` (Free) |
-
-_*Benchmarks measured on NVIDIA 4070 Super GPU (Avg over ~12 sessions). Total time captures full generation duration._
-* ElevenLabs requires a subscription.
-* Chatterbox requires a free huggingface token. ([huggingface.co](https://huggingface.co/))
----
-
-## Command Manual & Capabilities
-
-You can control M.E.S.H. using natural language. Below are the supported capabilities and the types of phrases that trigger them.
-
-### Movement
-- **Walk**: "Walk forward 5 steps", "Move ahead".
-- **Turn**: "Turn left", "Turn right", "Spin around" (Standardized to 180-degree turn).
-- **Strafe**: "Step left", "Strafe right".
-- **Back up**: "Back up", "Walk backward".
-
-### Head
-- **Look**: "Look left", "Look right", "Look up", "Look down", "Look at me (center)".
-
-### Cue Light (Back LED)
-- **Control**: "Turn on your light", "Turn off the light". (Overrides speaking animation).
-- **Express**: "Flash your light".
-
-### Audio (Buzzer)
-- **Beep**: "Beep once".
-- **Warn**: "Give me a warning beep".
-- **Alarm**: "Sound the alarm".
-
-### Safety & Power
-- **Relax**: "Relax", "Stand by", "Power down servos". (Saves battery, reduces jitter).
-  - *Note: Auto-relaxes after 10s of inactivity.*
-- **Reset / Lay Flat**: "Reset posture", "Lay flat". (Safe installation pose for picking up).
-
-### Comedic Timing & Gestures
-The robot can "act" while speaking by embedding Action Tags in its response.
-- "Scanning for intelligent life. [ACTION: LOOK_LEFT] [ACTION: LOOK_RIGHT] ...Negative."
-- "Fist-bump! [ACTION: WAVE]"
-- "I am excited! [ACTION: TIPPY_TAP]"
-- "Look at this mess. [ACTION: LOOK_DOWN] Disappointing."
-
-### Succession Planning
-If you give multiple commands at once (e.g., *"Walk forward 3 steps, then turn around and wave"*), M.E.S.H. will generate a sequential execution plan and perform them one by one.
-
-### Expressive Audio (ElevenLabs and Chatterbox Turbo Only)
-When using the elevenlabs voice engine, the robot uses audio tags to add emotion.
-- `[laughing]`, `[sighs]`, `[clears throat]`, `[whispers]`.
-- *Note: These are automatically stripped if the system falls back to local TTS.*
-
----
-
-## Project Structure
-
-The repository follows a `src` layout for better package management and testing.
-
-```text
-mesh-robot/
-├── src/
-│   ├── mesh_common/    # Shared utilities, logging, and constants
-│   ├── mesh_client/    # Platform-agnostic client (Windows/Linux/Pi)
-│   └── mesh_server/    # Core inference engine and voice pipeline
-├── scripts/            # Deployment and automation scripts
-├── tests/              # Comprehensive unit and integration tests
-├── pyproject.toml      # Project configuration and metadata
-└── README.md           # You are here
+```
+   Raspberry Pi                  LiveKit room               Workstation
+ mic ─► echo cancel ─────── audio ──────────────► speech-to-text
+                                                       │
+ speaker ◄──────────────── audio ──────────────  text-to-speech ◄─ Gemini
+                                                       │
+ servos, LEDs ◄─────── control messages ────────  gesture timeline
 ```
 
----
+- Gestures fire on the word they follow, not when the model emits the tag.
+- The microphone stays open while the robot talks, using WebRTC echo
+  cancellation on the Pi.
+- The camera streams to the workstation but frames only reach Gemini when the
+  robot decides a question needs one.
+- A web console at `:8080` shows both logs, component health, per-turn latency
+  and a camera preview.
 
-## Configuration
+[ARCHITECTURE.md](ARCHITECTURE.md) covers the design and the tradeoffs.
 
-Control M.E.S.H. via environment variables.
+## What it can do
 
-| Variable | Default | Description |
-|----------|---------|-------------|
-| `MESH_PERSONALITY` | `mesh` | Current persona (`mesh`, `rocky`, `tars`). |
-| `USE_GEMINI` | `True` | Use Google Gemini Flash (Cloud). `False` for local Ollama. |
-| `USE_ELEVENLABS` | `False` | Use ElevenLabs API. `False` for local F5/XTTS. |
-| `USE_F5_TTS` | `True` | Use F5-TTS (SOTA). `False` for XTTS v2 (Legacy). |
-| `GEMINI_API_KEY`| - | **Required** for Cloud Brain. |
-| `ELEVENLABS_API_KEY`| - | **Required** for Cloud Voice. |
-| `ELEVENLABS_VOICE_ID`| - | Voice ID for ElevenLabs. |
+Speak normally; there is no command syntax.
 
-> [!IMPORTANT]
-> Ensure `GEMINI_API_KEY` is set in your environment if `USE_GEMINI` is enabled.
-> Ensure `ELEVENLABS_API_KEY` is set in your environment if `USE_ELEVENLABS` is enabled.
+| | |
+|---|---|
+| **Move** | walk forward, back up, turn left/right, spin around |
+| **Look** | left, right, up, down, back at me |
+| **Express** | wave, bow, nod, shake, roll its eyes, laugh, tap a foot, wiggle |
+| **Signal** | flash its light, beep, warn, sound an alarm |
+| **Rest** | relax the servos, lie flat so you can pick it up |
+| **See** | "what am I holding?", "what colour is this?" |
 
----
+It gestures while speaking without being asked:
 
-## Setup & Installation
+> "Scanning for intelligent life. `[ACTION: look_left]` `[ACTION: look_right]` ...negative."
 
-### System Requirements
-- **OS**: Linux (WSL2 recommended for Windows users).
-- **Python**: 3.11 (3.12+ currently incompatible with TTS libraries).
-- **GPU**: NVIDIA GPU with CUDA 12.1 (8GB+ VRAM recommended).
-- **Dependencies**: `ffmpeg`, `sox`, `libsox-fmt-all`, `python3.11-tk` (for GUI).
+It also remembers things between sessions, such as names and what you are working on,
+in `data/facts.json`.
 
-### 1. Server Installation (The Brain)
-Runs on your high-end workstation or server.
+### Personalities
+
+Three ship: `mesh`, `rocky`, `tars`. Each is a prompt file in
+`src/mesh_server/personalities/`. Select one with `MESH_PERSONALITY`. To add
+another, drop in a `.txt` file. The shared rules and action list are appended
+automatically.
+
+## Quick start
+
+Full instructions, including LiveKit and the camera, are in
+[GETTING_STARTED.md](GETTING_STARTED.md).
+
+**Workstation:**
 
 ```bash
-# Clone the repository
 git clone https://github.com/Dclark2434/mesh-robot.git
 cd mesh-robot
-
-# Install system deps
-sudo apt update && sudo apt install python3-tk sox libsox-fmt-all ffmpeg libportaudio2 libasound2-dev nvidia-cuda-toolkit -y
-
-# Setup and install
-python3.11 -m venv venv
-source venv/bin/activate
-pip install -e .[server] --index-url https://download.pytorch.org/whl/cu121 --extra-index-url https://pypi.org/simple
-
+python3 -m venv venv && source venv/bin/activate
+pip install -e ".[brain]"
+cp .env.example src/mesh_server/.env    # then fill in your keys
+python -m mesh_server.app
 ```
-> [!TIP]
-> **Voice Customization**: Drop a `.wav` file into `src/mesh_server/personalities/` named after your personality (e.g., `rocky.wav`) to use a custom voice for that character. If no specific file is found, it falls back to the default `reference.wav`.
+
+**Raspberry Pi:**
 
 ```bash
-# Start the brain (GUI Launcher)
-python src/mesh_server/launcher_gui.py
-
-# OR Start via Command Line
-export GEMINI_API_KEY="your_api_key_here"
-python -m mesh_server.server
+sudo apt install -y python3-picamera2
+python3 -m venv --system-site-packages venv && source venv/bin/activate
+pip install -e ".[robot,hardware]"
+python -m mesh_client.app
 ```
 
-### 1.1 External Access (Windows 11 WSL)
-If you are running the server on Windows 11 via WSL and want to access it from another device, you have two options:
+Then open `http://localhost:8080`.
 
-**Run this PowerShell script as Administrator:**
+Every setting is listed in
+[ARCHITECTURE.md](ARCHITECTURE.md#configuration).
 
-```powershell
-powershell -ExecutionPolicy Bypass -File scripts/setup_network.ps1
-```
-
-The script will offer two modes:
-1.  **Standard Setup (Port Proxy)**: Works on all Windows versions. Manually forwards port 8000.
-2.  **Mirrored Mode (Recommended for Win11 22H2+)**: Configuring WSL to share the host IP address. Simpler and more robust.
-
-### 2. Client Installation (The Interface)
-Runs on the robot (Pi) or a debug machine (Windows).
+## Development
 
 ```bash
-# 1. Setup environment
-python -m venv venv-client
-# Windows (PowerShell): .\venv-client\Scripts\Activate.ps1
-source venv-client/bin/activate
-
-# 2. Install client-side dependencies (including hardware drivers)
-pip install -e ".[client]"
-# pip install -e ".[robot]" if on raspberry pi. This includes special hardware drivers!
-
-# 3. Configure Connection (Replace <SERVER_IP> with the IP of your Brain/PC)
-# Windows (PowerShell):
-$env:MESH_SERVER_URL="http://<SERVER_IP>:8000/interact"
-# Linux/Pi (Bash): 
-export MESH_SERVER_URL="http://<SERVER_IP>:8000/interact"
-
-# 4. Start client
-python -m mesh_client.main
+pip install -e ".[dev]"
+pytest
 ```
 
-### 3. Autostart on Boot (Raspberry Pi)
-To have Mesh start automatically when the Pi boots:
-
-```bash
-# Make the setup script executable
-chmod +x scripts/setup-autostart.sh
-
-# Run the installer (it handles systemd for you)
-bash scripts/setup-autostart.sh
-```
-
-> [!TIP]
-> Use `sudo systemctl status mesh-client.service` to verify it's running.
-
----
+Parsing, protocol, timing, vision-context and memory logic test without the
+real-time stack installed. The gait tests run real gait cycles and take a
+couple of minutes.
 
 ## Acknowledgments
 
-> "Good artists copy, great artists steal." — Pablo Picasso
+> "Good artists copy, great artists steal." (Pablo Picasso)
 
-This project wouldn't exist without two key inspirations:
+**[gptars](https://www.youtube.com/@gptars)**: the original inspiration, a
+ChatGPT-powered TARS replica.
 
-**[gptars](https://www.youtube.com/@gptars)**
-The original inspiration. I saw his ChatGPT powered TARS replica and immediately thought, *"I can do that."* This repo is my attempt to prove it.
+**[NikodemBartnik](https://www.youtube.com/@NikodemBartnik)**: for the
+standard on blending hardware, software and 3D printing.
 
-**[NikodemBartnik](https://www.youtube.com/@NikodemBartnik)**
-A massive source of knowledge and ideas. His approach to blending hardware, software, and 3D printing set the standard I aimed for with Mesh.
-
-I wanted to thank the Freenove Team for making such a great robot kit with great documentation.
----
+And the Freenove team for a well-documented kit. Their reference
+implementation (`freenove_code/`) is the source of the inverse-kinematics and
+gait maths, licensed CC BY-NC-SA. Fine for a personal project, worth knowing
+if this ever becomes commercial.
 
 ## License
 
-Distributed under the MIT License. See `LICENSE` for more information.
-
-
-
-
-
-
-
+MIT. See `LICENSE`.

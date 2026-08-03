@@ -24,7 +24,7 @@ fi
 USER_NAME=$(whoami)
 sed -i "s|User=.*|User=$USER_NAME|g" "$SERVICE_FILE"
 sed -i "s|WorkingDirectory=.*|WorkingDirectory=$PROJECT_ROOT|g" "$SERVICE_FILE"
-sed -i "s|ExecStart=.*|ExecStart=/bin/bash $PROJECT_ROOT/scripts/startup-client.sh|g" "$SERVICE_FILE"
+sed -i "s|ExecStart=.*|ExecStart=/bin/bash $PROJECT_ROOT/scripts/startup-robot.sh|g" "$SERVICE_FILE"
 
 # Copy to systemd directory
 echo "📦 Installing service to $DEST_FILE..."
