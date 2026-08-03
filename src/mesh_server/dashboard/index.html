@@ -112,23 +112,35 @@
   .spark i.slow { background: var(--warn); opacity: .8; }
 
   /* conversation --------------------------------------------------------- */
-  .feed { height: 300px; overflow-y: auto; padding: 6px 0; display: flex; flex-direction: column; }
-  .turn { padding: 5px 12px; }
-  .turn .who { font-size: 10px; letter-spacing: .1em; text-transform: uppercase; color: var(--dim); }
+  /* Same row geometry as the log panes: one line per entry, three columns,
+     so timestamps and labels line up down the whole feed regardless of
+     whether a row is speech or a note. */
+  .feed { height: 300px; overflow-y: auto; padding: 6px 0; }
+  /* Fixed line-height, and aligned to the top rather than to the baseline.
+     The note icons fall back to a font with taller metrics than the mono
+     face, and baseline alignment lets that stretch the whole row: every
+     note came out double height while the speech rows stayed single. */
+  .turn, .note-row {
+    display: flex; gap: 8px; padding: 1px 12px;
+    align-items: flex-start; line-height: 20px;
+  }
+  .turn:hover, .note-row:hover { background: var(--panel-2); }
+  .turn .t, .note-row .t { color: #4b5563; flex: none; }
+  .turn .who, .note-row .icon { flex: none; width: 44px; }
+  .note-row .icon { text-align: center; }
+  .turn .what, .note-row .msg {
+    flex: 1; white-space: pre-wrap; word-break: break-word;
+  }
   .turn.user .who { color: var(--accent); }
   .turn.assistant .who { color: var(--ok); }
-  .turn .what { white-space: pre-wrap; word-break: break-word; }
-  /* Everything that is not speech reads as a margin note, so the two sides
-     of the conversation stay visually dominant. */
-  .note-row { display: flex; gap: 8px; padding: 2px 12px; font-size: 11px; color: var(--dim); align-items: baseline; }
-  .note-row .icon { flex: none; width: 12px; text-align: center; }
-  .note-row .body { flex: 1; }
-  .note-row.gesture .icon { color: var(--warn); }
-  .note-row.gesture .body { color: var(--warn); }
-  .note-row.sees .icon, .note-row.sees .body { color: var(--stale); }
-  .note-row.looked .icon, .note-row.looked .body { color: var(--accent); }
-  .note-row.remembered .icon, .note-row.remembered .body { color: var(--ok); }
-  .note-row .t { color: #4b5563; flex: none; }
+  /* Notes sit a shade back so the two sides of the conversation stay
+     visually dominant. Colour only: a smaller font would narrow the
+     timestamp column and knock every note out of line with the speech. */
+  .note-row { color: var(--dim); }
+  .note-row.gesture .icon, .note-row.gesture .msg { color: var(--warn); }
+  .note-row.sees .icon, .note-row.sees .msg { color: var(--stale); }
+  .note-row.looked .icon, .note-row.looked .msg { color: var(--accent); }
+  .note-row.remembered .icon, .note-row.remembered .msg { color: var(--ok); }
   .kv { display: flex; justify-content: space-between; gap: 12px; padding: 2px 0; }
   .kv span { color: var(--dim); }
   .note { color: var(--dim); font-style: italic; }
@@ -285,10 +297,11 @@
   function addTurn(event) {
     const el = document.createElement("div");
     el.className = "turn " + event.role;
-    el.innerHTML = '<div class="who"></div><div class="what"></div>';
-    el.children[0].textContent =
-      (event.role === "user" ? "heard" : "rocky") + " · " + clock(event.at);
-    el.children[1].textContent = event.text;
+    el.innerHTML =
+      '<span class="t"></span><span class="who"></span><span class="what"></span>';
+    el.children[0].textContent = clock(event.at);
+    el.children[1].textContent = event.role === "user" ? "heard" : "rocky";
+    el.children[2].textContent = event.text;
     appendToFeed(el);
     if (event.role === "assistant") $("hdr-turns").textContent = ++turns;
   }
@@ -297,7 +310,7 @@
     const el = document.createElement("div");
     el.className = "note-row " + kind;
     el.innerHTML =
-      '<span class="t"></span><span class="icon"></span><span class="body"></span>';
+      '<span class="t"></span><span class="icon"></span><span class="msg"></span>';
     el.children[0].textContent = clock(at);
     el.children[1].textContent = icon;
     el.children[2].textContent = text;
