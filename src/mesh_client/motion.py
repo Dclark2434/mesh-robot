@@ -28,6 +28,7 @@ import time
 from collections.abc import Callable
 from dataclasses import dataclass
 
+from mesh_client.cancellation import CancelToken, MotionCancelled
 from mesh_common.logging import get_logger
 from mesh_common.protocol import ACTIONS, Lane, resolve_action
 
@@ -77,6 +78,7 @@ class MotionDispatcher:
         self._workers: list[threading.Thread] = []
         self._stopping = threading.Event()
         self._on_finished = on_finished
+        self.cancel = CancelToken()
 
     def register(self, action: str, handler: Handler) -> None:
         """Bind an action name to the code that performs it.
@@ -140,6 +142,28 @@ class MotionDispatcher:
         deadline = time.monotonic() + expires_in if expires_in else None
         self._queues[spec.lane].put(Job(spec.name, param, deadline))
 
+    def abort(self) -> str:
+        """Stop whatever is moving and discard anything queued behind it.
+
+        Queues are emptied before the flag is raised, so no waiting job can
+        start and immediately clear it while the running one is still
+        unwinding.
+
+        Returns:
+            A short description of what was stopped, for logging.
+        """
+        dropped = 0
+        for work in self._queues.values():
+            while True:
+                try:
+                    work.get_nowait()
+                    work.task_done()
+                    dropped += 1
+                except queue.Empty:
+                    break
+        self.cancel.cancel()
+        return f"cancelled current motion, dropped {dropped} queued" if dropped else "cancelled current motion"
+
     def _run_lane(self, lane: Lane) -> None:
         """Process one lane's queue until stopped.
 
@@ -157,12 +181,17 @@ class MotionDispatcher:
                 if job.expired():
                     logger.info(f"Dropped stale '{job.action}' (robot was busy)")
                     continue
+                # A stop applies to the motion that was running when it was
+                # requested, not to whatever is asked for next.
+                self.cancel.clear()
                 logger.info(f"[{lane.value}] {job.action}" + (f" {job.param}" if job.param else ""))
                 self._handlers[job.action](job.param)
                 if self._on_finished is not None:
                     # Reported on completion, not dispatch: a look taken
                     # mid-stride is a picture of the floor going past.
                     self._on_finished(job.action)
+            except MotionCancelled:
+                logger.info(f"'{job.action}' stopped")
             except Exception as exc:
                 logger.error(f"'{job.action}' failed: {exc}")
             finally:

@@ -201,6 +201,8 @@ The robot speaks a greeting when it joins. Hearing it confirms audio output.
 | Interrupt him mid-sentence | He stops within a few hundred ms and responds |
 | "Say hello and wave at me" | The wave lands on the word, not before the sentence |
 | "Walk forward three steps" | He finishes the sentence, then moves |
+| Interrupt him while he is walking | The legs stop within a fraction of a second, standing |
+| "Rocky, stop" while he is moving | Same, without needing to talk over him |
 | "What am I holding?" | A pause while he looks, then an answer |
 | "What colour is it?" | Answered from the same image, without looking again |
 | "My name is X and I'm building a hexapod" | Silent; check the log for `Remembered:` |
@@ -235,6 +237,7 @@ To change persona, stop the brain, set `MESH_PERSONALITY`, and start it again.
 | Variable | Effect |
 |----------|--------|
 | `MESH_ECHO_CANCEL=0` | Robot: restores microphone gating |
+| `MESH_STOP_ON_INTERRUPT=0` | Robot: interrupting no longer stops motion |
 | `MESH_CAMERA=0` | Robot: stops publishing video |
 | `MESH_VISION=0` | Brain: removes the camera tool |
 | `MESH_AMBIENT_VISION=0` | Brain: stops noticing new rooms |

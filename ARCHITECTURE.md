@@ -182,6 +182,7 @@ Everything lives in `src/mesh_server/.env` (brain) and the robot's environment.
 | `MESH_WAKE_PHRASES` | *(none)* | Comma-separated. Set in a noisy room; empty means always listening. |
 | `MESH_WAKE_TIMEOUT` | `45` | Quiet seconds before the wake phrase is needed again. |
 | `MESH_ECHO_CANCEL` | `1` | AEC on the robot. `0` restores mic gating. |
+| `MESH_STOP_ON_INTERRUPT` | `1` | Interrupting also stops the robot moving. |
 | `MESH_AUDIO_IN_DEVICE` | default | sounddevice input index. |
 | `MESH_AUDIO_OUT_DEVICE` | default | sounddevice output index. |
 | `MESH_AUDIO_IN_CHANNELS` | `1` | Set to `2` for stereo-only USB capsules. |
@@ -393,16 +394,38 @@ and threading a dashboard reference through every pipeline processor would put
 presentation concerns into code with no other reason to know about them.
 Publishing with nothing subscribed is a deque append.
 
+## Stopping a movement
+
+Gait cycles and animations are blocking sequences of servo writes separated by
+short sleeps, so a walk started three seconds ago could not be called off:
+interrupting the robot stopped its speech while its legs carried on.
+
+Every pause inside a movement now goes through `CancelToken.sleep`, which
+returns normally on timeout and raises `MotionCancelled` when a stop has been
+requested. That makes each sleep a cancellation point without threading a
+return value through the gait maths, and the exception unwinds through the
+`finally` blocks those routines already have. Measured granularity is about
+10ms, one servo frame, rather than one gait cycle or one whole action.
+
+The recovery matters more than the stop. A gait abandoned mid-cycle can leave a
+leg raised, so `execute_gait` restores the neutral stance in a `finally` that
+runs on the cancelled path, and animations do the same before releasing their
+lock. Without that, the first cancellation would leave the robot standing on
+five legs and deadlock every animation after it.
+
+Two things trigger it. Barge-in does, because someone interrupting wants
+attention now and a robot that carries on walking away is not listening in any
+sense that matters; `MESH_STOP_ON_INTERRUPT=0` turns that off. And the model
+has a `stop` action, which sits in the **aux** lane on purpose: the body lane is
+occupied by the very motion that needs interrupting, so queueing there would
+mean waiting for the thing you asked it to abandon.
+
 ## Known gaps
 
 - **Nothing prompts the robot to look on its own.** It looks when it decides a
   question needs it. It will not notice that it has been picked up and moved,
   or that someone walked in. A cheap improvement would be a look triggered by
   the first user turn after locomotion.
-- **A long body action cannot be cancelled.** Gait and animation loops are
-  blocking `time.sleep` sequences. Interrupting the robot stops its speech but
-  not its legs. Fixing it means threading a stop flag through the animation
-  loops.
 - **Servo writes are unbatched.** `set_leg_angles()` issues 18 `set_angle`
   calls, each four separate SMBus byte writes, or 72 I2C transactions per gait
   tick. The PCA9685 supports auto-incrementing block writes, which would cut

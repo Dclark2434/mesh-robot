@@ -1,18 +1,33 @@
-import time
 import math
 import copy
 import threading
+from mesh_client.cancellation import CancelToken
 from mesh_common.logging import get_logger
 
 logger = get_logger("mesh_anim")
 
 
 class AnimationController:
-    def __init__(self, locomotion, head_controller=None):
+    def __init__(self, locomotion, head_controller=None, cancel: CancelToken | None = None):
         self.loco = locomotion
         self.head = head_controller
         self.is_animating = False
         self.anim_lock = threading.Lock()
+        # Shared with locomotion so one stop request halts whatever is moving.
+        # Every pause below goes through it, making each one an abort point.
+        self.cancel = cancel or getattr(locomotion, "cancel", None) or CancelToken()
+
+    def _restore_stance(self):
+        """Return the legs to the neutral stance, ignoring further cancellation.
+
+        Called from ``finally`` blocks, including on the cancelled path, so it
+        must not itself raise. There are no sleeps in the reset, so nothing
+        here can be interrupted.
+        """
+        try:
+            self.loco.reset_posture()
+        except Exception as exc:
+            logger.error(f"Could not restore stance: {exc}")
 
     def _interpolate(self, start_val, end_val, progress):
         """Standard linear interpolation."""
@@ -59,7 +74,7 @@ class AnimationController:
             # 1. Head Up first
             if self.head:
                 self.head.look_up(40)
-                time.sleep(0.5)
+                self.cancel.sleep(0.5)
 
             current = copy.deepcopy(self.loco.body_points)
             
@@ -77,7 +92,7 @@ class AnimationController:
                     current[leg][2] += (40 / steps) # Lift 40mm
                     self.loco.transform_coordinates(current)
                     self.loco.set_leg_angles()
-                    time.sleep(0.02)
+                    self.cancel.sleep(0.02)
                 
                 # Move & Drop
                 steps = 5
@@ -87,9 +102,9 @@ class AnimationController:
                     current[leg][2] -= (40 / steps)             # Drop
                     self.loco.transform_coordinates(current)
                     self.loco.set_leg_angles()
-                    time.sleep(0.02)
+                    self.cancel.sleep(0.02)
                     
-                time.sleep(0.1)
+                self.cancel.sleep(0.1)
 
             # 3. Lift & Tuck Front Legs (Safe Max)
             front_legs = [0, 5]
@@ -105,9 +120,9 @@ class AnimationController:
                  
                  self.loco.transform_coordinates(current)
                  self.loco.set_leg_angles()
-                 time.sleep(0.03)
+                 self.cancel.sleep(0.03)
 
-            time.sleep(0.2)
+            self.cancel.sleep(0.2)
             
             # 4. Oscillate Outer Servos (Z-Axis / Tibia)
             # "Moving top joint back and forth"
@@ -127,7 +142,7 @@ class AnimationController:
                 
                 self.loco.transform_coordinates(current)
                 self.loco.set_leg_angles()
-                time.sleep(0.01) # Fast
+                self.cancel.sleep(0.01) # Fast
 
             # 5. Safe Return Sequence (Prevents Head Slap)
             # Reverse Step 3: Lower and Untuck partially BEFORE moving head
@@ -136,7 +151,7 @@ class AnimationController:
             # DEFENSIVE: Re-assert Head Up in case it drifted or was reset
             if self.head:
                 self.head.look_up(40)
-                time.sleep(0.2)
+                self.cancel.sleep(0.2)
             
             current[0][2] = base_z[0] # Stop wiggling (reset to lifted state)
             current[5][2] = base_z[1]
@@ -149,9 +164,9 @@ class AnimationController:
                  
                  self.loco.transform_coordinates(current)
                  self.loco.set_leg_angles()
-                 time.sleep(0.03)
+                 self.cancel.sleep(0.03)
 
-            time.sleep(0.2)
+            self.cancel.sleep(0.2)
 
             # NOW Safe to move head
             if self.head:
@@ -161,9 +176,12 @@ class AnimationController:
             
         finally:
             self.is_animating = False
+            # Runs on the cancelled path too: an animation aborted mid-step
+            # leaves a leg raised, and this puts the robot back on six feet.
+            self._restore_stance()
             self.anim_lock.release()
 
-        time.sleep(0.5)
+        self.cancel.sleep(0.5)
 
         # 3. Return
         self.reset_neutral()
@@ -203,7 +221,7 @@ class AnimationController:
         try:
             # Re-calculate state (idempotent if already tucked)
             current, neutral_points = self.assume_tucked_pose()
-            time.sleep(0.5) # Stabilize after snap if it wasn't already done
+            self.cancel.sleep(0.5) # Stabilize after snap if it wasn't already done
             
             # 2. BATCHED DEPLOYMENT (Outers -> Mids -> Settle)
             # Groups
@@ -261,7 +279,7 @@ class AnimationController:
                     
                     self.loco.transform_coordinates(current)
                     self.loco.set_leg_angles()
-                    time.sleep(0.02) # Fast loop, but with high resolution (40 steps)
+                    self.cancel.sleep(0.02) # Fast loop, but with high resolution (40 steps)
                 
                 # Impact/Recoil Group
                 for i in range(5): # Compressor
@@ -270,24 +288,24 @@ class AnimationController:
                         current[leg][2] = target_z_base + comp_depth
                     self.loco.transform_coordinates(current)
                     self.loco.set_leg_angles()
-                    time.sleep(0.02)
+                    self.cancel.sleep(0.02)
                 for i in range(10): # Rebound
                     d = 5 * (1.0 - (i+1)/10)
                     for leg in legs:
                         current[leg][2] = target_z_base + d
                     self.loco.transform_coordinates(current)
                     self.loco.set_leg_angles()
-                    time.sleep(0.02)
+                    self.cancel.sleep(0.02)
 
             # EXECUTE PHASES
             
             # Phase 1: Outers to High Stance
             animate_group(group_outers, high_stance_z)
-            time.sleep(0.2)
+            self.cancel.sleep(0.2)
             
             # Phase 2: Mids to High Stance
             animate_group(group_mids, high_stance_z)
-            time.sleep(0.5)
+            self.cancel.sleep(0.5)
             
             # Phase 3: Global Settle (High -> Neutral)
             logger.info("Settle: Dropping to Neutral Stance")
@@ -303,7 +321,7 @@ class AnimationController:
                     
                 self.loco.transform_coordinates(current)
                 self.loco.set_leg_angles()
-                time.sleep(0.05)
+                self.cancel.sleep(0.05)
 
             # Final Ensure
             self.reset_neutral()
@@ -334,18 +352,21 @@ class AnimationController:
                 for i in back_legs: current[i][2] -= 35
                 self.loco.transform_coordinates(current)
                 self.loco.set_leg_angles()
-                time.sleep(0.08) # Faster
+                self.cancel.sleep(0.08) # Faster
                 
                 # Down
                 for i in front_legs: current[i][2] -= 35
                 for i in back_legs: current[i][2] += 35
                 self.loco.transform_coordinates(current)
                 self.loco.set_leg_angles()
-                time.sleep(0.08)
+                self.cancel.sleep(0.08)
                 
             self.reset_neutral()
         finally:
             self.is_animating = False
+            # Runs on the cancelled path too: an animation aborted mid-step
+            # leaves a leg raised, and this puts the robot back on six feet.
+            self._restore_stance()
             self.anim_lock.release()
 
     def bow(self):
@@ -377,9 +398,9 @@ class AnimationController:
                 
                 self.loco.transform_coordinates(current)
                 self.loco.set_leg_angles()
-                time.sleep(0.05)
+                self.cancel.sleep(0.05)
                 
-            time.sleep(1.0) # Hold Longer
+            self.cancel.sleep(1.0) # Hold Longer
             
             # Return Slowly
             for _ in range(steps):
@@ -390,11 +411,14 @@ class AnimationController:
 
                 self.loco.transform_coordinates(current)
                 self.loco.set_leg_angles()
-                time.sleep(0.05)
+                self.cancel.sleep(0.05)
 
             self.reset_neutral()
         finally:
             self.is_animating = False
+            # Runs on the cancelled path too: an animation aborted mid-step
+            # leaves a leg raised, and this puts the robot back on six feet.
+            self._restore_stance()
             self.anim_lock.release()
     def simple_idle_step(self):
         """
@@ -420,22 +444,25 @@ class AnimationController:
                     current[leg][2] += (lift_height / steps)
                     self.loco.transform_coordinates(current)
                     self.loco.set_leg_angles()
-                    time.sleep(0.02)
+                    self.cancel.sleep(0.02)
                 
-                time.sleep(0.05)
+                self.cancel.sleep(0.05)
                 
                 # Drop
                 for _ in range(steps):
                     current[leg][2] -= (lift_height / steps)
                     self.loco.transform_coordinates(current)
                     self.loco.set_leg_angles()
-                    time.sleep(0.02)
+                    self.cancel.sleep(0.02)
                 
-                time.sleep(0.1)
+                self.cancel.sleep(0.1)
 
             self.reset_neutral()
         finally:
             self.is_animating = False
+            # Runs on the cancelled path too: an animation aborted mid-step
+            # leaves a leg raised, and this puts the robot back on six feet.
+            self._restore_stance()
             self.anim_lock.release()
     def hand_wave(self):
         """Lifts right front leg and waves it."""
@@ -453,7 +480,7 @@ class AnimationController:
                 current[leg][0] += (30 / steps)  # Out a bit
                 self.loco.transform_coordinates(current)
                 self.loco.set_leg_angles()
-                time.sleep(0.04)
+                self.cancel.sleep(0.04)
             
             # Wave (Y-Axis Oscillation)
             base_y = current[leg][1]
@@ -463,23 +490,26 @@ class AnimationController:
                     current[leg][1] += 8
                     self.loco.transform_coordinates(current)
                     self.loco.set_leg_angles()
-                    time.sleep(0.02)
+                    self.cancel.sleep(0.02)
                 # Right
                 for _ in range(10): # Swing back double distance
                     current[leg][1] -= 8
                     self.loco.transform_coordinates(current)
                     self.loco.set_leg_angles()
-                    time.sleep(0.02)
+                    self.cancel.sleep(0.02)
                 # Center
                 for _ in range(5):
                     current[leg][1] += 8
                     self.loco.transform_coordinates(current)
                     self.loco.set_leg_angles()
-                    time.sleep(0.02)
+                    self.cancel.sleep(0.02)
 
             self.reset_neutral()
         finally:
             self.is_animating = False
+            # Runs on the cancelled path too: an animation aborted mid-step
+            # leaves a leg raised, and this puts the robot back on six feet.
+            self._restore_stance()
             self.anim_lock.release()
 
     def foot_tap(self):
@@ -498,18 +528,21 @@ class AnimationController:
                     current[leg][2] += 15 # Quick 30mm lift total
                     self.loco.transform_coordinates(current)
                     self.loco.set_leg_angles()
-                    time.sleep(0.02)
+                    self.cancel.sleep(0.02)
                 # Drop
                 for _ in range(2):
                     current[leg][2] -= 15
                     self.loco.transform_coordinates(current)
                     self.loco.set_leg_angles()
-                    time.sleep(0.02)
-                time.sleep(0.1)
+                    self.cancel.sleep(0.02)
+                self.cancel.sleep(0.1)
                 
             self.reset_neutral()
         finally:
             self.is_animating = False
+            # Runs on the cancelled path too: an animation aborted mid-step
+            # leaves a leg raised, and this puts the robot back on six feet.
+            self._restore_stance()
             self.anim_lock.release()
 
     def head_move(self, pan_target, tilt_target, duration=0.5):
@@ -522,7 +555,7 @@ class AnimationController:
             if pan_target < -10: self.head.look_left()
             elif pan_target > 10: self.head.look_right()
             else: self.head.look_neutral()
-            time.sleep(duration)
+            self.cancel.sleep(duration)
 
     def nod_yes(self):
         """Head Pitch Up/Down."""
@@ -530,9 +563,9 @@ class AnimationController:
         logger.info("Animation: Nod Yes")
         for _ in range(3):
             self.head.look_up()
-            time.sleep(0.3)
+            self.cancel.sleep(0.3)
             self.head.look_down()
-            time.sleep(0.3)
+            self.cancel.sleep(0.3)
         self.head.look_neutral()
 
     def shake_no(self):
@@ -541,9 +574,9 @@ class AnimationController:
         logger.info("Animation: Shake No")
         for _ in range(3):
             self.head.look_left()
-            time.sleep(0.3)
+            self.cancel.sleep(0.3)
             self.head.look_right()
-            time.sleep(0.3)
+            self.cancel.sleep(0.3)
         self.head.look_neutral()
 
     def smh(self):
@@ -551,12 +584,12 @@ class AnimationController:
         if not self.head: return
         logger.info("Animation: SMH")
         self.head.look_down() # Stay looking down
-        time.sleep(0.4)
+        self.cancel.sleep(0.4)
         for _ in range(3):
             self.head.look_left()
-            time.sleep(0.4) # Slower
+            self.cancel.sleep(0.4) # Slower
             self.head.look_right()
-            time.sleep(0.4)
+            self.cancel.sleep(0.4)
         self.head.look_neutral()
 
     def eye_roll(self):
@@ -566,12 +599,12 @@ class AnimationController:
         
         # Start Left Down
         self.head.look_left()
-        time.sleep(0.3)
+        self.cancel.sleep(0.3)
         
         # Arc: Left-Up -> Right-Up -> Right-Down
         self.head.look_up() # Up
-        time.sleep(0.4)
+        self.cancel.sleep(0.4)
         self.head.look_right() # Right
-        time.sleep(0.4)
+        self.cancel.sleep(0.4)
         
         self.head.look_neutral()

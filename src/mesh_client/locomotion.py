@@ -3,14 +3,18 @@ import copy
 import time
 import json
 from mesh_common.logging import get_logger
+from mesh_client.cancellation import CancelToken, MotionCancelled
 from mesh_client.servo_controller import ServoController
 
 logger = get_logger("mesh_locomotion")
 
 class LocomotionController:
-    def __init__(self, servo_ctrl: ServoController, imu=None):
+    def __init__(self, servo_ctrl: ServoController, imu=None, cancel: CancelToken | None = None):
         self.servo = servo_ctrl
         self.imu = imu
+        # Every wait inside a gait cycle goes through this, so a walk can be
+        # called off within one servo frame instead of running to completion.
+        self.cancel = cancel or CancelToken()
         self.body_height = -40 # Raised to -40 for better ground clearance. (Prev: -50)
         # Body and Leg geometry (from Freenove control.py)
         # Note: These values are specific to the Freenove Big Hexapod
@@ -259,9 +263,16 @@ class LocomotionController:
         
         logger.info(f"Gait Cycle: x={x}, y={y}, angle={angle}, steps={steps}, speed={speed}, swing={hip_swing}, z_step={z_step:.1f}")
         self.reset_posture()
-        for s in range(steps):
-             self.run_one_cycle(x, y, angle, z_step, f_steps, speed, hip_swing)
-        self.reset_posture()
+        try:
+            for s in range(steps):
+                self.run_one_cycle(x, y, angle, z_step, f_steps, speed, hip_swing)
+        except MotionCancelled:
+            logger.info(f"Gait cancelled after {s} of {steps} steps")
+            raise
+        finally:
+            # Runs on the cancelled path too. A stop mid-cycle can leave a leg
+            # mid-swing, and this is what puts the robot back on all six feet.
+            self.reset_posture()
 
     def move_forward(self, steps=5, speed=1.0):
         logger.info(f"Walking forward {steps} steps at speed {speed}...")
@@ -512,5 +523,7 @@ class LocomotionController:
 
             self.transform_coordinates(current_points)
             self.set_leg_angles()
-            time.sleep(delay)
+            # Doubles as the cancellation point: raises MotionCancelled if a
+            # stop was requested, so a walk aborts within one frame.
+            self.cancel.sleep(delay)
 

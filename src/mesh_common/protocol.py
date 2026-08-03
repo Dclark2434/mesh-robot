@@ -122,6 +122,10 @@ ACTIONS: dict[str, ActionSpec] = {
         ActionSpec("turn_left", Lane.BODY, 4.0, ParamKind.STEPS, False, "turn left; 9 steps ~ 180 degrees", True),
         ActionSpec("turn_right", Lane.BODY, 4.0, ParamKind.STEPS, False, "turn right; 9 steps ~ 180 degrees", True),
         # -- body: posture ----------------------------------------------------
+        # Stop runs in the AUX lane on purpose. The body lane is occupied by
+        # the very motion it has to interrupt, so queueing behind it would
+        # mean waiting for the thing you asked it to abandon.
+        ActionSpec("stop", Lane.AUX, 0.1, describe="stop moving right now"),
         ActionSpec("relax", Lane.BODY, 1.0, speech_safe=False, describe="power down servos and rest"),
         ActionSpec("reset", Lane.BODY, 1.5, speech_safe=False, describe="lie flat, safe to pick up"),
         # -- aux: instant ------------------------------------------------------
@@ -153,6 +157,10 @@ ACTION_ALIASES: dict[str, str] = {
     "lay_flat": "reset",
     "beep": "buzzer_beep",
     "flash": "led_flash",
+    "halt": "stop",
+    "freeze": "stop",
+    "stop_moving": "stop",
+    "wait": "stop",
 }
 
 

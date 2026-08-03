@@ -49,6 +49,10 @@ load_dotenv()
 #: How often the robot reports battery state to the brain.
 TELEMETRY_PERIOD_SECS = 30.0
 
+#: Whether being interrupted also stops whatever the robot is physically doing.
+#: Set MESH_STOP_ON_INTERRUPT=0 to let motion run to completion regardless.
+STOP_ON_INTERRUPT = os.getenv("MESH_STOP_ON_INTERRUPT", "1") != "0"
+
 _LED_FOR_STATUS = {
     Status.IDLE: LEDState.IDLE,
     Status.LISTENING: LEDState.LISTENING,
@@ -141,8 +145,10 @@ class Robot:
         self.leds = LEDManager()
         self.servos = ServoController()
         self.head = HeadController(self.servos)
-        self.legs = LocomotionController(self.servos, None)
-        self.anim = AnimationController(self.legs, self.head)
+        # One token shared by the dispatcher, the legs and the animations, so a
+        # single stop request reaches whichever of them is currently moving.
+        self.legs = LocomotionController(self.servos, None, cancel=self.motion.cancel)
+        self.anim = AnimationController(self.legs, self.head, cancel=self.motion.cancel)
         self.buzzer = BuzzerController()
         self.power = PowerMonitor()
         self._register_actions()
@@ -194,6 +200,9 @@ class Robot:
         def flash(_param: str | None) -> None:
             leds.set_state(LEDState.ERROR)
 
+        def stop(_param: str | None) -> None:
+            logger.info(self.motion.abort())
+
         handlers = {
             "look_left": lambda p: head.look_left(),
             "look_right": lambda p: head.look_right(),
@@ -214,6 +223,7 @@ class Robot:
             "move_backward": walk("move_backward"),
             "turn_left": walk("turn_left"),
             "turn_right": walk("turn_right"),
+            "stop": stop,
             "relax": relax,
             "reset": lambda p: legs.reset_posture_flat(),
             "led_flash": flash,
@@ -263,6 +273,11 @@ class Robot:
             # rather than a jitter-buffer later.
             if self.audio:
                 self.audio.flush_playback()
+            # Stop the legs too. Being interrupted means someone wants
+            # attention now, and a robot that carries on walking away while
+            # they talk to it is not listening in any sense that matters.
+            if STOP_ON_INTERRUPT:
+                self.motion.abort()
         elif kind == MessageType.STATUS.value:
             try:
                 status = Status(payload.get("status", "idle"))
