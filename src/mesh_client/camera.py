@@ -247,7 +247,8 @@ def open_camera(config: CameraConfig) -> CaptureBackend | None:
         try:
             opened = backend(config)
             logger.info(
-                f"Camera open via {opened.name} at {config.width}x{config.height} @{config.fps}fps"
+                f"Camera open via {opened.name} at {config.width}x{config.height} "
+                f"@{config.fps}fps, rotation {config.rotation} degrees"
             )
             return opened
         except ImportError:

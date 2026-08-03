@@ -46,17 +46,24 @@ from mesh_common.protocol import (
 
 logger = get_logger("robot")
 
-#: The robot's settings file, alongside the repository root.
+#: Where the robot looks for its settings, nearest first. Every file found is
+#: loaded, later ones winning, so a repository-root .env overrides one sitting
+#: next to the package.
 #:
-#: Loaded with override=True, matching the brain. The default is the opposite,
-#: which means a variable exported in the shell silently beats the file, and an
-#: address left over from an earlier session is very hard to spot: the file
-#: says one thing and the robot connects somewhere else.
-ENV_FILE = Path(__file__).resolve().parents[2] / ".env"
-if ENV_FILE.exists():
-    load_dotenv(ENV_FILE, override=True)
-else:
-    ENV_FILE = None
+#: More than one location because settings files predate this code and turn up
+#: in both places. Reading only one silently drops whichever the robot was
+#: actually using, which looks like a setting spontaneously reverting.
+#:
+#: override=True matches the brain. The library default is the opposite, so a
+#: variable exported in an old shell session beats the file being edited.
+ENV_CANDIDATES = (
+    Path(__file__).resolve().parent / ".env",
+    Path(__file__).resolve().parents[2] / ".env",
+)
+ENV_FILES = [path for path in ENV_CANDIDATES if path.exists()]
+for _env_file in ENV_FILES:
+    load_dotenv(_env_file, override=True)
+if not ENV_FILES:
     load_dotenv(override=True)
 
 #: How often the robot reports battery state to the brain.
@@ -355,11 +362,7 @@ class Robot:
             self._closing.set()
 
         url = os.getenv("LIVEKIT_URL", "ws://localhost:7880")
-        # Says where the address came from, because the usual cause of "it is
-        # connecting to the wrong machine" is a stale value somewhere other
-        # than the file being edited.
-        source = str(ENV_FILE) if ENV_FILE else "environment (no .env found)"
-        logger.info(f"Connecting to {url} (from {source})...")
+        logger.info(f"Connecting to {url}...")
         await self.room.connect(url, self._token())
 
         track = rtc.LocalAudioTrack.create_audio_track("mic", source)
@@ -433,11 +436,33 @@ class Robot:
         logger.info("Stopped.")
 
 
+def _report_settings() -> None:
+    """Log the settings files in use and the values that came out of them.
+
+    A setting that appears to have reverted is nearly always a second file, or
+    a stale export, rather than a bad value. Printing both the sources and the
+    resolved figures turns that from a hunt into a glance.
+    """
+    if ENV_FILES:
+        logger.info("Settings from: " + ", ".join(str(path) for path in ENV_FILES))
+    else:
+        logger.warning("No .env found; using environment and defaults")
+
+    for name, default in (
+        ("LIVEKIT_URL", "ws://localhost:7880"),
+        ("MESH_AUDIO_IN_DEVICE", "default"),
+        ("MESH_AUDIO_OUT_DEVICE", "default"),
+        ("MESH_CAMERA_ROTATION", "0"),
+    ):
+        logger.info(f"  {name}={os.getenv(name, default)}")
+
+
 async def _main() -> None:
     """Run the robot, stopping cleanly on SIGINT and SIGTERM."""
     print("\n--- AUDIO DEVICES ---")
     print(describe_devices())
     print("---------------------\n")
+    _report_settings()
 
     robot = Robot()
     loop = asyncio.get_running_loop()
