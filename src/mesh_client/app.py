@@ -16,6 +16,7 @@ from __future__ import annotations
 import asyncio
 import os
 import signal
+from pathlib import Path
 
 from dotenv import load_dotenv
 from livekit import api, rtc
@@ -44,7 +45,19 @@ from mesh_common.protocol import (
 )
 
 logger = get_logger("robot")
-load_dotenv()
+
+#: The robot's settings file, alongside the repository root.
+#:
+#: Loaded with override=True, matching the brain. The default is the opposite,
+#: which means a variable exported in the shell silently beats the file, and an
+#: address left over from an earlier session is very hard to spot: the file
+#: says one thing and the robot connects somewhere else.
+ENV_FILE = Path(__file__).resolve().parents[2] / ".env"
+if ENV_FILE.exists():
+    load_dotenv(ENV_FILE, override=True)
+else:
+    ENV_FILE = None
+    load_dotenv(override=True)
 
 #: How often the robot reports battery state to the brain.
 TELEMETRY_PERIOD_SECS = 30.0
@@ -342,7 +355,11 @@ class Robot:
             self._closing.set()
 
         url = os.getenv("LIVEKIT_URL", "ws://localhost:7880")
-        logger.info(f"Connecting to {url}...")
+        # Says where the address came from, because the usual cause of "it is
+        # connecting to the wrong machine" is a stale value somewhere other
+        # than the file being edited.
+        source = str(ENV_FILE) if ENV_FILE else "environment (no .env found)"
+        logger.info(f"Connecting to {url} (from {source})...")
         await self.room.connect(url, self._token())
 
         track = rtc.LocalAudioTrack.create_audio_track("mic", source)
