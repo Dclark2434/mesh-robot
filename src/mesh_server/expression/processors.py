@@ -27,10 +27,12 @@ from __future__ import annotations
 from pipecat.frames.frames import (
     BotStoppedSpeakingFrame,
     Frame,
+    InterimTranscriptionFrame,
     InterruptionFrame,
     LLMFullResponseEndFrame,
     LLMFullResponseStartFrame,
     LLMTextFrame,
+    TranscriptionFrame,
     TTSTextFrame,
     UserStartedSpeakingFrame,
     UserStoppedSpeakingFrame,
@@ -48,6 +50,7 @@ from mesh_common.protocol import (
     resolve_action,
 )
 from mesh_server.dashboard.events import bus
+from mesh_server.expression.echo import SpokenRecord
 from mesh_server.expression.tags import TagKind, TagStreamParser
 from mesh_server.expression.timeline import (
     GESTURE_GRACE_SECS,
@@ -62,16 +65,24 @@ logger = get_logger("expression")
 class ActionTagProcessor(FrameProcessor):
     """Strips inline directives from the LLM stream before it reaches TTS."""
 
-    def __init__(self, timeline: GestureTimeline, memory: MemoryStore) -> None:
+    def __init__(
+        self,
+        timeline: GestureTimeline,
+        memory: MemoryStore,
+        spoken: SpokenRecord | None = None,
+    ) -> None:
         """Create the processor.
 
         Args:
             timeline: Shared schedule written here and read by the dispatcher.
             memory: Store that ``[MEMORY: ...]`` directives are written to.
+            spoken: Record of what the robot is saying, so the echo guard
+                upstream knows what its own voice sounds like.
         """
         super().__init__()
         self._timeline = timeline
         self._memory = memory
+        self._spoken = spoken
         self._parser = TagStreamParser()
 
     async def process_frame(self, frame: Frame, direction: FrameDirection) -> None:
@@ -125,6 +136,8 @@ class ActionTagProcessor(FrameProcessor):
             self._schedule_action(tag.name, tag.param, tag.word_index)
 
         if speech:
+            if self._spoken is not None:
+                self._spoken.add(speech)
             await self.push_frame(LLMTextFrame(speech), direction)
 
     def _schedule_action(self, name: str, param: str | None, word_index: int) -> None:
@@ -207,6 +220,45 @@ class GestureDispatcher(FrameProcessor):
             await self._send(encode(message))
 
 
+class EchoGuard(FrameProcessor):
+    """Drops transcripts that are the robot hearing its own voice.
+
+    Sits between speech recognition and the context aggregator, which is the
+    only place it can work: the aggregator is what turns a transcript into a
+    user turn, and a user turn is what broadcasts the interruption. Anything
+    downstream of it is too late.
+    """
+
+    def __init__(self, spoken: SpokenRecord) -> None:
+        """Create the guard.
+
+        Args:
+            spoken: Shared record of what the robot has recently said.
+        """
+        super().__init__()
+        self._spoken = spoken
+        self._dropped = 0
+
+    async def process_frame(self, frame: Frame, direction: FrameDirection) -> None:
+        """Suppress echoed transcripts, pass everything else.
+
+        Args:
+            frame: Incoming frame.
+            direction: Direction of travel.
+        """
+        await super().process_frame(frame, direction)
+
+        if isinstance(frame, (TranscriptionFrame, InterimTranscriptionFrame)):
+            if self._spoken.is_echo(frame.text):
+                self._dropped += 1
+                if isinstance(frame, TranscriptionFrame):
+                    logger.info(f"Ignored own voice: {frame.text.strip()!r}")
+                    bus.publish("echo", text=frame.text.strip())
+                return
+
+        await self.push_frame(frame, direction)
+
+
 class ListeningStatusProcessor(FrameProcessor):
     """Publishes the listening and thinking states from the input side."""
 
@@ -251,14 +303,18 @@ class SpeakingStatusProcessor(FrameProcessor):
     when synthesis was requested.
     """
 
-    def __init__(self, send) -> None:
+    def __init__(self, send, spoken: SpokenRecord | None = None) -> None:
         """Create the processor.
 
         Args:
             send: Coroutine function taking one JSON string.
+            spoken: Record to tell when the voice starts and stops, since it
+                is the echo guard's cue for when its own audio could be
+                reaching the microphone.
         """
         super().__init__()
         self._send = send
+        self._spoken = spoken
         self._speaking = False
 
     async def process_frame(self, frame: Frame, direction: FrameDirection) -> None:
@@ -272,16 +328,22 @@ class SpeakingStatusProcessor(FrameProcessor):
 
         if isinstance(frame, TTSTextFrame) and not self._speaking:
             self._speaking = True
+            if self._spoken is not None:
+                self._spoken.set_speaking(True)
             await self._send(encode(StatusMessage(Status.SPEAKING)))
         elif isinstance(frame, InterruptionFrame):
             # Tell the robot to bin its queued audio. A plain idle status will
             # not do: that also arrives at the normal end of a turn, when the
             # remaining audio is the tail of a sentence and must be played.
             self._speaking = False
+            if self._spoken is not None:
+                self._spoken.set_speaking(False)
             await self._send(encode(InterruptMessage()))
             await self._send(encode(StatusMessage(Status.LISTENING)))
         elif isinstance(frame, BotStoppedSpeakingFrame) and self._speaking:
             self._speaking = False
+            if self._spoken is not None:
+                self._spoken.set_speaking(False)
             await self._send(encode(StatusMessage(Status.IDLE)))
 
         await self.push_frame(frame, direction)

@@ -122,6 +122,28 @@ have not played yet"; an idle status also arrives at the normal end of a turn,
 when the queued audio is the tail of a sentence and must be allowed to finish.
 Without the distinction, every reply loses its last few hundred milliseconds.
 
+**The backstop.** The canceller loses convergence sometimes; a buffer glitch
+on the Pi is enough. When it does, a few of the robot's own words reach speech
+recognition, start a user turn, and broadcast an interruption, and because it
+is still speaking the next fragment leaks too. It stutters through several
+turns before the canceller re-adapts and the loop starves. Observed verbatim:
+
+```
+rocky  I record it! You are very curious human! You want to...
+heard  I record it. You want to
+rocky  I record it! You are very dedicated to learning!...
+heard  record it.
+```
+
+`EchoGuard` sits between speech recognition and the context aggregator, which
+is the only place it can work: the aggregator is what turns a transcript into
+a turn, and a turn is what interrupts. It drops a transcript when the robot is
+audible *and* most of its words appear in what the robot has just said.
+Fragments of two words must match exactly, since two words are enough to start
+a turn but a proportional test on two words makes one coincidence a
+suppression. Outside the speaking window nothing is suppressed at all, so
+repeating the robot's words back to it still works.
+
 **Tradeoff worth knowing:** if TTS fails outright, the first bot turn never
 completes, and the mic stays muted. Set `MESH_ECHO_CANCEL=0` to fall back to
 the old gated behaviour when diagnosing the canceller itself.
@@ -179,6 +201,7 @@ Everything lives in `src/mesh_server/.env` (brain) and the robot's environment.
 | `MESH_MIN_WORDS` | `2` | Words needed to start a turn. `0` starts on any sound. |
 | `MESH_TURN_STOP_TIMEOUT` | `2.5` | Force-end a turn that produced no speech. |
 | `MESH_SUMMARIZE_ABOVE_TOKENS` | `8000` | Context size that triggers summarization. |
+| `MESH_ECHO_GUARD` | `1` | Discard transcripts of the robot's own voice. |
 | `MESH_WAKE_PHRASES` | *(none)* | Comma-separated. Set in a noisy room; empty means always listening. |
 | `MESH_WAKE_TIMEOUT` | `45` | Quiet seconds before the wake phrase is needed again. |
 | `MESH_ECHO_CANCEL` | `1` | AEC on the robot. `0` restores mic gating. |

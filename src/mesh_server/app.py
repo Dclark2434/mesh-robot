@@ -76,8 +76,10 @@ from mesh_server.dashboard.events import bus
 from mesh_server.dashboard.health import HealthTracker, State
 from mesh_server.dashboard.server import DashboardServer
 from mesh_server.dashboard.taps import HeardTap, SaidTap, attach_log_bridge
+from mesh_server.expression.echo import SpokenRecord
 from mesh_server.expression.processors import (
     ActionTagProcessor,
+    EchoGuard,
     GestureDispatcher,
     GestureTimeline,
     ListeningStatusProcessor,
@@ -302,6 +304,9 @@ async def run() -> int:
 
     stt, llm, tts = _build_services(settings, system_prompt)
     timeline = GestureTimeline()
+    # What the robot is saying, so a transcript of its own voice can be
+    # recognised before it becomes an interruption.
+    spoken = SpokenRecord()
 
     # Vision. The camera streams continuously but only reaches the model when
     # it calls `look`; see mesh_server/vision.py for why it is a tool rather
@@ -364,10 +369,16 @@ async def run() -> int:
             stt,
             # Before the aggregator, which consumes transcription frames
             # rather than forwarding them.
+            # Both before the aggregator: it is what turns a transcript into a
+            # user turn and therefore into an interruption, so anything later
+            # is too late to stop the robot cutting itself off. The guard runs
+            # first, so what the dashboard reports as heard is speech that was
+            # actually acted on.
+            *([EchoGuard(spoken)] if settings.echo_guard else []),
             HeardTap(bus),
             context_aggregator.user(),
             llm,
-            ActionTagProcessor(timeline, memory),
+            ActionTagProcessor(timeline, memory, spoken),
             # After tag stripping, so the transcript shows what was spoken
             # rather than the raw model output with directives still in it.
             SaidTap(bus),
@@ -377,7 +388,7 @@ async def run() -> int:
             tts,
             transport.output(),
             GestureDispatcher(timeline, send),
-            SpeakingStatusProcessor(send),
+            SpeakingStatusProcessor(send, spoken),
             context_aggregator.assistant(),
         ]
     )

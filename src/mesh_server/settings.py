@@ -140,6 +140,9 @@ class Settings:
         enable_metrics: Collect per-turn latency breakdowns. On by default --
             without it there is no way to tell which stage of the pipeline is
             costing you time.
+        echo_guard: Discard transcripts that are the robot hearing its own
+            voice. The echo canceller on the robot is the real defence;
+            this is the backstop for when it loses convergence.
         dashboard: Serve the read-only web console.
         dashboard_host: Interface to bind it to. Defaults to all interfaces so
             it is reachable from a phone on the same network.
@@ -183,6 +186,7 @@ class Settings:
         default_factory=lambda: int(_env("MESH_DASHBOARD_PORT", "8080") or 8080)
     )
 
+    echo_guard: bool = field(default_factory=lambda: _env("MESH_ECHO_GUARD", "1") != "0")
     vision_enabled: bool = field(default_factory=lambda: _env("MESH_VISION", "1") != "0")
     keep_images: int = field(default_factory=lambda: int(_env("MESH_KEEP_IMAGES", "1") or 1))
     ambient_vision: bool = field(default_factory=lambda: _env("MESH_AMBIENT_VISION", "1") != "0")

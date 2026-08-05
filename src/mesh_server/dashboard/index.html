@@ -141,6 +141,7 @@
   .note-row.sees .icon, .note-row.sees .msg { color: var(--stale); }
   .note-row.looked .icon, .note-row.looked .msg { color: var(--accent); }
   .note-row.remembered .icon, .note-row.remembered .msg { color: var(--ok); }
+  .note-row.echo .icon, .note-row.echo .msg { color: var(--unknown); font-style: italic; }
   .kv { display: flex; justify-content: space-between; gap: 12px; padding: 2px 0; }
   .kv span { color: var(--dim); }
   .note { color: var(--dim); font-style: italic; }
@@ -366,6 +367,7 @@
     look: (e) =>
       addNote("looked", "◉", "looked" + (e.question ? ": " + e.question : ""), e.at),
     memory: (e) => addNote("remembered", "✦", "remembered: " + e.fact, e.at),
+    echo: (e) => addNote("echo", "↺", "ignored own voice: " + e.text, e.at),
     latency: showLatency,
     status: (e) => { $("hdr-state").textContent = e.status; },
     telemetry: (e) => {

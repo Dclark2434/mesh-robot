@@ -41,6 +41,10 @@ _DIRECTIVE = re.compile(
     re.IGNORECASE | re.VERBOSE,
 )
 
+#: The opening of a directive whose closing bracket never arrived, because the
+#: reply was interrupted mid-tag. Spoken aloud it becomes "ACTION nod".
+_PARTIAL_DIRECTIVE = re.compile(r"\[\s*(A(C(T(I(O(N)?)?)?)?)?|M(E(M(O(R(Y)?)?)?)?)?)", re.IGNORECASE)
+
 #: Openings of a tool call the model has written out as prose instead of
 #: issuing as a structured call. Gemini does this occasionally, and the result
 #: reaches the voice: the robot announces
@@ -54,19 +58,30 @@ _TOOL_LEAK_MARKERS = (
     "tool_call",
     "functioncall",
 )
-_TOOL_LEAK = re.compile("|".join(re.escape(m) for m in _TOOL_LEAK_MARKERS), re.IGNORECASE)
+
+#: Markers for the model's private reasoning rather than a call. These are line
+#: markers, so they end at the newline; a call runs to its closing bracket.
+_THOUGHT_MARKERS = ("start_thought", "end_thought", "thought_signature")
+
+_ALL_MARKERS = _TOOL_LEAK_MARKERS + _THOUGHT_MARKERS
+_TOOL_LEAK = re.compile("|".join(re.escape(m) for m in _ALL_MARKERS), re.IGNORECASE)
+_THOUGHT_LEAK = re.compile("|".join(re.escape(m) for m in _THOUGHT_MARKERS), re.IGNORECASE)
 
 #: A leaked call ends when its argument list closes. A blank line is the
 #: fallback for one the model never closed. Not a single newline: the fenced
 #: form puts the marker on its own line and the call on the next.
 _TOOL_LEAK_END = re.compile(r"[})>]|\n\s*\n")
 
+#: A thought marker is a line marker rather than a call: it ends at the end of
+#: its line, so the sentence underneath it still gets spoken.
+_THOUGHT_LEAK_END = re.compile(r"[})>]|\n")
+
 #: Give up suppressing after this much. A marker matched in earnest is followed
 #: by a short call; anything longer means a false positive is eating the reply,
 #: and losing a sentence beats losing the turn.
 MAX_SUPPRESS_CHARS = 200
 
-_LONGEST_MARKER = max(len(m) for m in _TOOL_LEAK_MARKERS)
+_LONGEST_MARKER = max(len(m) for m in _ALL_MARKERS)
 
 
 class TagKind(str, Enum):
@@ -109,6 +124,7 @@ class TagStreamParser:
         self._at_word_boundary = True
         self._suppressing = False
         self._suppressed = 0
+        self._suppress_end = _TOOL_LEAK_END
 
     @property
     def words_emitted(self) -> int:
@@ -126,6 +142,7 @@ class TagStreamParser:
         self._at_word_boundary = True
         self._suppressing = False
         self._suppressed = 0
+        self._suppress_end = _TOOL_LEAK_END
 
     def feed(self, chunk: str) -> tuple[str, list[Tag]]:
         """Consume one streamed chunk of model output.
@@ -168,7 +185,7 @@ class TagStreamParser:
 
         while self._buffer:
             if self._suppressing:
-                end = _TOOL_LEAK_END.search(self._buffer)
+                end = self._suppress_end.search(self._buffer)
                 if end is None:
                     self._suppressed += len(self._buffer)
                     self._buffer = ""  # still inside the leak; drop and wait
@@ -187,9 +204,14 @@ class TagStreamParser:
             if leak_at != -1 and (open_at == -1 or leak_at < open_at):
                 if leak_at > 0:
                     out.append(self._take(leak_at))
-                self._buffer = self._buffer[len(leak.group(0)):]
+                matched = leak.group(0)
+                self._buffer = self._buffer[len(matched):]
                 self._suppressing = True
                 self._suppressed = 0
+                self._suppress_end = (
+                    _THOUGHT_LEAK_END if _THOUGHT_LEAK.fullmatch(matched)
+                    else _TOOL_LEAK_END
+                )
                 continue
 
             if open_at == -1:
@@ -211,7 +233,13 @@ class TagStreamParser:
                 # Incomplete. Hold, unless it has grown past anything a
                 # directive could plausibly be, or the stream has ended.
                 if final or len(self._buffer) > MAX_HOLDBACK_CHARS:
-                    out.append(self._take(len(self._buffer)))
+                    if _PARTIAL_DIRECTIVE.match(self._buffer):
+                        # A directive the model never finished, because the
+                        # reply was cut off mid-tag. Releasing it as prose
+                        # makes the robot say "ACTION nod" out loud.
+                        self._buffer = ""
+                    else:
+                        out.append(self._take(len(self._buffer)))
                 break
 
             candidate = self._buffer[: close_at + 1]
@@ -237,11 +265,20 @@ class TagStreamParser:
             How many trailing characters to hold back, zero if none could
             begin a marker.
         """
-        tail = self._buffer[-_LONGEST_MARKER:].lower()
+        tail = self._buffer[-_LONGEST_MARKER:]
+        lowered = tail.lower()
         for start in range(len(tail)):
-            candidate = tail[start:]
-            if any(marker.startswith(candidate) for marker in _TOOL_LEAK_MARKERS):
-                return len(candidate)
+            candidate = lowered[start:]
+            if not any(marker.startswith(candidate) for marker in _ALL_MARKERS):
+                continue
+            # Markers always begin a word. Without this, the trailing "e" of
+            # "there" reads as the start of "end_thought" and the last letter
+            # of half the words in the language gets held back.
+            index = len(self._buffer) - len(tail) + start
+            before = self._buffer[index - 1] if index > 0 else ""
+            if before and (before.isalnum() or before == "_"):
+                continue
+            return len(candidate)
         return 0
 
     def _build_tag(self, match: re.Match[str]) -> Tag:

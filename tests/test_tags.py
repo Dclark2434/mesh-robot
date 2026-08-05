@@ -220,3 +220,34 @@ def test_suppression_gives_up_rather_than_eating_a_whole_reply():
         " back again",
     )
     assert "back again" in speech
+
+
+def test_a_partial_action_tag_is_never_spoken():
+    # Observed: an interrupted reply flushed "[ACTION: nod" as prose and the
+    # robot read it aloud.
+    parser = TagStreamParser()
+    speech, _ = drain(parser, "I can see many things with my light-sensor-eye! [ACTION: nod")
+    assert "ACTION" not in speech
+    assert "nod" not in speech
+    assert "light-sensor-eye" in speech
+
+
+def test_a_partial_memory_tag_is_never_spoken():
+    speech, _ = drain(TagStreamParser(), "Nice to meet you. [MEMO")
+    assert "MEMO" not in speech
+    assert "Nice to meet you." in speech
+
+
+def test_a_stray_bracket_that_is_not_a_directive_still_gets_spoken():
+    # Only openings that look like a directive are dropped; ordinary prose
+    # with a bracket in it must survive.
+    speech, _ = drain(TagStreamParser(), "the value [x is unknown")
+    assert "[x is unknown" in speech
+
+
+def test_thought_markers_are_suppressed():
+    speech, _ = drain(
+        TagStreamParser(), "start_thought\nToo dark! I see red shapes and face"
+    )
+    assert "start_thought" not in speech
+    assert "Too dark!" in speech
