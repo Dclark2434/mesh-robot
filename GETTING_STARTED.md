@@ -219,7 +219,7 @@ To change persona, stop the brain, set `MESH_PERSONALITY`, and start it again.
 | Brain waits at "Joining…" | LiveKit not running or unreachable |
 | Everything green, no audio at all | LiveKit started without `--node-ip` |
 | Pi client red | Robot not started, or joined a different room |
-| Robot talks to itself | Echo cancellation not running |
+| Robot talks to itself, or stutters through several turns | Echo cancellation losing lock; check the robot log for audio glitches |
 | Cannot interrupt him | Echo cancellation not running |
 | He replies to things you did not say | Speaker too loud, or background noise |
 | Long silence before replies | Check which service in the latency panel |

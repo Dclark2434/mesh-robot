@@ -325,6 +325,9 @@ class Robot:
                     TelemetryMessage(
                         battery_volts=reading.get("servo_voltage"),
                         battery_percent=reading.get("servo_percent"),
+                        audio_glitches=(
+                            self.audio.take_xrun_count() if self.audio else 0
+                        ),
                     )
                 )
             )

@@ -328,10 +328,20 @@ class MovedMessage:
 
 @dataclass
 class TelemetryMessage:
-    """Robot health report, sent periodically from the Pi."""
+    """Robot health report, sent periodically from the Pi.
+
+    Attributes:
+        battery_volts: Servo rail voltage.
+        battery_percent: Servo rail charge.
+        audio_glitches: Audio buffer under/overruns since the last report.
+            Each one shifts the alignment between what was played and what was
+            captured, which is what makes echo cancellation fail, so this is
+            the number that explains a robot answering its own voice.
+    """
 
     battery_volts: float | None = None
     battery_percent: float | None = None
+    audio_glitches: int = 0
 
     def to_dict(self) -> dict[str, Any]:
         """Serialize to a plain JSON-compatible dict."""
@@ -340,6 +350,7 @@ class TelemetryMessage:
             "type": MessageType.TELEMETRY.value,
             "battery_volts": self.battery_volts,
             "battery_percent": self.battery_percent,
+            "audio_glitches": self.audio_glitches,
         }
 
 

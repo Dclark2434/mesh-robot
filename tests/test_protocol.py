@@ -108,3 +108,18 @@ def test_keyterms_skip_noise_fragments():
     # Two-letter splinters from action names carry no signal and just dilute
     # the boost list.
     assert all(len(t) > 2 for t in action_keyterms())
+
+
+def test_telemetry_carries_the_audio_glitch_count():
+    # Audio buffer glitches break the alignment echo cancellation depends on,
+    # so this is the number that explains a robot answering its own voice.
+    from mesh_common.protocol import TelemetryMessage
+
+    payload = decode(encode(TelemetryMessage(battery_percent=80.0, audio_glitches=7)))
+    assert payload["audio_glitches"] == 7
+
+
+def test_telemetry_defaults_to_no_glitches():
+    from mesh_common.protocol import TelemetryMessage
+
+    assert decode(encode(TelemetryMessage()))["audio_glitches"] == 0

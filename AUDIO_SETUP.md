@@ -67,6 +67,25 @@ the robot speaks, and barge-in will not work:
 [WARNING] Running without echo cancellation. The robot may hear itself.
 ```
 
+## Audio glitches
+
+The robot counts buffer under- and overruns and reports them every twenty
+seconds:
+
+```
+[WARNING] 14 audio glitches in the last 20s (37 total). These break echo
+          cancellation.
+```
+
+Each one shifts the alignment between what was played and what was captured,
+which is precisely what the echo canceller depends on. A steady trickle is
+normal; a burst is the usual explanation for the robot suddenly starting to
+answer its own voice, and the count is also sent to the brain, so the **Echo
+cancellation** light in the console turns amber while it is happening.
+
+Common causes on a Pi: USB bandwidth shared with a camera, CPU contention, or
+a power supply that dips under servo load.
+
 ## If the robot answers itself
 
 That is the canceller failing, not a logic bug. In order of likelihood:

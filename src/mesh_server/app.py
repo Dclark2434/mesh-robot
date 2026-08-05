@@ -558,6 +558,17 @@ async def run() -> int:
             )
 
         elif kind == MessageType.TELEMETRY.value:
+            # Audio buffer glitches break the alignment echo cancellation
+            # depends on, so this is the light that should go amber when the
+            # robot is about to start answering its own voice.
+            glitches = payload.get("audio_glitches") or 0
+            if glitches:
+                logger.warning(
+                    f"Robot reported {glitches} audio glitches; "
+                    "echo cancellation may be degraded"
+                )
+                health.update("audio", State.WARN, f"{glitches} glitches")
+
             percent = payload.get("battery_percent")
             bus.publish(
                 "telemetry",

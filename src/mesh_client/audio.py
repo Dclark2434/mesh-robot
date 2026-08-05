@@ -50,6 +50,14 @@ FRAME_BYTES = FRAME_SAMPLES * 2
 MAX_PLAYBACK_MS = 400
 MAX_PLAYBACK_BYTES = SAMPLE_RATE * MAX_PLAYBACK_MS // 1000 * 2
 
+#: How often to summarise audio glitches. Long enough that an occasional
+#: one stays quiet, short enough to catch a burst while it is happening.
+XRUN_REPORT_SECS = 20.0
+
+#: Glitches per second above which the echo canceller cannot be expected
+#: to hold alignment.
+XRUN_RATE_CONCERNING = 0.5
+
 _SILENCE = np.zeros(FRAME_SAMPLES, dtype=np.int16)
 
 
@@ -134,8 +142,17 @@ class DuplexAudio:
         self._loop: asyncio.AbstractEventLoop | None = None
         self._capture: asyncio.Queue[bytes] | None = None
         self._pump: asyncio.Task | None = None
+        self._reporter: asyncio.Task | None = None
         self._apm = self._make_apm()
-        self._overflow_logged = False
+        # Counted rather than logged from the callback, which runs on the
+        # audio thread and must not do I/O. A dropped or duplicated block
+        # shifts the alignment between what was played and what was captured,
+        # which is exactly what makes the echo canceller lose convergence, so
+        # these numbers are the first thing to look at when the robot starts
+        # answering itself.
+        self._xruns = 0
+        self._xruns_reported = 0
+        self._xruns_since_telemetry = 0
 
     def _make_apm(self) -> rtc.AudioProcessingModule | None:
         """Construct the WebRTC audio processing module.
@@ -193,6 +210,7 @@ class DuplexAudio:
             logger.info(f"Echo path delay set to {latency_ms}ms")
 
         self._pump = asyncio.create_task(self._publish_loop())
+        self._reporter = asyncio.create_task(self._report_xruns())
         logger.info(
             f"Duplex audio running at {SAMPLE_RATE}Hz "
             f"(in={self._config.input_device or 'default'}, "
@@ -212,10 +230,9 @@ class DuplexAudio:
             _time: PortAudio timing info, unused.
             status: Over/underflow flags from PortAudio.
         """
-        if status and not self._overflow_logged:
-            # Common and mostly harmless under virtualized audio; say it once.
-            logger.debug(f"Audio device status: {status}")
-            self._overflow_logged = True
+        if status:
+            self._xruns += 1
+            self._xruns_since_telemetry += 1
 
         rendered = np.frombuffer(self._playback.pull(frames * 2), dtype=np.int16)
         outdata[:, 0] = rendered
@@ -257,6 +274,42 @@ class DuplexAudio:
             num_channels=1,
             samples_per_channel=len(samples),
         )
+
+    def take_xrun_count(self) -> int:
+        """Number of audio glitches since this was last called.
+
+        Reported alongside battery so the brain can show the echo canceller as
+        degraded while the audio path is actually glitching, rather than only
+        after the robot has started talking over itself.
+
+        Returns:
+            Glitches since the previous call.
+        """
+        count, self._xruns_since_telemetry = self._xruns_since_telemetry, 0
+        return count
+
+    async def _report_xruns(self) -> None:
+        """Log audio glitches periodically, loudly if they are frequent.
+
+        Separate from the callback because logging from the audio thread would
+        itself cause the glitches being counted.
+        """
+        while True:
+            await asyncio.sleep(XRUN_REPORT_SECS)
+            new = self._xruns - self._xruns_reported
+            if not new:
+                continue
+            self._xruns_reported = self._xruns
+
+            rate = new / XRUN_REPORT_SECS
+            message = (
+                f"{new} audio glitches in the last {XRUN_REPORT_SECS:.0f}s "
+                f"({self._xruns} total). These break echo cancellation."
+            )
+            if rate >= XRUN_RATE_CONCERNING:
+                logger.warning(message)
+            else:
+                logger.info(message)
 
     async def _publish_loop(self) -> None:
         """Forward processed microphone frames to LiveKit."""
@@ -303,9 +356,12 @@ class DuplexAudio:
 
     async def stop(self) -> None:
         """Stop streaming and release the device."""
-        if self._pump is not None:
-            self._pump.cancel()
-            self._pump = None
+        for task in (self._pump, self._reporter):
+            if task is not None:
+                task.cancel()
+        self._pump = self._reporter = None
+        if self._xruns:
+            logger.info(f"{self._xruns} audio glitches over the session")
         if self._stream is not None:
             try:
                 self._stream.stop()
