@@ -231,10 +231,24 @@ def _build_services(settings: Settings, system_prompt: str):
         ),
     )
 
+    # Only the values actually set are passed, so anything left alone keeps
+    # whatever the voice itself is configured with in ElevenLabs.
+    voice_settings: dict[str, Any] = {
+        "voice": settings.elevenlabs_voice_id,
+        "model": settings.elevenlabs_model,
+    }
+    for name, value in (
+        ("stability", settings.elevenlabs_stability),
+        ("style", settings.elevenlabs_style),
+        ("speed", settings.elevenlabs_speed),
+    ):
+        if value is not None:
+            voice_settings[name] = value
+
     tts = ElevenLabsTTSService(
         api_key=settings.elevenlabs_api_key,
         sample_rate=settings.audio.output_rate,
-        settings=ElevenLabsTTSService.Settings(voice=settings.elevenlabs_voice_id),
+        settings=ElevenLabsTTSService.Settings(**voice_settings),
     )
 
     return stt, llm, tts
@@ -266,6 +280,11 @@ async def run() -> int:
         f"Persona '{settings.personality}' "
         f"(available: {', '.join(settings.available_personalities())}), "
         f"{len(memory)} remembered facts"
+    )
+    logger.info(
+        f"Voice: {settings.elevenlabs_model}"
+        + (", audio tags enabled" if settings.audio_tags_supported
+           else ", no audio tags (needs a v3 model)")
     )
 
     transport = LiveKitTransport(

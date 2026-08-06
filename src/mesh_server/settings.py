@@ -36,6 +36,24 @@ def _env(name: str, default: str = "") -> str:
     return os.getenv(name, default).strip()
 
 
+def _env_optional_float(name: str) -> float | None:
+    """Read an optional float, absent meaning "leave the default alone".
+
+    Args:
+        name: Variable name.
+
+    Returns:
+        The parsed value, or None when unset or unparseable.
+    """
+    raw = _env(name)
+    if not raw:
+        return None
+    try:
+        return float(raw)
+    except ValueError:
+        return None
+
+
 def _env_float(name: str, default: float) -> float:
     """Read an environment variable as a float, falling back on bad input.
 
@@ -132,6 +150,13 @@ class Settings:
         deepgram_model: Deepgram model id.
         elevenlabs_api_key: ElevenLabs API key.
         elevenlabs_voice_id: The chosen custom voice.
+        elevenlabs_model: TTS model. Only the v3 family understands the inline
+            audio tags that make the voice laugh or whisper; the turbo models
+            are faster and word-aligned, which is what gesture timing needs.
+        elevenlabs_stability: Lower is more expressive, less consistent. None
+            leaves the voice's own saved setting alone.
+        elevenlabs_style: Higher exaggerates the voice's character.
+        elevenlabs_speed: 0.7 to 1.2.
         livekit_url: WebSocket URL of the self-hosted LiveKit server.
         livekit_api_key: LiveKit API key.
         livekit_api_secret: LiveKit API secret.
@@ -171,6 +196,20 @@ class Settings:
 
     elevenlabs_api_key: str = field(default_factory=lambda: _env("ELEVENLABS_API_KEY"))
     elevenlabs_voice_id: str = field(default_factory=lambda: _env("ELEVENLABS_VOICE_ID"))
+    elevenlabs_model: str = field(
+        default_factory=lambda: _env("ELEVENLABS_MODEL", "eleven_turbo_v2_5")
+    )
+    # Unset by default, so the voice's own saved settings apply. Lower
+    # stability widens the emotional range at the cost of consistency.
+    elevenlabs_stability: float | None = field(
+        default_factory=lambda: _env_optional_float("ELEVENLABS_STABILITY")
+    )
+    elevenlabs_style: float | None = field(
+        default_factory=lambda: _env_optional_float("ELEVENLABS_STYLE")
+    )
+    elevenlabs_speed: float | None = field(
+        default_factory=lambda: _env_optional_float("ELEVENLABS_SPEED")
+    )
 
     livekit_url: str = field(default_factory=lambda: _env("LIVEKIT_URL", "ws://localhost:7880"))
     livekit_api_key: str = field(default_factory=lambda: _env("LIVEKIT_API_KEY"))
@@ -242,6 +281,15 @@ class Settings:
             if path.stem != "base_rules"
         )
 
+    @property
+    def audio_tags_supported(self) -> bool:
+        """Whether the TTS model understands inline vocal-delivery tags.
+
+        Only the v3 family does. Advertising them on a turbo voice would have
+        the model write ``[laughing]`` into text that then gets read out.
+        """
+        return "v3" in self.elevenlabs_model
+
     def load_system_prompt(self, memory_block: str = "") -> str:
         """Assemble the full system prompt for the active persona.
 
@@ -268,6 +316,8 @@ class Settings:
             "========================\nAVAILABLE ACTIONS\n========================\n"
             + prompt_action_reference(),
         ]
+        if self.audio_tags_supported:
+            parts.append((PERSONALITIES_DIR / "audio_tags.txt").read_text(encoding="utf-8").strip())
         if memory_block:
             parts.append(memory_block)
         return "\n\n".join(parts)

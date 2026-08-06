@@ -192,6 +192,9 @@ Everything lives in `src/mesh_server/.env` (brain) and the robot's environment.
 | Variable | Default | Meaning |
 |----------|---------|---------|
 | `MESH_PERSONALITY` | `mesh` | Persona prompt to load. |
+| `ELEVENLABS_MODEL` | `eleven_turbo_v2_5` | v3 models add audio tags but are slower. |
+| `ELEVENLABS_STABILITY` | *(voice default)* | Lower is more expressive. |
+| `ELEVENLABS_STYLE` | *(voice default)* | Higher exaggerates the character. |
 | `MESH_ROOM` | `mesh-robot-room` | LiveKit room both sides join. |
 | `MESH_METRICS` | `1` | Per-turn latency breakdown. |
 | `MESH_VAD_STOP_SECS` | `0.2` | Trailing silence before end of turn. |

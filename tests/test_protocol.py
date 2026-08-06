@@ -123,3 +123,19 @@ def test_telemetry_defaults_to_no_glitches():
     from mesh_common.protocol import TelemetryMessage
 
     assert decode(encode(TelemetryMessage()))["audio_glitches"] == 0
+
+
+def test_audio_tags_are_only_offered_when_the_voice_understands_them():
+    # Advertising them on a turbo voice would have the model write "[laughing]"
+    # into text that then gets read out, which is the bug the parser exists to
+    # prevent in the first place.
+    import os
+
+    from mesh_server.settings import Settings
+
+    for model, expected in (("eleven_turbo_v2_5", False), ("eleven_v3", True)):
+        os.environ["ELEVENLABS_MODEL"] = model
+        settings = Settings()
+        assert settings.audio_tags_supported is expected, model
+        assert ("HOW YOU SOUND" in settings.load_system_prompt()) is expected, model
+    os.environ.pop("ELEVENLABS_MODEL", None)
