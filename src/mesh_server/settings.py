@@ -290,13 +290,32 @@ class Settings:
         )
 
     @property
+    def elevenlabs_is_v3(self) -> bool:
+        """Whether the chosen voice model is from the v3 family.
+
+        Two unrelated things follow from it, so it is named once here rather
+        than spelled out at each use.
+        """
+        return "v3" in self.elevenlabs_model
+
+    @property
     def audio_tags_supported(self) -> bool:
         """Whether the TTS model understands inline vocal-delivery tags.
 
         Only the v3 family does. Advertising them on a turbo voice would have
         the model write ``[laughing]`` into text that then gets read out.
         """
-        return "v3" in self.elevenlabs_model
+        return self.elevenlabs_is_v3
+
+    @property
+    def elevenlabs_needs_http(self) -> bool:
+        """Whether synthesis has to go over the HTTP endpoint.
+
+        ElevenLabs does not serve the v3 family over the websocket streaming
+        endpoint. Asking for it there yields no audio and no error, so the
+        transport has to follow the model rather than being chosen freely.
+        """
+        return self.elevenlabs_is_v3
 
     def load_system_prompt(self, memory_block: str = "") -> str:
         """Assemble the full system prompt for the active persona.

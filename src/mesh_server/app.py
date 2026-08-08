@@ -28,6 +28,7 @@ import asyncio
 import sys
 from typing import Any
 
+import aiohttp
 from livekit import api
 from pipecat.audio.vad.silero import SileroVADAnalyzer
 from pipecat.audio.vad.vad_analyzer import VADParams
@@ -43,7 +44,10 @@ from pipecat.processors.aggregators.llm_response_universal import (
     LLMUserAggregatorParams,
 )
 from pipecat.services.deepgram.stt import DeepgramSTTService
-from pipecat.services.elevenlabs.tts import ElevenLabsTTSService
+from pipecat.services.elevenlabs.tts import (
+    ElevenLabsHttpTTSService,
+    ElevenLabsTTSService,
+)
 from pipecat.services.google.llm import GoogleLLMService
 from pipecat.transports.livekit.transport import LiveKitParams, LiveKitTransport
 from pipecat.turns.user_mute.mute_until_first_bot_complete_user_mute_strategy import (
@@ -191,12 +195,16 @@ def _build_vad(settings: Settings) -> SileroVADAnalyzer:
     )
 
 
-def _build_services(settings: Settings, system_prompt: str):
+def _build_services(
+    settings: Settings, system_prompt: str, http_session: aiohttp.ClientSession
+):
     """Construct the three cloud services on the critical path.
 
     Args:
         settings: Loaded configuration.
         system_prompt: Fully assembled system instruction.
+        http_session: Session for the HTTP synthesis path. Unused when the
+            voice model is served over the websocket endpoint.
 
     Returns:
         A ``(stt, llm, tts)`` tuple.
@@ -245,11 +253,25 @@ def _build_services(settings: Settings, system_prompt: str):
         if value is not None:
             voice_settings[name] = value
 
-    tts = ElevenLabsTTSService(
-        api_key=settings.elevenlabs_api_key,
-        sample_rate=settings.audio.output_rate,
-        settings=ElevenLabsTTSService.Settings(**voice_settings),
-    )
+    # The websocket service is the better default: one persistent connection,
+    # lower time to first byte. It cannot carry the v3 family, though, and asks
+    # for it by putting model_id in the connection URL -- which yields silence
+    # rather than an error, and stalls everything queued behind the voice. Both
+    # services return character alignment, so word-synced gestures survive
+    # either way.
+    if settings.elevenlabs_needs_http:
+        tts = ElevenLabsHttpTTSService(
+            api_key=settings.elevenlabs_api_key,
+            aiohttp_session=http_session,
+            sample_rate=settings.audio.output_rate,
+            settings=ElevenLabsHttpTTSService.Settings(**voice_settings),
+        )
+    else:
+        tts = ElevenLabsTTSService(
+            api_key=settings.elevenlabs_api_key,
+            sample_rate=settings.audio.output_rate,
+            settings=ElevenLabsTTSService.Settings(**voice_settings),
+        )
 
     return stt, llm, tts
 
@@ -282,7 +304,8 @@ async def run() -> int:
         f"{len(memory)} remembered facts"
     )
     logger.info(
-        f"Voice: {settings.elevenlabs_model}"
+        f"Voice: {settings.elevenlabs_model} over "
+        + ("http" if settings.elevenlabs_needs_http else "websocket")
         + (", audio tags enabled" if settings.audio_tags_supported
            else ", no audio tags (needs a v3 model)")
     )
@@ -321,7 +344,10 @@ async def run() -> int:
         except Exception as exc:  # the conversation must survive a dropped packet
             logger.warning(f"Could not send control message: {exc}")
 
-    stt, llm, tts = _build_services(settings, system_prompt)
+    # Owned here rather than by the service so it is closed on the way out;
+    # an unclosed session complains loudly at interpreter shutdown.
+    http_session = aiohttp.ClientSession()
+    stt, llm, tts = _build_services(settings, system_prompt, http_session)
     timeline = GestureTimeline()
     # What the robot is saying, so a transcript of its own voice can be
     # recognised before it becomes an interruption.
@@ -660,6 +686,7 @@ async def run() -> int:
         health.update("pipeline", State.DOWN, "stopped")
         if dashboard is not None:
             await dashboard.stop()
+        await http_session.close()
     return 0
 
 
