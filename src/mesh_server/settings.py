@@ -20,6 +20,11 @@ BASE_DIR = Path(__file__).resolve().parent
 PERSONALITIES_DIR = BASE_DIR / "personalities"
 DATA_DIR = BASE_DIR / "data"
 
+#: Files in the personalities directory that are shared prompt sections rather
+#: than characters. They are appended to whichever persona is active, so
+#: offering them as a choice would load a fragment as the whole character.
+PROMPT_FRAGMENTS = frozenset({"base_rules", "audio_tags"})
+
 # Not override=True: a variable exported in the shell should beat the file, the
 # way it does for every other program. Overriding it makes `export X=...` look
 # broken, with nothing on screen to explain why.
@@ -276,12 +281,12 @@ class Settings:
         """List the personas that have a prompt file on disk.
 
         Returns:
-            Sorted persona names, excluding the shared rules file.
+            Sorted persona names, excluding the shared prompt fragments.
         """
         return sorted(
             path.stem
             for path in PERSONALITIES_DIR.glob("*.txt")
-            if path.stem != "base_rules"
+            if path.stem not in PROMPT_FRAGMENTS
         )
 
     @property
