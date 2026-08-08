@@ -20,7 +20,10 @@ BASE_DIR = Path(__file__).resolve().parent
 PERSONALITIES_DIR = BASE_DIR / "personalities"
 DATA_DIR = BASE_DIR / "data"
 
-load_dotenv(BASE_DIR / ".env", override=True)
+# Not override=True: a variable exported in the shell should beat the file, the
+# way it does for every other program. Overriding it makes `export X=...` look
+# broken, with nothing on screen to explain why.
+load_dotenv(BASE_DIR / ".env")
 
 
 def _env(name: str, default: str = "") -> str:

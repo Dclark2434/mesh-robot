@@ -16,9 +16,10 @@ from __future__ import annotations
 import asyncio
 import os
 import signal
+from collections.abc import MutableMapping, Sequence
 from pathlib import Path
 
-from dotenv import load_dotenv
+from dotenv import dotenv_values, load_dotenv
 from livekit import api, rtc
 
 from mesh_client.animation_controller import AnimationController
@@ -46,25 +47,49 @@ from mesh_common.protocol import (
 
 logger = get_logger("robot")
 
-#: Where the robot looks for its settings, nearest first. Every file found is
-#: loaded, later ones winning, so a repository-root .env overrides one sitting
-#: next to the package.
+#: Where the robot looks for its settings, nearest first.
 #:
 #: More than one location because settings files predate this code and turn up
 #: in both places. Reading only one silently drops whichever the robot was
 #: actually using, which looks like a setting spontaneously reverting.
 #:
-#: override=True matches the brain. The library default is the opposite, so a
-#: variable exported in an old shell session beats the file being edited.
+#: Precedence is the ordinary one: an exported variable beats every file, and
+#: the nearest file beats a more distant one. First writer wins, so the loop
+#: below never overwrites. Anything else makes editing a file look like it did
+#: nothing, which is exactly what a wrong address feels like.
 ENV_CANDIDATES = (
     Path(__file__).resolve().parent / ".env",
     Path(__file__).resolve().parents[2] / ".env",
 )
 ENV_FILES = [path for path in ENV_CANDIDATES if path.exists()]
-for _env_file in ENV_FILES:
-    load_dotenv(_env_file, override=True)
+
+
+def load_env(files: Sequence[Path], environ: MutableMapping[str, str]) -> dict[str, str]:
+    """Apply settings files to an environment, nearest file first.
+
+    Args:
+        files: Candidate .env paths, in order of decreasing precedence.
+        environ: The environment to populate. Existing entries are left alone.
+
+    Returns:
+        A map from variable name to where its winning value came from.
+    """
+    source = dict.fromkeys(environ, "exported in the shell")
+    for path in files:
+        for key, value in dotenv_values(path).items():
+            if value is None or key in source:
+                continue
+            environ[key] = value
+            source[key] = str(path)
+    return source
+
+
+#: Which file each setting came from. With two candidate files and a shell that
+#: may already have exported the same name, "the .env is correct" is not enough
+#: to know what the robot read, so record the winner as it is chosen.
+ENV_SOURCE = load_env(ENV_FILES, os.environ)
 if not ENV_FILES:
-    load_dotenv(override=True)
+    load_dotenv()
 
 #: How often the robot reports battery state to the brain.
 TELEMETRY_PERIOD_SECS = 30.0
@@ -457,7 +482,13 @@ def _report_settings() -> None:
         ("MESH_AUDIO_OUT_DEVICE", "default"),
         ("MESH_CAMERA_ROTATION", "0"),
     ):
-        logger.info(f"  {name}={os.getenv(name, default)}")
+        source = ENV_SOURCE.get(name, "built-in default")
+        logger.info(f"  {name}={os.getenv(name, default)}   from {source}")
+        # An edit to a losing file is invisible otherwise: the value looks
+        # simply wrong, with nothing to say the edit landed somewhere unread.
+        for path in ENV_FILES:
+            if str(path) != source and name in dotenv_values(path):
+                logger.warning(f"  {name} is also set in {path}, and was ignored")
 
 
 async def _main() -> None:

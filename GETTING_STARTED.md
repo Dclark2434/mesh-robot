@@ -231,6 +231,19 @@ To change persona, stop the brain, set `MESH_PERSONALITY`, and start it again.
 | Colours inverted | Set `MESH_CAMERA_SWAP_RB=1` |
 | Robot log pane empty | The robot is not connected |
 | Interrupted constantly by background noise | Raise `MESH_MIN_WORDS`, or set `MESH_WAKE_PHRASES` |
+| A setting you edited has no effect | Another file or an export is winning; startup names the source of each value |
+
+### Where settings come from
+
+The robot reads `src/mesh_client/.env` and then the repository root `.env`. A
+variable exported in the shell beats both, and the nearer file beats the more
+distant one. Startup prints where each value came from, and warns when a file
+you edited was overruled:
+
+```
+LIVEKIT_URL=ws://192.168.1.10:7880   from /home/you/mesh-robot/src/mesh_client/.env
+LIVEKIT_URL is also set in /home/you/mesh-robot/.env, and was ignored
+```
 
 ### Isolating a fault
 
